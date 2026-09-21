@@ -71,6 +71,14 @@ public static class Hd2Setup
         Debug.Log("HD2 URP setup complete.");
     }
 
+    public static void SetupQuestAndXr()
+    {
+        Hd2QuestPlayerSetup.SetupQuestPlayer();
+        Hd2XrSetup.SetupOpenXr();
+        AssetDatabase.SaveAssets();
+        Debug.Log("HD2 Quest + OpenXR setup complete.");
+    }
+
     static void CreateGreyboxSceneIfMissing()
     {
         if (File.Exists(ScenePath))

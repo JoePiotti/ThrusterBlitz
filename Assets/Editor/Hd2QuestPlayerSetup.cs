@@ -31,6 +31,25 @@ public static class Hd2QuestPlayerSetup
         PlayerSettings.colorSpace = ColorSpace.Linear;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;
         PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Android, ManagedStrippingLevel.Low);
+        PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
+        PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[]
+        {
+            UnityEngine.Rendering.GraphicsDeviceType.Vulkan
+        });
+
+        var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset");
+        if (assets != null && assets.Length > 0)
+        {
+            var serialized = new SerializedObject(assets[0]);
+            var inputHandler = serialized.FindProperty("activeInputHandler");
+            if (inputHandler != null)
+            {
+                inputHandler.intValue = 1;
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+            }
+        }
+
+        EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
         Debug.Log("HD2 Quest player settings complete.");
     }
 }
