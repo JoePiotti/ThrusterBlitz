@@ -1,0 +1,23 @@
+---
+description: HD2 project priorities and agent working agreements
+alwaysApply: true
+---
+
+# HD2
+
+Spiritual successor to Hyper Dash. Quest-only. Solo vertical slice. Do not copy Hyper Dash assets, code, names, or proprietary implementations.
+
+## Priorities (in order)
+
+1. Starting pistol feel (fire rate, recovery, recoil, tracking while moving, audio punch)
+2. Movement feel (dash, sprint, walk, rail grind)
+3. One parallel-track Payload race map
+4. Everything else is secondary (graphics, other weapons, cosmetics, progression)
+
+## How to work
+
+- Prefer Unity + latest Meta XR SDK / OpenXR. Keep the project simple and Quest-friendly.
+- Prioritize feel and iteration speed over architecture purity early on.
+- Suggest small, testable steps. Do not build systems for features that are not needed yet.
+- Ask when design intent is ambiguous.
+- Flag legal/IP risk if work drifts toward original branding or unique assets.
