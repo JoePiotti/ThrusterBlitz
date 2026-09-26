@@ -1,5 +1,6 @@
 using System.IO;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -64,7 +65,7 @@ public static class Hd2Setup
         QualitySettings.SetQualityLevel(current, true);
 
         PlayerSettings.colorSpace = ColorSpace.Linear;
-        PlayerSettings.SetMobileMTRendering(BuildTargetGroup.Android, true);
+        PlayerSettings.SetMobileMTRendering(NamedBuildTarget.Android, true);
 
         CreateGreyboxSceneIfMissing();
         AssetDatabase.SaveAssets();

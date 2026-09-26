@@ -46,7 +46,8 @@ public static class Hd2VrPlayerSetup
 
         var offset = new GameObject("CameraOffset");
         offset.transform.SetParent(root.transform, false);
-        offset.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+        // OpenXR Local Floor already includes real head height. A Y offset here floats the camera above the hands.
+        offset.transform.localPosition = Vector3.zero;
 
         var eye = new GameObject("CenterEye");
         eye.tag = "MainCamera";

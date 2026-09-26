@@ -1,4 +1,5 @@
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEngine;
 
 [InitializeOnLoad]
@@ -22,15 +23,15 @@ public static class Hd2QuestPlayerSetup
 
     public static void SetupQuestPlayer()
     {
-        PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, "com.hd2.game");
+        PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.hd2.game");
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel32;
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
-        PlayerSettings.SetScriptingBackend(BuildTargetGroup.Android, ScriptingImplementation.IL2CPP);
-        PlayerSettings.SetMobileMTRendering(BuildTargetGroup.Android, true);
+        PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetMobileMTRendering(NamedBuildTarget.Android, true);
         PlayerSettings.stereoRenderingPath = StereoRenderingPath.SinglePass;
         PlayerSettings.colorSpace = ColorSpace.Linear;
         PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;
-        PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.Android, ManagedStrippingLevel.Low);
+        PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.Android, ManagedStrippingLevel.Low);
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[]
         {
