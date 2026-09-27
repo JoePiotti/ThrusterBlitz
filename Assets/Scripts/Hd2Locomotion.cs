@@ -12,10 +12,15 @@ using UnityEngine.XR;
 /// - Right stick left/right: snap turn around the headset. One snap per deflection; the stick
 ///   must return near center before the next snap. Holding the stick does not spin.
 /// - Sprint: left stick click held, and only while there is move input. Stick magnitude does not sprint.
-/// - Thrust: hold left primary (X) or right primary (A). An arc is drawn from that hand and stops
+/// - Thrust: hold left primary (X) or right primary (A). An arc is drawn from that hand. If the
+///   arc ends in the air or on a wall, a straight line drops to the surface below and the marker
+///   sits there. The arc stops
 ///   at the first solid hit. Release moves the root in a straight line to that point at
 ///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, or a hit on
 ///   Hd2NoLanding does nothing.
+///   A hit on Hd2SpawnField is a pass-through, not a wall and not an illegal landing. The
+///   landing is just beyond the field along the thrust (outside when aiming out, inside when
+///   aiming in), the arc is green, and the move phases through.
 ///   Arc color: blue on a grind rail, green on other legal landings, yellow when the landing
 ///   is illegal or there is no valid hit.
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
@@ -68,7 +73,7 @@ public class Hd2Locomotion : MonoBehaviour
     [Tooltip("Initial speed of the aim arc, meters per second.")]
     public float arcSpeed = 16f;
     [Tooltip("Downward acceleration of the aim arc. The arc stops at the first solid hit.")]
-    public float arcGravity = 18f;
+    public float arcGravity = 28f;
     [Tooltip("Degrees to pitch the thrust arc down from the controller forward. 0 follows the hand. Higher values leave the hand more forward and less upward.")]
     public float arcLaunchAngle = 40f;
 
@@ -126,6 +131,7 @@ public class Hd2Locomotion : MonoBehaviour
     readonly Vector3[] arcPoints = new Vector3[ArcPointCapacity];
     int arcPointCount;
     static readonly Collider[] railOverlap = new Collider[16];
+    static readonly RaycastHit[] bodyHits = new RaycastHit[24];
 
     LineRenderer arcLine;
     LineRenderer[] outlineLines;
@@ -401,13 +407,13 @@ public class Hd2Locomotion : MonoBehaviour
         aimShowOutline = false;
         aimRail = null;
         arcPointCount = 0;
-        if (!TryGetAim(out Vector3 origin, out Vector3 direction))
+        if (!TryGetAim(out Vector3 origin, out Vector3 direction, out Vector3 bend))
         {
             HidePreview();
             return;
         }
 
-        SimulateArc(origin, direction);
+        SimulateArc(origin, direction, bend);
         bool showLine = arcPointCount >= 2;
         if (arcLine != null)
         {
@@ -432,10 +438,11 @@ public class Hd2Locomotion : MonoBehaviour
             HideOutline();
     }
 
-    bool TryGetAim(out Vector3 origin, out Vector3 direction)
+    bool TryGetAim(out Vector3 origin, out Vector3 direction, out Vector3 bend)
     {
         origin = transform.position + Vector3.up;
         direction = Vector3.forward;
+        bend = Vector3.down;
         Transform aim = null;
         if (aimSource == AimSource.Right)
             aim = rightHand;
@@ -460,12 +467,20 @@ public class Hd2Locomotion : MonoBehaviour
         direction.Normalize();
 
         bool handAim = aim != null && (aimSource == AimSource.Left || aimSource == AimSource.Right);
-        if (handAim && Mathf.Abs(arcLaunchAngle) > 0.01f)
+        if (handAim)
         {
-            direction = Quaternion.AngleAxis(arcLaunchAngle, aim.right) * direction;
-            if (direction.sqrMagnitude < 0.0001f)
-                direction = aim.forward;
-            direction.Normalize();
+            bend = -aim.up;
+            if (bend.sqrMagnitude < 0.0001f)
+                bend = Vector3.down;
+            bend.Normalize();
+
+            if (Mathf.Abs(arcLaunchAngle) > 0.01f)
+            {
+                direction = Quaternion.AngleAxis(arcLaunchAngle, aim.right) * direction;
+                if (direction.sqrMagnitude < 0.0001f)
+                    direction = aim.forward;
+                direction.Normalize();
+            }
         }
 
         if (origin.y < 0.08f)
@@ -474,7 +489,7 @@ public class Hd2Locomotion : MonoBehaviour
         return true;
     }
 
-    void SimulateArc(Vector3 origin, Vector3 direction)
+    void SimulateArc(Vector3 origin, Vector3 direction, Vector3 bend)
     {
         float step = 0.025f;
         float speed = Mathf.Max(0.5f, arcSpeed);
@@ -490,38 +505,56 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < ArcPointCapacity - 2; i++)
         {
             Vector3 next = pos + velocity * step;
-            velocity += Vector3.down * gravityScale * step;
+            velocity += bend * gravityScale * step;
 
             if (Physics.Linecast(pos, next, out RaycastHit hit, ~0, QueryTriggerInteraction.Ignore))
             {
-                Vector3 landing = LandingFromHit(hit, out Hd2GrindRail rail, out float railSign);
-                bool inRange = (landing - player).sqrMagnitude <= maxSqr;
-                bool blocked = IsNoLanding(hit.collider);
+                Hd2SpawnField field = hit.collider != null
+                    ? hit.collider.GetComponentInParent<Hd2SpawnField>()
+                    : null;
+                if (field != null)
+                {
+                    Vector3 travel = next - pos;
+                    if (travel.sqrMagnitude < 0.0000001f)
+                        travel = velocity;
+                    Vector3 passLanding = field.PassThroughPoint(hit.point, travel, bodyRadius, out Collider ground);
+                    bool passInRange = (passLanding - player).sqrMagnitude <= maxSqr;
+                    bool passBlocked = IsNoLanding(ground);
+                    if (arcPointCount < ArcPointCapacity)
+                        arcPoints[arcPointCount++] = hit.point;
+                    if (arcPointCount < ArcPointCapacity)
+                        arcPoints[arcPointCount++] = passLanding;
+
+                    aimLanding = passLanding;
+                    aimShowOutline = true;
+                    aimRail = null;
+                    if (!passBlocked && passInRange)
+                    {
+                        aimKind = AimKind.Legal;
+                        aimValid = true;
+                    }
+                    else
+                    {
+                        aimKind = AimKind.Illegal;
+                        aimValid = false;
+                    }
+
+                    return;
+                }
+
                 if (arcPointCount < ArcPointCapacity)
                     arcPoints[arcPointCount++] = hit.point;
 
-                aimLanding = landing;
-                aimShowOutline = true;
-                if (rail != null && inRange)
+                Hd2GrindRail rail = hit.collider != null ? hit.collider.GetComponentInParent<Hd2GrindRail>() : null;
+                if (rail == null)
+                    rail = RailAtPoint(hit.point);
+                if (rail != null || hit.normal.y > 0.55f)
                 {
-                    aimKind = AimKind.Rail;
-                    aimValid = true;
-                    aimRail = rail;
-                    aimGrindSign = railSign;
-                }
-                else if (!blocked && inRange)
-                {
-                    aimKind = AimKind.Legal;
-                    aimValid = true;
-                    aimRail = null;
-                }
-                else
-                {
-                    aimKind = AimKind.Illegal;
-                    aimValid = false;
-                    aimRail = null;
+                    AcceptSurfaceHit(hit, player, maxSqr);
+                    return;
                 }
 
+                DropToSurfaceBelow(hit.point + hit.normal * 0.04f, player, maxSqr);
                 return;
             }
 
@@ -529,6 +562,7 @@ public class Hd2Locomotion : MonoBehaviour
             {
                 if (arcPointCount < ArcPointCapacity)
                     arcPoints[arcPointCount++] = ClipToRange(pos, next, player, maxSqr);
+                DropToSurfaceBelow(arcPoints[arcPointCount - 1], player, maxSqr);
                 return;
             }
 
@@ -536,6 +570,80 @@ public class Hd2Locomotion : MonoBehaviour
             if (arcPointCount < ArcPointCapacity)
                 arcPoints[arcPointCount++] = pos;
         }
+
+        if (arcPointCount > 0)
+            DropToSurfaceBelow(arcPoints[arcPointCount - 1], player, maxSqr);
+    }
+
+    void AcceptSurfaceHit(RaycastHit hit, Vector3 player, float maxSqr)
+    {
+        Vector3 landing = LandingFromHit(hit, out Hd2GrindRail rail, out float railSign);
+        bool inRange = (landing - player).sqrMagnitude <= maxSqr;
+        bool blocked = IsNoLanding(hit.collider);
+        aimLanding = landing;
+        aimShowOutline = true;
+        if (rail != null && inRange)
+        {
+            aimKind = AimKind.Rail;
+            aimValid = true;
+            aimRail = rail;
+            aimGrindSign = railSign;
+        }
+        else if (!blocked && inRange)
+        {
+            aimKind = AimKind.Legal;
+            aimValid = true;
+            aimRail = null;
+        }
+        else
+        {
+            aimKind = AimKind.Illegal;
+            aimValid = false;
+            aimRail = null;
+        }
+    }
+
+    void DropToSurfaceBelow(Vector3 from, Vector3 player, float maxSqr)
+    {
+        Vector3 origin = from + Vector3.up * 0.05f;
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, bodyHits, 40f, ~0, QueryTriggerInteraction.Ignore);
+        if (!NearestBodyHit(count, out RaycastHit hit))
+        {
+            aimKind = AimKind.Illegal;
+            aimValid = false;
+            aimShowOutline = false;
+            aimRail = null;
+            return;
+        }
+
+        if (hit.distance > 0.12f && arcPointCount < ArcPointCapacity)
+            arcPoints[arcPointCount++] = hit.point;
+
+        Hd2SpawnField field = hit.collider != null ? hit.collider.GetComponentInParent<Hd2SpawnField>() : null;
+        if (field != null)
+        {
+            Vector3 passLanding = field.PassThroughPoint(hit.point, Vector3.down, bodyRadius, out Collider ground);
+            if (arcPointCount < ArcPointCapacity)
+                arcPoints[arcPointCount++] = passLanding;
+            aimLanding = passLanding;
+            aimShowOutline = true;
+            aimRail = null;
+            bool passInRange = (passLanding - player).sqrMagnitude <= maxSqr;
+            if (!IsNoLanding(ground) && passInRange)
+            {
+                aimKind = AimKind.Legal;
+                aimValid = true;
+            }
+            else
+            {
+                aimKind = AimKind.Illegal;
+                aimValid = false;
+            }
+
+            return;
+        }
+
+        AcceptSurfaceHit(hit, player, maxSqr);
     }
 
     Vector3 LandingFromHit(RaycastHit hit, out Hd2GrindRail rail, out float railSign)
@@ -560,6 +668,41 @@ public class Hd2Locomotion : MonoBehaviour
     static bool IsNoLanding(Collider collider)
     {
         return collider != null && collider.GetComponentInParent<Hd2NoLanding>() != null;
+    }
+
+    // The spawn field stays solid so outside shots hit it. The local player walks and
+    // falls through it. Thrust aims through it in SimulateArc.
+    static bool CastBody(Vector3 bottom, Vector3 top, float radius, Vector3 direction, float distance, out RaycastHit hit)
+    {
+        int count = Physics.CapsuleCastNonAlloc(bottom, top, radius, direction, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        return NearestBodyHit(count, out hit);
+    }
+
+    static bool RaycastBody(Vector3 origin, Vector3 direction, float distance, out RaycastHit hit)
+    {
+        int count = Physics.RaycastNonAlloc(origin, direction, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        return NearestBodyHit(count, out hit);
+    }
+
+    static bool NearestBodyHit(int count, out RaycastHit hit)
+    {
+        hit = default;
+        float best = float.MaxValue;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = bodyHits[i].collider;
+            if (collider != null && collider.GetComponentInParent<Hd2SpawnField>() != null)
+                continue;
+            if (bodyHits[i].distance >= best)
+                continue;
+
+            best = bodyHits[i].distance;
+            hit = bodyHits[i];
+            found = true;
+        }
+
+        return found;
     }
 
     static Hd2GrindRail RailAtPoint(Vector3 point)
@@ -794,7 +937,7 @@ public class Hd2Locomotion : MonoBehaviour
             float distance = delta.magnitude;
             Vector3 direction = delta / distance;
             CapsuleEnds(out Vector3 bottom, out Vector3 top);
-            if (Physics.CapsuleCast(bottom, top, bodyRadius * 0.9f, direction, out RaycastHit hit, distance + skinWidth, ~0, QueryTriggerInteraction.Ignore))
+            if (CastBody(bottom, top, bodyRadius * 0.9f, direction, distance + skinWidth, out RaycastHit hit))
             {
                 float travel = Mathf.Max(0f, hit.distance - skinWidth);
                 transform.position += direction * travel;
@@ -831,7 +974,7 @@ public class Hd2Locomotion : MonoBehaviour
 
         Vector3 direction = dy < 0f ? Vector3.down : Vector3.up;
         CapsuleEnds(out Vector3 bottom, out Vector3 top);
-        if (Physics.CapsuleCast(bottom, top, bodyRadius * 0.9f, direction, out RaycastHit hit, distance + skinWidth, ~0, QueryTriggerInteraction.Ignore))
+        if (CastBody(bottom, top, bodyRadius * 0.9f, direction, distance + skinWidth, out RaycastHit hit))
         {
             float travel = Mathf.Max(0f, hit.distance - skinWidth);
             transform.position += direction * travel;
@@ -847,7 +990,7 @@ public class Hd2Locomotion : MonoBehaviour
     {
         groundY = transform.position.y;
         Vector3 origin = transform.position + Vector3.up * 0.2f;
-        if (!Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 0.2f + groundProbe, ~0, QueryTriggerInteraction.Ignore))
+        if (!RaycastBody(origin, Vector3.down, 0.2f + groundProbe, out RaycastHit hit))
             return false;
 
         float feetGap = transform.position.y - hit.point.y;

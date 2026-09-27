@@ -2,6 +2,8 @@ using UnityEngine;
 
 /// <summary>
 /// Fast visible projectile. Stops on the first collider that is not the shooter.
+/// Hd2SpawnField is one-way: a shot from the room side passes through and can hit
+/// what is beyond it. A shot from the map side stops and leaves a mark on the field.
 /// </summary>
 public class Hd2Shot : MonoBehaviour
 {
@@ -45,6 +47,11 @@ public class Hd2Shot : MonoBehaviour
                     continue;
                 if (owner != null && hitTransform.IsChildOf(owner))
                     continue;
+
+                var field = hits[i].collider.GetComponentInParent<Hd2SpawnField>();
+                if (field != null && field.ShotPasses(previous))
+                    continue;
+
                 if (hits[i].distance < best)
                 {
                     best = hits[i].distance;
@@ -55,9 +62,18 @@ public class Hd2Shot : MonoBehaviour
             if (bestIndex >= 0)
             {
                 RaycastHit hit = hits[bestIndex];
-                var target = hit.collider.GetComponentInParent<Hd2ShootTarget>();
-                if (target != null)
-                    target.RegisterHit(hit.point, hit.normal);
+                var field = hit.collider.GetComponentInParent<Hd2SpawnField>();
+                if (field != null)
+                {
+                    field.RegisterBlockedShot(hit.point, hit.normal);
+                }
+                else
+                {
+                    var target = hit.collider.GetComponentInParent<Hd2ShootTarget>();
+                    if (target != null)
+                        target.RegisterHit(hit.point, hit.normal);
+                }
+
                 Destroy(gameObject);
                 return;
             }
