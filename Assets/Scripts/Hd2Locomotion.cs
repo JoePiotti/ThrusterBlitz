@@ -18,9 +18,8 @@ using UnityEngine.XR;
 ///   at the first solid hit. Release moves the root in a straight line to that point at
 ///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, or a hit on
 ///   Hd2NoLanding does nothing.
-///   A hit on Hd2SpawnField is a pass-through, not a wall and not an illegal landing. The
-///   landing is just beyond the field along the thrust (outside when aiming out, inside when
-///   aiming in), the arc is green, and the move phases through.
+///   The local player's aim arc ignores Hd2SpawnField and continues to a landing beyond it.
+///   The shield still stops shots from outside and is meant to block enemies, not this player.
 ///   Arc color: blue on a grind rail, green on other legal landings, yellow when the landing
 ///   is illegal or there is no valid hit.
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
@@ -118,6 +117,15 @@ public class Hd2Locomotion : MonoBehaviour
 
     bool grinding;
     Hd2GrindRail grindRail;
+
+    public void HaltTravel()
+    {
+        thrusting = false;
+        grinding = false;
+        grindRail = null;
+        thrustRail = null;
+        verticalVelocity = 0f;
+    }
     float grindSign = 1f;
     float grindDistance;
 
@@ -514,32 +522,17 @@ public class Hd2Locomotion : MonoBehaviour
                     : null;
                 if (field != null)
                 {
+                    // The local player may aim through the spawn shield. Enemies do not use this arc.
                     Vector3 travel = next - pos;
                     if (travel.sqrMagnitude < 0.0000001f)
                         travel = velocity;
-                    Vector3 passLanding = field.PassThroughPoint(hit.point, travel, bodyRadius, out Collider ground);
-                    bool passInRange = (passLanding - player).sqrMagnitude <= maxSqr;
-                    bool passBlocked = IsNoLanding(ground);
+                    if (travel.sqrMagnitude < 0.0000001f)
+                        travel = field.Outward;
+                    travel.Normalize();
+                    pos = hit.point + travel * 1.25f;
                     if (arcPointCount < ArcPointCapacity)
-                        arcPoints[arcPointCount++] = hit.point;
-                    if (arcPointCount < ArcPointCapacity)
-                        arcPoints[arcPointCount++] = passLanding;
-
-                    aimLanding = passLanding;
-                    aimShowOutline = true;
-                    aimRail = null;
-                    if (!passBlocked && passInRange)
-                    {
-                        aimKind = AimKind.Legal;
-                        aimValid = true;
-                    }
-                    else
-                    {
-                        aimKind = AimKind.Illegal;
-                        aimValid = false;
-                    }
-
-                    return;
+                        arcPoints[arcPointCount++] = pos;
+                    continue;
                 }
 
                 if (arcPointCount < ArcPointCapacity)
