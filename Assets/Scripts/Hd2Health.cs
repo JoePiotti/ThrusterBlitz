@@ -42,9 +42,23 @@ public class Hd2Health : MonoBehaviour
 
         health = Mathf.Max(0f, health - amount);
         Changed?.Invoke(this);
-        if (health <= 0f && autoRespawn)
-            Respawn();
+        if (health <= 0f)
+        {
+            var killer = LastAttacker;
+            LastAttacker = null;
+            if (killer != null)
+            {
+                var meter = killer.GetComponent<Hd2ThrustMeter>();
+                if (meter != null)
+                    meter.AddCharge();
+            }
+
+            if (autoRespawn)
+                Respawn();
+        }
     }
+
+    public Transform LastAttacker { get; set; }
 
     public void Respawn()
     {
@@ -55,6 +69,10 @@ public class Hd2Health : MonoBehaviour
         var locomotion = GetComponent<Hd2Locomotion>();
         if (locomotion != null)
             locomotion.HaltTravel();
+
+        var meter = GetComponent<Hd2ThrustMeter>();
+        if (meter != null)
+            meter.ResetToBase();
 
         transform.SetPositionAndRotation(spawnPosition, spawnRotation);
     }

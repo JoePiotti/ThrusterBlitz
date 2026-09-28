@@ -114,6 +114,8 @@ public class Hd2Shot : MonoBehaviour
         if (health == null)
             return false;
 
+        if (owner != null)
+            health.LastAttacker = owner;
         health.ApplyHit(damage, IsHead(hit.collider.transform));
         return true;
     }

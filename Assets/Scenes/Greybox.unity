@@ -1900,6 +1900,53 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 93f951acabaadd94d9925fabc48e45c3, type: 3}
   m_PrefabInstance: {fileID: 812350011}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &812360001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 812360002}
+  - component: {fileID: 812360003}
+  m_Layer: 0
+  m_Name: ThrustPickup
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &812360002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 812360001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -3, y: 0, z: 4}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &812360003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 812360001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c8e2a91b6d5470f9e3c1a85d70b4f62, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Hd2ThrustPickup
+  icon: {fileID: 2800000, guid: e7a41c8b2d9f4e6a8b0c5d17f3a29460, type: 3}
+  cooldown: 5
+  upgradedMax: 5
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1914,3 +1961,4 @@ SceneRoots:
   - {fileID: 774410002}
   - {fileID: 812340002}
   - {fileID: 812350002}
+  - {fileID: 812360002}

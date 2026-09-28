@@ -37,6 +37,8 @@ public class Hd2Body : MonoBehaviour
     {
         if (GetComponent<Hd2Health>() == null)
             gameObject.AddComponent<Hd2Health>();
+        if (GetComponent<Hd2ThrustMeter>() == null)
+            gameObject.AddComponent<Hd2ThrustMeter>();
     }
 
     void LateUpdate()

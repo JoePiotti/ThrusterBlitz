@@ -148,9 +148,20 @@ public class Hd2Locomotion : MonoBehaviour
     static readonly Color railArcColor = new Color(0.2f, 0.45f, 1f, 1f);
     static readonly Color legalArcColor = new Color(0.2f, 0.92f, 0.28f, 1f);
     static readonly Color illegalArcColor = new Color(1f, 0.92f, 0.12f, 1f);
+    static readonly Color noThrustArcColor = new Color(0.42f, 0.42f, 0.42f, 1f);
 
     public bool IsGrinding => grinding;
     public bool IsThrusting => thrusting;
+
+    public bool IsSprinting
+    {
+        get
+        {
+            if (sprintAction == null || !sprintAction.IsPressed())
+                return false;
+            return ApplyDeadzone(ReadMove(), stickDeadzone).sqrMagnitude > 0.0001f;
+        }
+    }
 
     void Awake()
     {
@@ -434,16 +445,28 @@ public class Hd2Locomotion : MonoBehaviour
             }
         }
 
+        var meter = GetComponent<Hd2ThrustMeter>();
+        bool noThrust = meter != null && meter.Charges < 1;
         Color color = illegalArcColor;
-        if (aimKind == AimKind.Rail)
+        if (noThrust)
+            color = noThrustArcColor;
+        else if (aimKind == AimKind.Rail)
             color = railArcColor;
         else if (aimKind == AimKind.Legal)
             color = legalArcColor;
         ApplyPreviewColor(color);
         if (aimShowOutline)
+        {
             ShowOutline(aimLanding);
+            if (meter != null)
+                meter.ShowUnderTarget(aimLanding, head);
+        }
         else
+        {
             HideOutline();
+            if (meter != null)
+                meter.Hide();
+        }
     }
 
     bool TryGetAim(out Vector3 origin, out Vector3 direction, out Vector3 bend)
@@ -750,6 +773,10 @@ public class Hd2Locomotion : MonoBehaviour
 
     void BeginThrust()
     {
+        var meter = GetComponent<Hd2ThrustMeter>();
+        if (meter != null && !meter.TrySpend())
+            return;
+
         grinding = false;
         grindRail = null;
         thrusting = true;
@@ -1078,8 +1105,8 @@ public class Hd2Locomotion : MonoBehaviour
 
         float radius = Mathf.Max(0.05f, bodyRadius);
         float height = Mathf.Max(bodyHeight, radius * 2f + 0.01f);
-        float bottom = radius;
-        float top = height - radius;
+        float bottom = 0.04f;
+        float top = bottom + (height - radius * 2f);
         FillRing(outlineLines[0], feet + Vector3.up * bottom, radius);
         FillRing(outlineLines[1], feet + Vector3.up * top, radius);
         for (int i = 0; i < 4; i++)
@@ -1124,5 +1151,8 @@ public class Hd2Locomotion : MonoBehaviour
         if (arcLine != null)
             arcLine.enabled = false;
         HideOutline();
+        var meter = GetComponent<Hd2ThrustMeter>();
+        if (meter != null)
+            meter.Hide();
     }
 }
