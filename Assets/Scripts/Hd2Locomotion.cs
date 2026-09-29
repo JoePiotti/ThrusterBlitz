@@ -307,6 +307,9 @@ public class Hd2Locomotion : MonoBehaviour
                 return;
         }
 
+        if (thrusting)
+            return;
+
         Vector3 horizontal = PlanarStick() * CurrentSpeed() * dt;
         MoveHorizontal(horizontal);
         ApplyGravity(dt);
@@ -538,7 +541,7 @@ public class Hd2Locomotion : MonoBehaviour
             Vector3 next = pos + velocity * step;
             velocity += bend * gravityScale * step;
 
-            if (Physics.Linecast(pos, next, out RaycastHit hit, ~0, QueryTriggerInteraction.Ignore))
+            if (TryArcHit(pos, next, out RaycastHit hit))
             {
                 Hd2SpawnField field = hit.collider != null
                     ? hit.collider.GetComponentInParent<Hd2SpawnField>()
@@ -619,11 +622,92 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
 
+    bool TryArcHit(Vector3 from, Vector3 to, out RaycastHit hit)
+    {
+        hit = default;
+        Vector3 delta = to - from;
+        float distance = delta.magnitude;
+        if (distance < 0.0001f)
+            return false;
+
+        // A ray along a nearly flat arc misses the big floor or returns a point
+        // far off the step. A small sphere stays on the step and still hits.
+        const float radius = 0.05f;
+        Vector3 direction = delta / distance;
+        if (!Physics.SphereCast(from, radius, direction, out hit, distance, ~0, QueryTriggerInteraction.Ignore))
+            return false;
+        if (hit.distance <= 0.0001f)
+            return false;
+        if (hit.collider != null && hit.collider.GetComponentInParent<Hd2SpawnField>() != null)
+            return true;
+
+        Vector3 center = from + direction * hit.distance;
+        float slack = radius + 0.08f;
+        return (hit.point - center).sqrMagnitude <= slack * slack;
+    }
+
+    bool TryFindSurfaceAtOrBelow(Vector3 from, out RaycastHit hit)
+    {
+        if (TryRayDown(from + Vector3.up * 0.05f, from.y + 0.08f, out hit))
+            return true;
+
+        // The arc step can end inside the floor after a shallow miss. Search back
+        // up the arc until a downward ray starts above the surface.
+        for (int i = arcPointCount - 1; i >= 0; i--)
+        {
+            Vector3 sample = arcPoints[i];
+            if (sample.y <= from.y + 0.01f)
+                continue;
+            if (TryRayDown(sample + Vector3.up * 0.05f, sample.y + 0.08f, out hit))
+                return true;
+        }
+
+        return false;
+    }
+
+    bool TryRayDown(Vector3 origin, float maxPointY, out RaycastHit hit)
+    {
+        hit = default;
+        float remaining = 40f;
+        for (int attempt = 0; attempt < 8 && remaining > 0.01f; attempt++)
+        {
+            int count = Physics.RaycastNonAlloc(origin, Vector3.down, bodyHits, remaining, ~0, QueryTriggerInteraction.Ignore);
+            float best = float.MaxValue;
+            int bestIndex = -1;
+            for (int i = 0; i < count; i++)
+            {
+                if (bodyHits[i].collider != null && bodyHits[i].collider.GetComponentInParent<Hd2SpawnField>() != null)
+                    continue;
+                if (bodyHits[i].distance >= best)
+                    continue;
+                best = bodyHits[i].distance;
+                bestIndex = i;
+            }
+
+            if (bestIndex < 0)
+                return false;
+
+            RaycastHit nearest = bodyHits[bestIndex];
+            if (nearest.point.y <= maxPointY)
+            {
+                hit = nearest;
+                return true;
+            }
+
+            float advance = nearest.distance + 0.05f;
+            origin += Vector3.down * advance;
+            remaining -= advance;
+        }
+
+        return false;
+    }
+
     void DropToSurfaceBelow(Vector3 from, Vector3 player, float maxSqr)
     {
-        Vector3 origin = from + Vector3.up * 0.05f;
-        int count = Physics.RaycastNonAlloc(origin, Vector3.down, bodyHits, 40f, ~0, QueryTriggerInteraction.Ignore);
-        if (!NearestBodyHit(count, out RaycastHit hit))
+        // Cast from the arc end itself. Starting meters above it makes the closest
+        // hit the block the player is standing on, and that hit gets thrown away,
+        // so any drop shorter than that offset never finds the floor.
+        if (!TryFindSurfaceAtOrBelow(from, out RaycastHit hit))
         {
             aimKind = AimKind.Illegal;
             aimValid = false;
@@ -632,7 +716,10 @@ public class Hd2Locomotion : MonoBehaviour
             return;
         }
 
-        if (hit.distance > 0.12f && arcPointCount < ArcPointCapacity)
+        while (arcPointCount > 1 && arcPoints[arcPointCount - 1].y < hit.point.y - 0.02f)
+            arcPointCount--;
+        if (arcPointCount > 0 && arcPointCount < ArcPointCapacity
+            && arcPoints[arcPointCount - 1].y - hit.point.y > 0.015f)
             arcPoints[arcPointCount++] = hit.point;
 
         Hd2SpawnField field = hit.collider != null ? hit.collider.GetComponentInParent<Hd2SpawnField>() : null;
@@ -948,6 +1035,9 @@ public class Hd2Locomotion : MonoBehaviour
 
     void MoveHorizontal(Vector3 delta)
     {
+        if (thrusting)
+            return;
+
         delta.y = 0f;
         for (int slide = 0; slide < 2; slide++)
         {
