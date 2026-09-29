@@ -1,0 +1,8 @@
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/CMakeFiles/rebuild_cache.dir
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/GameActivity/CMakeFiles/game.dir
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/GameActivity/CMakeFiles/edit_cache.dir
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/GameActivity/CMakeFiles/rebuild_cache.dir
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
+C:/Users/joepi/Repos/HD2/.utmp/RelWithDebInfo/6pp2b501/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir

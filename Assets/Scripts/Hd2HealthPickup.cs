@@ -1,27 +1,22 @@
 using UnityEngine;
 
 /// <summary>
-/// Ground pad with a glowing jetpack sphere. Touching it fills thrust and, if the
-/// meter max is still 3, raises it to 5 until the player respawns.
-/// A full meter does not start the cooldown. After a successful pickup the sphere
-/// hides for 5 seconds while a ring fills, then the sphere returns.
+/// Green repair pad. Touching it fills health to 60. Full health does not start the cooldown.
+/// After a heal, the sphere hides for 5 seconds while a ring fills, then it returns.
 /// </summary>
 [ExecuteAlways]
-public class Hd2ThrustPickup : MonoBehaviour
+public class Hd2HealthPickup : MonoBehaviour
 {
     public Texture2D icon;
     public float cooldown = 5f;
-    public int upgradedMax = 5;
 
-    static readonly Color pickupColor = new Color(0.25f, 0.7f, 1f, 1f);
+    static readonly Color pickupColor = new Color(0.25f, 0.85f, 0.4f, 1f);
 
     Transform sphere;
     Transform iconQuad;
     LineRenderer ring;
     bool ready = true;
     float cooldownLeft;
-    Material sphereMaterial;
-    Material iconMaterial;
 
     void OnEnable()
     {
@@ -58,16 +53,14 @@ public class Hd2ThrustPickup : MonoBehaviour
         float horizontal = Vector2.Distance(new Vector2(feet.x, feet.z), new Vector2(pad.x, pad.z));
         bool tallEnough = feet.y < pad.y + 0.5f && feet.y + 2f > pad.y - 0.4f;
         if (horizontal < 0.65f && tallEnough)
-            TryCollect(player.GetComponent<Hd2ThrustMeter>());
+            TryCollect(player.GetComponent<Hd2Health>());
     }
 
-    void TryCollect(Hd2ThrustMeter meter)
+    void TryCollect(Hd2Health health)
     {
-        if (meter == null || meter.Charges >= upgradedMax)
+        if (health == null || !health.HealToFull())
             return;
 
-        int maximum = meter.MaxCharges < upgradedMax ? upgradedMax : meter.MaxCharges;
-        meter.SetMaxCharges(maximum, true);
         ready = false;
         cooldownLeft = cooldown;
         if (sphere != null)
@@ -91,7 +84,10 @@ public class Hd2ThrustPickup : MonoBehaviour
         if (transform.Find("Pad") != null)
         {
             var existingPad = transform.Find("Pad");
-            ColorPad(existingPad.GetComponent<Renderer>());
+            var padRenderer = existingPad.GetComponent<Renderer>();
+            if (padRenderer != null)
+                ColorExisting(padRenderer, pickupColor);
+
             sphere = transform.Find("Sphere");
             iconQuad = transform.Find("Sphere/Icon");
             ring = transform.Find("Ring") != null ? transform.Find("Ring").GetComponent<LineRenderer>() : null;
@@ -103,7 +99,7 @@ public class Hd2ThrustPickup : MonoBehaviour
         pad.transform.SetParent(transform, false);
         pad.transform.localPosition = new Vector3(0f, 0.03f, 0f);
         pad.transform.localScale = new Vector3(0.7f, 0.03f, 0.7f);
-        DestroyCollider(pad);
+        RemoveCollider(pad);
         Paint(pad, pickupColor, false);
 
         var ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -111,8 +107,8 @@ public class Hd2ThrustPickup : MonoBehaviour
         ball.transform.SetParent(transform, false);
         ball.transform.localPosition = new Vector3(0f, 1.05f, 0f);
         ball.transform.localScale = Vector3.one * 0.42f;
-        DestroyCollider(ball);
-        sphereMaterial = Paint(ball, new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
+        RemoveCollider(ball);
+        Paint(ball, new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
         sphere = ball.transform;
 
         var iconObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -120,10 +116,11 @@ public class Hd2ThrustPickup : MonoBehaviour
         iconObject.transform.SetParent(sphere, false);
         iconObject.transform.localPosition = Vector3.zero;
         iconObject.transform.localScale = Vector3.one * 0.62f;
-        DestroyCollider(iconObject);
-        iconMaterial = new Material(Shader.Find("HD2/JetpackIcon"));
+        RemoveCollider(iconObject);
+        var iconMaterial = new Material(Shader.Find("HD2/RepairIcon"));
         if (icon != null)
             iconMaterial.mainTexture = icon;
+        iconMaterial.color = pickupColor;
         iconObject.GetComponent<Renderer>().sharedMaterial = iconMaterial;
         iconQuad = iconObject.transform;
 
@@ -136,7 +133,7 @@ public class Hd2ThrustPickup : MonoBehaviour
         ring.widthMultiplier = 0.025f;
         ring.positionCount = 0;
         ring.material = new Material(Shader.Find("Sprites/Default"));
-        ring.startColor = ring.endColor = new Color(0.3f, 0.85f, 1f, 1f);
+        ring.startColor = ring.endColor = pickupColor;
         ring.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         ring.enabled = false;
     }
@@ -158,35 +155,34 @@ public class Hd2ThrustPickup : MonoBehaviour
         }
     }
 
-    static void ColorPad(Renderer renderer)
+    static void ColorExisting(Renderer renderer, Color color)
     {
         if (renderer == null)
             return;
 
         var shared = renderer.sharedMaterial;
-        if (shared != null && shared.HasProperty("_BaseColor") && shared.GetColor("_BaseColor") == pickupColor)
+        if (shared != null && shared.HasProperty("_BaseColor") && shared.GetColor("_BaseColor") == color)
             return;
 
         var material = shared != null ? new Material(shared) : new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        material.color = pickupColor;
+        material.color = color;
         if (material.HasProperty("_BaseColor"))
-            material.SetColor("_BaseColor", pickupColor);
+            material.SetColor("_BaseColor", color);
         renderer.sharedMaterial = material;
     }
 
-    static void DestroyCollider(GameObject target)
+    static void RemoveCollider(GameObject target)
     {
         var collider = target.GetComponent<Collider>();
-        if (collider != null)
-        {
-            if (Application.isPlaying)
-                Destroy(collider);
-            else
-                DestroyImmediate(collider);
-        }
+        if (collider == null)
+            return;
+        if (Application.isPlaying)
+            Destroy(collider);
+        else
+            DestroyImmediate(collider);
     }
 
-    static Material Paint(GameObject target, Color color, bool transparent)
+    static void Paint(GameObject target, Color color, bool transparent)
     {
         var shader = Shader.Find(transparent ? "Universal Render Pipeline/Unlit" : "Universal Render Pipeline/Lit");
         var material = new Material(shader);
@@ -202,6 +198,5 @@ public class Hd2ThrustPickup : MonoBehaviour
         }
 
         target.GetComponent<Renderer>().sharedMaterial = material;
-        return material;
     }
 }

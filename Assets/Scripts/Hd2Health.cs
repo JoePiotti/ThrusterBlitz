@@ -32,6 +32,23 @@ public class Hd2Health : MonoBehaviour
         hasSpawn = true;
     }
 
+    public void Configure(float maximum, bool fill)
+    {
+        maxHealth = Mathf.Max(1f, maximum);
+        if (fill || health > maxHealth)
+            health = maxHealth;
+    }
+
+    public bool HealToFull()
+    {
+        if (health >= maxHealth)
+            return false;
+
+        health = maxHealth;
+        Changed?.Invoke(this);
+        return true;
+    }
+
     public void ApplyHit(float amount, bool headshot)
     {
         if (amount <= 0f || health <= 0f)
