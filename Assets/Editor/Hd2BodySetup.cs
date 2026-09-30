@@ -16,9 +16,9 @@ public class Hd2BodyImporter : AssetPostprocessor
 [InitializeOnLoad]
 public static class Hd2BodySetup
 {
-    public const string RobotPath = "Assets/Models/Robot/Robot.fbx";
+    public const string RobotPath = "Assets/Models/StandIn/StandInRobot.fbx";
     const string PlayerPath = "Assets/Prefabs/VRPlayer.prefab";
-    const string SessionKey = "HD2_BODY_RIG_V2";
+    const string SessionKey = "HD2_BODY_RIG_V3";
 
     static Hd2BodySetup()
     {
@@ -41,7 +41,7 @@ public static class Hd2BodySetup
         try
         {
             var existing = root.transform.Find("Body");
-            if (existing != null && FindChild(existing, "UpperArm_L") == null)
+            if (existing != null && FindChild(existing, "Arm.L") == null)
             {
                 Object.DestroyImmediate(existing.gameObject);
                 existing = null;
@@ -52,13 +52,10 @@ public static class Hd2BodySetup
                 var instance = (GameObject)PrefabUtility.InstantiatePrefab(robot, root.transform);
                 instance.name = "Body";
                 instance.transform.localPosition = Vector3.zero;
-                instance.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+                instance.transform.localRotation = Quaternion.identity;
                 instance.transform.localScale = Vector3.one;
+                AssignStandInMaterials(instance);
                 existing = instance.transform;
-            }
-            else
-            {
-                existing.localRotation = Quaternion.Euler(-90f, 0f, 0f);
             }
 
             var body = root.GetComponent<Hd2Body>();
@@ -74,18 +71,20 @@ public static class Hd2BodySetup
             }
 
             body.body = existing;
-            body.upperArmL = FindChild(existing, "UpperArm_L");
-            body.forearmL = FindChild(existing, "Forearm_L");
-            body.handL = FindChild(existing, "Hand_L");
-            body.upperArmR = FindChild(existing, "UpperArm_R");
-            body.forearmR = FindChild(existing, "Forearm_R");
-            body.handR = FindChild(existing, "Hand_R");
+            body.bodyRestEuler = Vector3.zero;
+            body.scaleWholeBody = true;
+            body.upperArmL = FindChild(existing, "Arm.L");
+            body.forearmL = FindChild(existing, "Arm.L.002");
+            body.handL = FindChild(existing, "Hand.L");
+            body.upperArmR = FindChild(existing, "Arm.R");
+            body.forearmR = FindChild(existing, "Arm.R.002");
+            body.handR = FindChild(existing, "Hand.R");
 
             SetActive(root.transform, "LeftHandVisual", false);
             SetActive(root.transform, "RightHandVisual", false);
 
             PrefabUtility.SaveAsPrefabAsset(root, PlayerPath);
-            Debug.Log("HD2 robot body attached to VRPlayer.");
+            Debug.Log("HD2 stand-in robot attached to VRPlayer.");
         }
         finally
         {
@@ -107,6 +106,63 @@ public static class Hd2BodySetup
         }
 
         return null;
+    }
+
+    static void AssignStandInMaterials(GameObject instance)
+    {
+        var renderers = instance.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            string name = renderers[i].name;
+            string colorPath = null;
+            string emissionPath = null;
+            if (name.Contains("Top"))
+                colorPath = "Assets/Models/StandIn/Textures/Primary_Top.009_Colored_t.png";
+            else if (name.Contains("Bottom"))
+                colorPath = "Assets/Models/StandIn/Textures/Primary_Bottom.009_Colored_t.png";
+            else if (name.Contains("Secondary"))
+            {
+                colorPath = "Assets/Models/StandIn/Textures/Secondary_t.png";
+                emissionPath = "Assets/Models/StandIn/Textures/Secondary_e.png";
+            }
+
+            if (colorPath == null)
+                continue;
+
+            renderers[i].sharedMaterial = StandInMaterial(renderers[i].name, colorPath, emissionPath);
+        }
+    }
+
+    static Material StandInMaterial(string assetName, string colorPath, string emissionPath)
+    {
+        const string folder = "Assets/Models/StandIn/Materials";
+        if (!AssetDatabase.IsValidFolder(folder))
+            AssetDatabase.CreateFolder("Assets/Models/StandIn", "Materials");
+
+        string path = folder + "/" + assetName + ".mat";
+        var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (material == null && shader != null)
+        {
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, path);
+        }
+
+        if (material == null)
+            return null;
+
+        var color = AssetDatabase.LoadAssetAtPath<Texture2D>(colorPath);
+        if (color != null)
+            material.SetTexture("_BaseMap", color);
+        var emission = emissionPath != null ? AssetDatabase.LoadAssetAtPath<Texture2D>(emissionPath) : null;
+        if (emission != null)
+        {
+            material.SetTexture("_EmissionMap", emission);
+            material.SetColor("_EmissionColor", Color.white);
+            material.EnableKeyword("_EMISSION");
+        }
+
+        return material;
     }
 
     static void SetActive(Transform root, string name, bool active)

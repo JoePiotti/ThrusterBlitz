@@ -19,6 +19,10 @@ public class Hd2Body : MonoBehaviour
     public Transform handR;
     [Tooltip("Meters to shift the body behind the headset so the chest does not block looking down.")]
     public float bodyBackOffset = 0.2f;
+    [Tooltip("Extra rotation applied before the body yaws with the headset. The blockout robot needs -90 on X.")]
+    public Vector3 bodyRestEuler = new Vector3(-90f, 0f, 0f);
+    [Tooltip("Scale the whole skinned body so the head stays with the headset. Blockout legs scale on their own.")]
+    public bool scaleWholeBody;
 
     Transform hips;
     Transform neck;
@@ -26,6 +30,8 @@ public class Hd2Body : MonoBehaviour
     Transform thighR;
     Transform footL;
     Transform footR;
+    Transform[] chainL;
+    Transform[] chainR;
     Vector3 restHipsLocal;
     float restNeckAboveHip;
     float restFootOffset;
@@ -39,6 +45,12 @@ public class Hd2Body : MonoBehaviour
             gameObject.AddComponent<Hd2Health>();
         if (GetComponent<Hd2ThrustMeter>() == null)
             gameObject.AddComponent<Hd2ThrustMeter>();
+        if (body != null)
+        {
+            var animators = body.GetComponentsInChildren<Animator>(true);
+            for (int i = 0; i < animators.Length; i++)
+                animators[i].enabled = false;
+        }
     }
 
     void LateUpdate()
@@ -56,12 +68,117 @@ public class Hd2Body : MonoBehaviour
         if (look.sqrMagnitude > 0.0001f && rootForward.sqrMagnitude > 0.0001f)
         {
             float yaw = Vector3.SignedAngle(rootForward, look, Vector3.up);
-            body.localRotation = Quaternion.Euler(0f, yaw, 0f) * Quaternion.Euler(-90f, 0f, 0f);
+            body.localRotation = Quaternion.Euler(0f, yaw, 0f) * Quaternion.Euler(bodyRestEuler);
         }
 
-        FitLegsToHead();
-        SolveArm(upperArmL, forearmL, handL, leftHand, -1f);
-        SolveArm(upperArmR, forearmR, handR, rightHand, 1f);
+        EnsureBones();
+        var skins = body.GetComponentsInChildren<SkinnedMeshRenderer>();
+        for (int i = 0; i < skins.Length; i++)
+            skins[i].updateWhenOffscreen = true;
+        if (scaleWholeBody)
+            FitWholeBodyToHead();
+        else
+            FitLegsToHead();
+        SolveArmChain(chainL, upperArmL, forearmL, handL, leftHand, -1f);
+        SolveArmChain(chainR, upperArmR, forearmR, handR, rightHand, 1f);
+    }
+
+    void EnsureBones()
+    {
+        if (body == null)
+            return;
+
+        if (upperArmL == null)
+            upperArmL = Find(body, "Arm.L");
+        if (upperArmL == null)
+            upperArmL = Find(body, "UpperArm_L");
+        if (forearmL == null)
+            forearmL = Find(body, "Arm.L.002");
+        if (forearmL == null)
+            forearmL = Find(body, "Forearm_L");
+        if (handL == null)
+            handL = Find(body, "Hand.L");
+        if (upperArmR == null)
+            upperArmR = Find(body, "Arm.R");
+        if (upperArmR == null)
+            upperArmR = Find(body, "UpperArm_R");
+        if (forearmR == null)
+            forearmR = Find(body, "Arm.R.002");
+        if (forearmR == null)
+            forearmR = Find(body, "Forearm_R");
+        if (handR == null)
+            handR = Find(body, "Hand.R");
+        if (Find(body, "Arm.L") != null)
+            scaleWholeBody = true;
+        if (chainL == null)
+            chainL = BuildChain(upperArmL, handL);
+        if (chainR == null)
+            chainR = BuildChain(upperArmR, handR);
+    }
+
+    static Transform[] BuildChain(Transform upper, Transform hand)
+    {
+        if (upper == null || hand == null)
+            return null;
+
+        var links = new System.Collections.Generic.List<Transform>();
+        Transform bone = hand;
+        while (bone != null)
+        {
+            links.Add(bone);
+            if (bone == upper)
+                break;
+            bone = bone.parent;
+        }
+
+        if (links.Count < 2 || links[links.Count - 1] != upper)
+            return null;
+
+        links.Reverse();
+        return links.ToArray();
+    }
+
+    void SolveArmChain(Transform[] chain, Transform upper, Transform forearm, Transform hand, Transform target, float side)
+    {
+        if (chain == null || chain.Length < 2)
+        {
+            SolveArm(upper, forearm, hand, target, side);
+            return;
+        }
+
+        if (target == null || hand == null)
+            return;
+
+        Vector3 wrist = target.position - target.forward * 0.08f;
+        for (int iteration = 0; iteration < 8; iteration++)
+        {
+            for (int i = chain.Length - 2; i >= 0; i--)
+                PointAt(chain[i], hand, wrist);
+        }
+
+        PlaceHandOnGun(hand, target);
+    }
+
+    void FitWholeBodyToHead()
+    {
+        if (neck == null)
+            neck = Find(body, "Head");
+        if (neck == null || head == null)
+            return;
+
+        body.localScale = Vector3.one;
+        float current = neck.position.y - body.position.y;
+        float target = head.position.y - body.position.y;
+        float scale = current > 0.05f ? Mathf.Clamp(target / current, 0.35f, 1.75f) : 1f;
+        body.localScale = Vector3.one * scale;
+
+        Vector3 look = Vector3.ProjectOnPlane(head.forward, Vector3.up);
+        Vector3 desired = head.position;
+        if (look.sqrMagnitude > 0.0001f)
+            desired -= look.normalized * bodyBackOffset;
+        Vector3 shift = desired - neck.position;
+        shift.y = 0f;
+        body.position += shift;
     }
 
     void FitLegsToHead()
@@ -215,8 +332,26 @@ public class Hd2Body : MonoBehaviour
             elbow = shoulder + direction * (upperLength * cosShoulder) - poleDirection * (upperLength * sinShoulder);
 
         PointAt(upper, forearm, elbow);
-        PointAt(forearm, hand, target.position);
-        hand.rotation = target.rotation;
+        PointAt(forearm, hand, target.position - target.forward * 0.08f);
+        PlaceHandOnGun(hand, target);
+    }
+
+    static void PlaceHandOnGun(Transform hand, Transform target)
+    {
+        // The pistol mesh is yawed 180 on the controller, so the barrel is controller
+        // forward. The robot hand bone points the other way unless it is flipped.
+        hand.rotation = target.rotation * Quaternion.Euler(0f, 180f, 0f);
+        Vector3 grip = target.position;
+        for (int i = 0; i < hand.childCount; i++)
+        {
+            Transform finger = hand.GetChild(i);
+            if (finger.childCount == 0)
+                continue;
+            PointAt(finger, finger.GetChild(0), grip);
+            Transform mid = finger.GetChild(0);
+            if (mid.childCount > 0)
+                PointAt(mid, mid.GetChild(0), grip);
+        }
     }
 
     static void PointAt(Transform bone, Transform child, Vector3 worldPoint)

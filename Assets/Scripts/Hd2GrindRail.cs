@@ -26,6 +26,8 @@ public class Hd2GrindRail : MonoBehaviour
 
     [Tooltip("A landing this close to either open end rides toward the other end.")]
     public float endEntry = 1.5f;
+    [Tooltip("Beam color. The thrust pointer uses this when the landing is on the rail.")]
+    public Color color = Color.yellow;
 
     public float length { get; private set; }
 
@@ -38,13 +40,17 @@ public class Hd2GrindRail : MonoBehaviour
     Mesh beamMesh;
     MeshFilter beamFilter;
     MeshCollider beamCollider;
+    MeshRenderer beamRenderer;
+    Material tintedMaterial;
     int shapeHash;
 
     void OnEnable()
     {
         beamFilter = GetComponent<MeshFilter>();
         beamCollider = GetComponent<MeshCollider>();
+        beamRenderer = GetComponent<MeshRenderer>();
         Rebuild();
+        ApplyColor();
     }
 
     void OnDestroy()
@@ -53,6 +59,13 @@ public class Hd2GrindRail : MonoBehaviour
         UnityEditor.EditorApplication.delayCall -= RebuildIfAlive;
 #endif
         DestroyMesh();
+        if (tintedMaterial == null)
+            return;
+        if (Application.isPlaying)
+            Destroy(tintedMaterial);
+        else
+            DestroyImmediate(tintedMaterial);
+        tintedMaterial = null;
     }
 
     void Update()
@@ -66,6 +79,7 @@ public class Hd2GrindRail : MonoBehaviour
     {
         UnityEditor.EditorApplication.delayCall -= RebuildIfAlive;
         UnityEditor.EditorApplication.delayCall += RebuildIfAlive;
+        ApplyColor();
     }
 
     void RebuildIfAlive()
@@ -200,6 +214,28 @@ public class Hd2GrindRail : MonoBehaviour
         DestroyMesh();
         beamMesh = mesh;
         shapeHash = hash;
+        ApplyColor();
+    }
+
+    void ApplyColor()
+    {
+        if (beamRenderer == null)
+            beamRenderer = GetComponent<MeshRenderer>();
+        if (beamRenderer == null)
+            return;
+
+        if (tintedMaterial == null)
+        {
+            Material source = beamRenderer.sharedMaterial;
+            tintedMaterial = source != null ? new Material(source) : new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            tintedMaterial.hideFlags = HideFlags.DontSave;
+            beamRenderer.sharedMaterial = tintedMaterial;
+        }
+
+        if (tintedMaterial.HasProperty("_BaseColor"))
+            tintedMaterial.SetColor("_BaseColor", color);
+        if (tintedMaterial.HasProperty("_Color"))
+            tintedMaterial.SetColor("_Color", color);
     }
 
     int HashShape()

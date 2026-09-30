@@ -20,8 +20,10 @@ using UnityEngine.XR;
 ///   Hd2NoLanding does nothing.
 ///   The local player's aim arc ignores Hd2SpawnField and continues to a landing beyond it.
 ///   The shield still stops shots from outside and is meant to block enemies, not this player.
-///   Arc color: blue on a grind rail, green on other legal landings, yellow when the landing
-///   is illegal or there is no valid hit.
+///   Arc color: the rail's own color on a grind rail, green on other legal landings, red when the landing
+///   is illegal or there is no valid hit. The arc stops at thrustMaxDistance instead of turning red
+///   for being too far. With less than one thrust charge the lines keep that color,
+///   and the robot preview is hidden.
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
 ///   or until the next thrust starts. Grip is not grind.
 ///
@@ -30,6 +32,7 @@ using UnityEngine.XR;
 /// hold Space or left mouse to aim an arc along the view, release to thrust.
 /// Mouse look turns the player root so the view can aim. It does not run while a headset is active.
 /// </summary>
+[DefaultExecutionOrder(100)]
 public class Hd2Locomotion : MonoBehaviour
 {
     enum AimSource
@@ -67,7 +70,7 @@ public class Hd2Locomotion : MonoBehaviour
 
     [Header("Thrust")]
     [Tooltip("Straight-line travel speed in meters per second. Time is distance divided by this speed.")]
-    public float thrustSpeed = 20f;
+    public float thrustSpeed = 30f;
     public float thrustMaxDistance = 10f;
     [Tooltip("Initial speed of the aim arc, meters per second.")]
     public float arcSpeed = 16f;
@@ -88,7 +91,6 @@ public class Hd2Locomotion : MonoBehaviour
     public float groundProbe = 0.3f;
 
     const int ArcPointCapacity = 64;
-    const int RingSegments = 20;
     const float SnapEngage = 0.6f;
     const float SnapRearm = 0.3f;
 
@@ -142,13 +144,22 @@ public class Hd2Locomotion : MonoBehaviour
     static readonly RaycastHit[] bodyHits = new RaycastHit[24];
 
     LineRenderer arcLine;
-    LineRenderer[] outlineLines;
+    LineRenderer[] wireLines;
+    MeshFilter[] wireParts;
+    readonly Vector3[] wireCorners = new Vector3[8];
+    GameObject thrustGhost;
+    Material wireMaterial;
     Material previewMaterial;
 
-    static readonly Color railArcColor = new Color(0.2f, 0.45f, 1f, 1f);
+    static readonly int[] boxEdges =
+    {
+        0, 1, 1, 2, 2, 3, 3, 0,
+        4, 5, 5, 6, 6, 7, 7, 4,
+        0, 4, 1, 5, 2, 6, 3, 7
+    };
+
     static readonly Color legalArcColor = new Color(0.2f, 0.92f, 0.28f, 1f);
-    static readonly Color illegalArcColor = new Color(1f, 0.92f, 0.12f, 1f);
-    static readonly Color noThrustArcColor = new Color(0.42f, 0.42f, 0.42f, 1f);
+    static readonly Color illegalArcColor = new Color(0.95f, 0.12f, 0.1f, 1f);
 
     public bool IsGrinding => grinding;
     public bool IsThrusting => thrusting;
@@ -436,6 +447,7 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         SimulateArc(origin, direction, bend);
+        TrimArcToRange(transform.position, Mathf.Max(0.5f, thrustMaxDistance));
         bool showLine = arcPointCount >= 2;
         if (arcLine != null)
         {
@@ -451,25 +463,23 @@ public class Hd2Locomotion : MonoBehaviour
         var meter = GetComponent<Hd2ThrustMeter>();
         bool noThrust = meter != null && meter.Charges < 1;
         Color color = illegalArcColor;
-        if (noThrust)
-            color = noThrustArcColor;
-        else if (aimKind == AimKind.Rail)
-            color = railArcColor;
+        if (aimKind == AimKind.Rail && aimRail != null)
+            color = aimRail.color;
         else if (aimKind == AimKind.Legal)
             color = legalArcColor;
+        if (aimShowOutline && !noThrust)
+            ShowAvatarWire(aimLanding);
+        else
+            HideAvatarWire();
+
         ApplyPreviewColor(color);
         if (aimShowOutline)
         {
-            ShowOutline(aimLanding);
             if (meter != null)
                 meter.ShowUnderTarget(aimLanding, head);
         }
-        else
-        {
-            HideOutline();
-            if (meter != null)
-                meter.Hide();
-        }
+        else if (meter != null)
+            meter.Hide();
     }
 
     bool TryGetAim(out Vector3 origin, out Vector3 direction, out Vector3 bend)
@@ -561,11 +571,20 @@ public class Hd2Locomotion : MonoBehaviour
                     continue;
                 }
 
+                if ((hit.point - player).sqrMagnitude > maxSqr)
+                {
+                    Vector3 clipped = ClipToRange(pos, hit.point, player, maxSqr);
+                    if (arcPointCount < ArcPointCapacity)
+                        arcPoints[arcPointCount++] = clipped;
+                    DropToSurfaceBelow(clipped, player, maxSqr);
+                    return;
+                }
+
                 if (arcPointCount < ArcPointCapacity)
                     arcPoints[arcPointCount++] = hit.point;
 
                 Hd2GrindRail rail = hit.collider != null ? hit.collider.GetComponentInParent<Hd2GrindRail>() : null;
-                if (rail == null)
+                if (rail == null && !(grinding && hit.normal.y > 0.55f))
                     rail = RailAtPoint(hit.point);
                 if (rail != null || hit.normal.y > 0.55f)
                 {
@@ -597,18 +616,21 @@ public class Hd2Locomotion : MonoBehaviour
     void AcceptSurfaceHit(RaycastHit hit, Vector3 player, float maxSqr)
     {
         Vector3 landing = LandingFromHit(hit, out Hd2GrindRail rail, out float railSign);
-        bool inRange = (landing - player).sqrMagnitude <= maxSqr;
+        float maxDistance = Mathf.Sqrt(maxSqr);
+        if ((landing - player).sqrMagnitude > maxSqr)
+            landing = ClampToRange(player, landing, maxDistance);
+
         bool blocked = IsNoLanding(hit.collider);
         aimLanding = landing;
         aimShowOutline = true;
-        if (rail != null && inRange)
+        if (rail != null && !blocked)
         {
             aimKind = AimKind.Rail;
             aimValid = true;
             aimRail = rail;
             aimGrindSign = railSign;
         }
-        else if (!blocked && inRange)
+        else if (!blocked)
         {
             aimKind = AimKind.Legal;
             aimValid = true;
@@ -624,6 +646,25 @@ public class Hd2Locomotion : MonoBehaviour
 
     bool TryArcHit(Vector3 from, Vector3 to, out RaycastHit hit)
     {
+        if (!CastArcSegment(from, to, out hit))
+            return false;
+        if (!PassThroughCurrentRail(hit))
+            return true;
+
+        Collider railCollider = grindRail != null ? grindRail.GetComponent<Collider>() : null;
+        if (railCollider == null || !railCollider.enabled)
+            return false;
+
+        // The beam under the player was the first hit, and stepping along it
+        // skipped the floor. Cast the same step again with that beam hidden.
+        railCollider.enabled = false;
+        bool found = CastArcSegment(from, to, out hit);
+        railCollider.enabled = true;
+        return found;
+    }
+
+    bool CastArcSegment(Vector3 from, Vector3 to, out RaycastHit hit)
+    {
         hit = default;
         Vector3 delta = to - from;
         float distance = delta.magnitude;
@@ -634,22 +675,63 @@ public class Hd2Locomotion : MonoBehaviour
         // far off the step. A small sphere stays on the step and still hits.
         const float radius = 0.05f;
         Vector3 direction = delta / distance;
-        if (!Physics.SphereCast(from, radius, direction, out hit, distance, ~0, QueryTriggerInteraction.Ignore))
-            return false;
-        if (hit.distance <= 0.0001f)
-            return false;
-        if (hit.collider != null && hit.collider.GetComponentInParent<Hd2SpawnField>() != null)
-            return true;
+        float traveled = 0f;
+        while (traveled < distance - 0.001f)
+        {
+            Vector3 origin = from + direction * traveled;
+            float remain = distance - traveled;
+            if (!Physics.SphereCast(origin, radius, direction, out hit, remain, ~0, QueryTriggerInteraction.Ignore))
+                return false;
+            if (hit.distance <= 0.0001f)
+            {
+                traveled += 0.05f;
+                continue;
+            }
 
-        Vector3 center = from + direction * hit.distance;
-        float slack = radius + 0.08f;
-        return (hit.point - center).sqrMagnitude <= slack * slack;
+            if (hit.collider != null && hit.collider.GetComponentInParent<Hd2SpawnField>() != null)
+                return true;
+
+            Vector3 center = origin + direction * hit.distance;
+            float slack = radius + 0.08f;
+            if ((hit.point - center).sqrMagnitude <= slack * slack)
+                return true;
+
+            traveled += Mathf.Max(0.02f, hit.distance + 0.05f);
+        }
+
+        return false;
+    }
+
+    bool PassThroughCurrentRail(RaycastHit hit)
+    {
+        if (!grinding || grindRail == null || hit.collider == null)
+            return false;
+        if (hit.collider.GetComponentInParent<Hd2GrindRail>() != grindRail)
+            return false;
+
+        // A low aim skims the beam and was coming back red. Only a hit on the
+        // top of the rail, clearly ahead and still in range, is another grind.
+        bool onTop = hit.normal.y > 0.55f;
+        float ahead = (hit.point - transform.position).sqrMagnitude;
+        float maxSqr = Mathf.Max(0.5f, thrustMaxDistance);
+        maxSqr *= maxSqr;
+        return !(onTop && ahead > 1.5f * 1.5f && ahead <= maxSqr);
     }
 
     bool TryFindSurfaceAtOrBelow(Vector3 from, out RaycastHit hit)
     {
         if (TryRayDown(from + Vector3.up * 0.05f, from.y + 0.08f, out hit))
             return true;
+
+        // A shallow arc from the rail can end inside the floor. Start the
+        // search again from above that surface.
+        if (from.y < 0.5f)
+        {
+            Vector3 raised = from;
+            raised.y = 0.5f;
+            if (TryRayDown(raised, raised.y + 0.08f, out hit))
+                return true;
+        }
 
         // The arc step can end inside the floor after a shallow miss. Search back
         // up the arc until a downward ray starts above the surface.
@@ -666,6 +748,26 @@ public class Hd2Locomotion : MonoBehaviour
     }
 
     bool TryRayDown(Vector3 origin, float maxPointY, out RaycastHit hit)
+    {
+        Collider railCollider = null;
+        bool hidden = false;
+        if (grinding && grindRail != null)
+        {
+            railCollider = grindRail.GetComponent<Collider>();
+            if (railCollider != null && railCollider.enabled)
+            {
+                railCollider.enabled = false;
+                hidden = true;
+            }
+        }
+
+        bool found = RayDown(origin, maxPointY, out hit);
+        if (hidden)
+            railCollider.enabled = true;
+        return found;
+    }
+
+    bool RayDown(Vector3 origin, float maxPointY, out RaycastHit hit)
     {
         hit = default;
         float remaining = 40f;
@@ -731,8 +833,13 @@ public class Hd2Locomotion : MonoBehaviour
             aimLanding = passLanding;
             aimShowOutline = true;
             aimRail = null;
-            bool passInRange = (passLanding - player).sqrMagnitude <= maxSqr;
-            if (!IsNoLanding(ground) && passInRange)
+            if ((passLanding - player).sqrMagnitude > maxSqr)
+            {
+                passLanding = ClampToRange(player, passLanding, Mathf.Sqrt(maxSqr));
+                aimLanding = passLanding;
+            }
+
+            if (!IsNoLanding(ground))
             {
                 aimKind = AimKind.Legal;
                 aimValid = true;
@@ -753,7 +860,7 @@ public class Hd2Locomotion : MonoBehaviour
     {
         railSign = 1f;
         rail = hit.collider != null ? hit.collider.GetComponentInParent<Hd2GrindRail>() : null;
-        if (rail == null)
+        if (rail == null && !(grinding && hit.normal.y > 0.55f))
             rail = RailAtPoint(hit.point);
         if (rail != null)
         {
@@ -856,6 +963,31 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         return Vector3.Lerp(from, to, lo);
+    }
+
+    static Vector3 ClampToRange(Vector3 player, Vector3 point, float maxDistance)
+    {
+        Vector3 offset = point - player;
+        float distance = offset.magnitude;
+        if (distance <= maxDistance || distance < 0.0001f)
+            return point;
+        return player + offset * (maxDistance / distance);
+    }
+
+    void TrimArcToRange(Vector3 player, float maxDistance)
+    {
+        float maxSqr = maxDistance * maxDistance;
+        for (int i = 1; i < arcPointCount; i++)
+        {
+            if ((arcPoints[i] - player).sqrMagnitude <= maxSqr)
+                continue;
+
+            arcPoints[i] = ClipToRange(arcPoints[i - 1], arcPoints[i], player, maxSqr);
+            arcPointCount = i + 1;
+            if ((aimLanding - player).sqrMagnitude > maxSqr)
+                aimLanding = arcPoints[i];
+            return;
+        }
     }
 
     void BeginThrust()
@@ -1131,11 +1263,6 @@ public class Hd2Locomotion : MonoBehaviour
             previewMaterial.hideFlags = HideFlags.DontSave;
 
         arcLine = CreateLine("ThrustArc", 0.035f);
-        outlineLines = new LineRenderer[6];
-        outlineLines[0] = CreateLine("ThrustOutlineBottom", 0.02f);
-        outlineLines[1] = CreateLine("ThrustOutlineTop", 0.02f);
-        for (int i = 0; i < 4; i++)
-            outlineLines[2 + i] = CreateLine("ThrustOutlineSide" + i, 0.02f);
         HidePreview();
     }
 
@@ -1176,63 +1303,281 @@ public class Hd2Locomotion : MonoBehaviour
             arcLine.endColor = color;
         }
 
-        if (outlineLines == null)
+        if (wireMaterial != null)
+        {
+            if (wireMaterial.HasProperty("_BaseColor"))
+                wireMaterial.SetColor("_BaseColor", color);
+            if (wireMaterial.HasProperty("_Color"))
+                wireMaterial.SetColor("_Color", color);
+        }
+
+        if (wireLines == null)
             return;
 
-        for (int i = 0; i < outlineLines.Length; i++)
+        for (int i = 0; i < wireLines.Length; i++)
         {
-            if (outlineLines[i] == null)
+            if (wireLines[i] == null)
                 continue;
-            outlineLines[i].startColor = color;
-            outlineLines[i].endColor = color;
+            wireLines[i].startColor = color;
+            wireLines[i].endColor = color;
         }
     }
 
-    void ShowOutline(Vector3 feet)
+    void ShowAvatarWire(Vector3 landing)
     {
-        if (outlineLines == null)
-            return;
-
-        float radius = Mathf.Max(0.05f, bodyRadius);
-        float height = Mathf.Max(bodyHeight, radius * 2f + 0.01f);
-        float bottom = 0.04f;
-        float top = bottom + (height - radius * 2f);
-        FillRing(outlineLines[0], feet + Vector3.up * bottom, radius);
-        FillRing(outlineLines[1], feet + Vector3.up * top, radius);
-        for (int i = 0; i < 4; i++)
+        var avatar = GetComponent<Hd2Body>();
+        if (avatar == null || avatar.body == null)
         {
-            float angle = i * Mathf.PI * 0.5f;
-            Vector3 radial = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius;
-            LineRenderer side = outlineLines[2 + i];
-            side.enabled = true;
-            side.positionCount = 2;
-            side.SetPosition(0, feet + Vector3.up * bottom + radial);
-            side.SetPosition(1, feet + Vector3.up * top + radial);
+            HideAvatarWire();
+            return;
         }
+
+        var skin = avatar.body.GetComponentInChildren<SkinnedMeshRenderer>(true);
+        if (skin != null && skin.sharedMesh != null)
+        {
+            ShowSkinnedGhost(avatar.body, landing);
+            return;
+        }
+
+        if (wireParts == null || wireParts.Length == 0)
+            wireParts = avatar.body.GetComponentsInChildren<MeshFilter>(true);
+
+        int needed = 0;
+        for (int i = 0; i < wireParts.Length; i++)
+        {
+            MeshFilter part = wireParts[i];
+            if (part != null && part.sharedMesh != null && part.gameObject.activeInHierarchy)
+                needed += 12;
+        }
+
+        EnsureWireLines(needed);
+        Vector3 delta = landing - transform.position;
+        int line = 0;
+        for (int i = 0; i < wireParts.Length; i++)
+        {
+            MeshFilter part = wireParts[i];
+            if (part == null || part.sharedMesh == null || !part.gameObject.activeInHierarchy)
+                continue;
+
+            WriteBoxCorners(part.sharedMesh.bounds);
+            Matrix4x4 toWorld = part.transform.localToWorldMatrix;
+            for (int c = 0; c < wireCorners.Length; c++)
+                wireCorners[c] = toWorld.MultiplyPoint3x4(wireCorners[c]) + delta;
+
+            for (int e = 0; e < boxEdges.Length; e += 2)
+            {
+                LineRenderer edge = wireLines[line++];
+                edge.enabled = true;
+                edge.positionCount = 2;
+                edge.SetPosition(0, wireCorners[boxEdges[e]]);
+                edge.SetPosition(1, wireCorners[boxEdges[e + 1]]);
+            }
+        }
+
+        for (int i = line; i < wireLines.Length; i++)
+            wireLines[i].enabled = false;
     }
 
-    static void FillRing(LineRenderer line, Vector3 center, float radius)
+    void ShowSkinnedGhost(Transform source, Vector3 landing)
     {
-        if (line == null)
-            return;
-
-        line.enabled = true;
-        line.positionCount = RingSegments;
-        for (int i = 0; i < RingSegments; i++)
+        if (!EnsureGhost(source))
         {
-            float angle = i * Mathf.PI * 2f / (RingSegments - 1);
-            line.SetPosition(i, center + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * radius);
+            HideAvatarWire();
+            return;
         }
+
+        if (wireLines != null)
+        {
+            for (int i = 0; i < wireLines.Length; i++)
+            {
+                if (wireLines[i] != null)
+                    wireLines[i].enabled = false;
+            }
+        }
+
+        Vector3 delta = landing - transform.position;
+        thrustGhost.SetActive(true);
+        CopyPose(source, thrustGhost.transform, delta);
     }
 
-    void HideOutline()
+    bool EnsureGhost(Transform source)
     {
-        if (outlineLines == null)
-            return;
-        for (int i = 0; i < outlineLines.Length; i++)
+        if (thrustGhost != null)
+            return wireMaterial != null;
+
+        Shader shader = Shader.Find("HD2/WireAvatar");
+        if (shader == null || source.GetComponentInChildren<SkinnedMeshRenderer>(true) == null)
+            return false;
+
+        thrustGhost = Instantiate(source.gameObject);
+        thrustGhost.name = "ThrustAvatarGhost";
+        thrustGhost.hideFlags = HideFlags.DontSave;
+        thrustGhost.transform.SetParent(null, true);
+
+        var colliders = thrustGhost.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; i++)
+            Destroy(colliders[i]);
+        var animators = thrustGhost.GetComponentsInChildren<Animator>(true);
+        for (int i = 0; i < animators.Length; i++)
+            animators[i].enabled = false;
+
+        wireMaterial = new Material(shader);
+        wireMaterial.hideFlags = HideFlags.DontSave;
+
+        var skins = thrustGhost.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < skins.Length; i++)
         {
-            if (outlineLines[i] != null)
-                outlineLines[i].enabled = false;
+            SkinnedMeshRenderer skin = skins[i];
+            if (skin.sharedMesh != null && skin.sharedMesh.isReadable)
+                skin.sharedMesh = MakeWireMesh(skin.sharedMesh);
+            skin.sharedMaterial = wireMaterial;
+            skin.updateWhenOffscreen = true;
+            skin.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            skin.receiveShadows = false;
+        }
+
+        thrustGhost.SetActive(false);
+        return true;
+    }
+
+    static Mesh MakeWireMesh(Mesh source)
+    {
+        Vector3[] srcVerts = source.vertices;
+        Vector3[] srcNormals = source.normals;
+        BoneWeight[] srcWeights = source.boneWeights;
+        int[] tris = source.triangles;
+        int count = tris.Length;
+        var verts = new Vector3[count];
+        var normals = new Vector3[count];
+        var colors = new Color32[count];
+        var weights = new BoneWeight[count];
+        var indices = new int[count];
+        bool hasNormals = srcNormals != null && srcNormals.Length == srcVerts.Length;
+        bool hasWeights = srcWeights != null && srcWeights.Length == srcVerts.Length;
+        for (int i = 0; i < count; i++)
+        {
+            int sourceIndex = tris[i];
+            verts[i] = srcVerts[sourceIndex];
+            if (hasNormals)
+                normals[i] = srcNormals[sourceIndex];
+            if (hasWeights)
+                weights[i] = srcWeights[sourceIndex];
+            int corner = i % 3;
+            colors[i] = corner == 0
+                ? new Color32(255, 0, 0, 255)
+                : corner == 1 ? new Color32(0, 255, 0, 255) : new Color32(0, 0, 255, 255);
+            indices[i] = i;
+        }
+
+        var mesh = new Mesh();
+        mesh.name = source.name + " Wire";
+        mesh.hideFlags = HideFlags.DontSave;
+        if (count > 65535)
+            mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh.vertices = verts;
+        if (hasNormals)
+            mesh.normals = normals;
+        mesh.colors32 = colors;
+        if (hasWeights)
+            mesh.boneWeights = weights;
+        mesh.bindposes = source.bindposes;
+        mesh.triangles = indices;
+        return mesh;
+    }
+
+    static void CopyPose(Transform source, Transform dest, Vector3 delta)
+    {
+        dest.SetPositionAndRotation(source.position + delta, source.rotation);
+        dest.localScale = source.lossyScale;
+        int count = Mathf.Min(source.childCount, dest.childCount);
+        for (int i = 0; i < count; i++)
+            CopyLocal(source.GetChild(i), dest.GetChild(i));
+    }
+
+    static void CopyLocal(Transform source, Transform dest)
+    {
+        dest.localPosition = source.localPosition;
+        dest.localRotation = source.localRotation;
+        dest.localScale = source.localScale;
+        int count = Mathf.Min(source.childCount, dest.childCount);
+        for (int i = 0; i < count; i++)
+            CopyLocal(source.GetChild(i), dest.GetChild(i));
+    }
+
+    void ShowBoneWire(Transform[] bones, Vector3 landing)
+    {
+        int needed = 0;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            Transform bone = bones[i];
+            if (bone != null && bone.parent != null && System.Array.IndexOf(bones, bone.parent) >= 0)
+                needed++;
+        }
+
+        EnsureWireLines(needed);
+        Vector3 delta = landing - transform.position;
+        int line = 0;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            Transform bone = bones[i];
+            if (bone == null || bone.parent == null || System.Array.IndexOf(bones, bone.parent) < 0)
+                continue;
+
+            LineRenderer edge = wireLines[line++];
+            edge.enabled = true;
+            edge.positionCount = 2;
+            edge.SetPosition(0, bone.parent.position + delta);
+            edge.SetPosition(1, bone.position + delta);
+        }
+
+        for (int i = line; i < wireLines.Length; i++)
+            wireLines[i].enabled = false;
+    }
+
+    void WriteBoxCorners(Bounds bounds)
+    {
+        Vector3 min = bounds.min;
+        Vector3 max = bounds.max;
+        wireCorners[0] = new Vector3(min.x, min.y, min.z);
+        wireCorners[1] = new Vector3(max.x, min.y, min.z);
+        wireCorners[2] = new Vector3(max.x, max.y, min.z);
+        wireCorners[3] = new Vector3(min.x, max.y, min.z);
+        wireCorners[4] = new Vector3(min.x, min.y, max.z);
+        wireCorners[5] = new Vector3(max.x, min.y, max.z);
+        wireCorners[6] = new Vector3(max.x, max.y, max.z);
+        wireCorners[7] = new Vector3(min.x, max.y, max.z);
+    }
+
+    void EnsureWireLines(int count)
+    {
+        if (wireLines != null && wireLines.Length >= count)
+            return;
+
+        int previous = wireLines != null ? wireLines.Length : 0;
+        var next = new LineRenderer[Mathf.Max(count, 12)];
+        for (int i = 0; i < previous; i++)
+            next[i] = wireLines[i];
+        for (int i = previous; i < next.Length; i++)
+        {
+            LineRenderer edge = CreateLine("ThrustAvatarWire" + i, 0.007f);
+            edge.numCapVertices = 0;
+            edge.numCornerVertices = 0;
+            next[i] = edge;
+        }
+
+        wireLines = next;
+    }
+
+    void HideAvatarWire()
+    {
+        if (thrustGhost != null)
+            thrustGhost.SetActive(false);
+        if (wireLines == null)
+            return;
+        for (int i = 0; i < wireLines.Length; i++)
+        {
+            if (wireLines[i] != null)
+                wireLines[i].enabled = false;
         }
     }
 
@@ -1240,7 +1585,7 @@ public class Hd2Locomotion : MonoBehaviour
     {
         if (arcLine != null)
             arcLine.enabled = false;
-        HideOutline();
+        HideAvatarWire();
         var meter = GetComponent<Hd2ThrustMeter>();
         if (meter != null)
             meter.Hide();
