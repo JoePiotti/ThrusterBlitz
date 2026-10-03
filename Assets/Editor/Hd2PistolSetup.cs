@@ -9,10 +9,11 @@ using UnityEngine;
 [InitializeOnLoad]
 public static class Hd2PistolSetup
 {
-    const string ModelPath = "Assets/Models/Pistol/Pistol.fbx";
+    const string ModelPath = "Assets/Models/Pistol/StartingPistol.fbx";
+    const string TexturePath = "Assets/Models/Pistol/StartingPistol_BaseColor.png";
+    const string LitMaterialPath = "Assets/Models/Pistol/StartingPistol.mat";
     const string PrefabPath = "Assets/Prefabs/VRPlayer.prefab";
     const string ScenePath = "Assets/Scenes/Greybox.unity";
-    const string MaterialPath = "Assets/Materials/Pistol.mat";
 
     static int tries;
 
@@ -57,11 +58,11 @@ public static class Hd2PistolSetup
 
             var locomotion = root.GetComponent<Hd2Locomotion>();
             if (locomotion != null)
-                locomotion.arcLaunchAngle = 40f;
+                locomotion.arcLaunchAngle = -65f;
 
             var guns = root.GetComponentsInChildren<Hd2Pistol>(true);
             for (int i = 0; i < guns.Length; i++)
-                guns[i].shotSpeed = 45f;
+                guns[i].shotSpeed = 100f;
 
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
         }
@@ -71,21 +72,38 @@ public static class Hd2PistolSetup
         }
     }
 
+    // Same pose as the SMG, which sits correctly in the hand.
+    // 180 on X, Y, and Z together is no rotation. The pistol is exported on the
+    // same axes as the SMG, which is already aimed correctly with none.
+    static readonly Quaternion PistolRotation = Quaternion.identity;
+
     static bool EnsureHandPistol(GameObject root, GameObject model, string handName, Hd2Pistol.Hand hand)
     {
         var handTransform = root.transform.Find(handName);
         if (handTransform == null)
             return false;
-        if (handTransform.GetComponentInChildren<Hd2Pistol>(true) != null)
-            return false;
+        var current = handTransform.GetComponentInChildren<Hd2Pistol>(true);
+        if (current != null)
+        {
+            var source = PrefabUtility.GetCorrespondingObjectFromOriginalSource(current.gameObject);
+            if (source != null && AssetDatabase.GetAssetPath(source) == ModelPath)
+            {
+                // Keep a position the user already moved. Only correct the roll.
+                if (Quaternion.Angle(current.transform.localRotation, PistolRotation) < 0.5f)
+                    return false;
+                current.transform.localRotation = PistolRotation;
+                return true;
+            }
+            Object.DestroyImmediate(current.gameObject);
+        }
 
         var pistol = (GameObject)PrefabUtility.InstantiatePrefab(model, handTransform);
         pistol.name = "Pistol";
         pistol.transform.localPosition = new Vector3(0f, -0.02f, 0.05f);
-        pistol.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+        pistol.transform.localRotation = PistolRotation;
         pistol.transform.localScale = Vector3.one;
 
-        var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
+        var material = StartingPistolMaterial();
         if (material != null)
         {
             var renderers = pistol.GetComponentsInChildren<Renderer>(true);
@@ -98,12 +116,35 @@ public static class Hd2PistolSetup
         var muzzle = pistol.transform.Find("Muzzle");
         if (muzzle != null)
         {
-            muzzle.localPosition = new Vector3(0f, 0.16f, -0.054f);
             muzzle.localRotation = Quaternion.Euler(90f, 0f, 0f);
             gun.muzzle = muzzle;
         }
 
         return true;
+    }
+
+    static Material StartingPistolMaterial()
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit");
+        var material = AssetDatabase.LoadAssetAtPath<Material>(LitMaterialPath);
+        if (material == null && shader != null)
+        {
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, LitMaterialPath);
+        }
+
+        if (material == null)
+            return null;
+
+        var color = AssetDatabase.LoadAssetAtPath<Texture2D>(TexturePath);
+        if (color != null)
+        {
+            material.SetTexture("_BaseMap", color);
+            material.SetTexture("_MainTex", color);
+        }
+
+        EditorUtility.SetDirty(material);
+        return material;
     }
 
     static void EnsureTarget()
