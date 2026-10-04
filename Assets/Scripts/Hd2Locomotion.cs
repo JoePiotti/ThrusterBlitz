@@ -701,7 +701,7 @@ public class Hd2Locomotion : MonoBehaviour
                 continue;
 
             Vector3 origin = new Vector3(sample.x, hit.point.y + 0.4f, sample.z);
-            if (!Physics.Raycast(origin, Vector3.down, out RaycastHit down, 1.2f, ~0, QueryTriggerInteraction.Ignore))
+            if (!RaycastBody(origin, Vector3.down, 1.2f, out RaycastHit down))
                 continue;
             if (down.collider != hit.collider || down.normal.y <= 0.55f)
                 continue;
@@ -794,9 +794,9 @@ public class Hd2Locomotion : MonoBehaviour
             float remain = distance - traveled;
             if (!Physics.SphereCast(origin, radius, direction, out hit, remain, ~0, QueryTriggerInteraction.Ignore))
                 return false;
-            if (hit.distance <= 0.0001f)
+            if (hit.distance <= 0.0001f || IsSelf(hit.collider))
             {
-                traveled += 0.05f;
+                traveled += Mathf.Max(0.05f, hit.distance + 0.02f);
                 continue;
             }
 
@@ -891,6 +891,8 @@ public class Hd2Locomotion : MonoBehaviour
             for (int i = 0; i < count; i++)
             {
                 if (bodyHits[i].collider != null && bodyHits[i].collider.GetComponentInParent<Hd2SpawnField>() != null)
+                    continue;
+                if (IsSelf(bodyHits[i].collider))
                     continue;
                 if (bodyHits[i].distance >= best)
                     continue;
@@ -994,19 +996,24 @@ public class Hd2Locomotion : MonoBehaviour
 
     // The spawn field stays solid so outside shots hit it. The local player walks and
     // falls through it. Thrust aims through it in SimulateArc.
-    static bool CastBody(Vector3 bottom, Vector3 top, float radius, Vector3 direction, float distance, out RaycastHit hit)
+    bool CastBody(Vector3 bottom, Vector3 top, float radius, Vector3 direction, float distance, out RaycastHit hit)
     {
         int count = Physics.CapsuleCastNonAlloc(bottom, top, radius, direction, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
         return NearestBodyHit(count, out hit);
     }
 
-    static bool RaycastBody(Vector3 origin, Vector3 direction, float distance, out RaycastHit hit)
+    bool RaycastBody(Vector3 origin, Vector3 direction, float distance, out RaycastHit hit)
     {
         int count = Physics.RaycastNonAlloc(origin, direction, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
         return NearestBodyHit(count, out hit);
     }
 
-    static bool NearestBodyHit(int count, out RaycastHit hit)
+    bool IsSelf(Collider collider)
+    {
+        return collider != null && (collider.transform == transform || collider.transform.IsChildOf(transform));
+    }
+
+    bool NearestBodyHit(int count, out RaycastHit hit)
     {
         hit = default;
         float best = float.MaxValue;
@@ -1014,6 +1021,8 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider collider = bodyHits[i].collider;
+            if (IsSelf(collider))
+                continue;
             if (collider != null && collider.GetComponentInParent<Hd2SpawnField>() != null)
                 continue;
             if (bodyHits[i].distance >= best)

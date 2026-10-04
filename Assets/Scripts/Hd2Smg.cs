@@ -22,7 +22,7 @@ public class Hd2Smg : MonoBehaviour
     public float shotRadius = 0.03f;
     public float bodyDamage = 10f;
     public float headDamage = 20f;
-    public Color shotColor = new Color(1f, 0.82f, 0.45f, 1f);
+    public Color shotColor = new Color(1f, 0.7f, 0.18f, 1f);
 
     [Header("Recoil")]
     [Tooltip("How many rounds at the start of a burst climb the barrel.")]
@@ -137,7 +137,7 @@ public class Hd2Smg : MonoBehaviour
         }
 
         float wobble = firing ? Mathf.Sin(Time.time * 36f) * vibrationDegrees : 0f;
-        transform.localRotation = restLocalRotation * Quaternion.Euler(-climb, wobble, 0f);
+        transform.localRotation = restLocalRotation * Quaternion.Euler(climb, wobble, 0f);
     }
 
     public void Reload()
@@ -183,22 +183,13 @@ public class Hd2Smg : MonoBehaviour
         var shot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         shot.name = "SmgShot";
         shot.transform.SetParent(null, true);
-        shot.transform.position = origin.position + direction * 0.08f;
-        shot.transform.localScale = Vector3.one * (shotRadius * 2f);
-
+        shot.transform.position = origin.position;
+        shot.transform.rotation = Quaternion.LookRotation(direction);
         var collider = shot.GetComponent<Collider>();
         if (collider != null)
         {
             collider.enabled = false;
             Destroy(collider);
-        }
-
-        var renderer = shot.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            var material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            material.color = shotColor;
-            renderer.sharedMaterial = material;
         }
 
         var projectile = shot.AddComponent<Hd2Shot>();
@@ -208,6 +199,45 @@ public class Hd2Smg : MonoBehaviour
         projectile.damage = bodyDamage;
         projectile.headMultiplier = bodyDamage > 0.01f ? headDamage / bodyDamage : 1f;
         projectile.bouncesRemaining = 0;
+        projectile.UsePlasma(shotColor, shotRadius * 1.8f);
+        projectile.minBoltLength = bulletSpeed * 0.016f;
+        const float gap = 1f;
+        if (!projectile.CoverGap(origin.position, direction, gap))
+            projectile.StartAhead(origin.position, direction, gap);
+        SpawnFlash(origin);
+    }
+
+    void SpawnFlash(Transform barrel)
+    {
+        if (barrel == null)
+            return;
+
+        var flash = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        flash.name = "MuzzleFlash";
+        var collider = flash.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.enabled = false;
+            Destroy(collider);
+        }
+
+        flash.transform.SetParent(barrel, false);
+        Vector3 parentScale = barrel.lossyScale;
+        float ScaleOf(float axis, float worldSize)
+        {
+            return Mathf.Abs(axis) > 0.001f ? worldSize / axis : worldSize;
+        }
+
+        flash.transform.localPosition = new Vector3(0f, 0f, ScaleOf(parentScale.z, 0.06f));
+        flash.transform.localRotation = Quaternion.identity;
+        flash.transform.localScale = new Vector3(
+            ScaleOf(parentScale.x, 0.08f),
+            ScaleOf(parentScale.y, 0.08f),
+            ScaleOf(parentScale.z, 0.22f));
+        var glow = flash.AddComponent<Hd2Shot>();
+        glow.UsePlasma(shotColor, 0.08f);
+        glow.enabled = false;
+        flash.AddComponent<Hd2MuzzleFlash>();
     }
 
     static bool EditorFallback

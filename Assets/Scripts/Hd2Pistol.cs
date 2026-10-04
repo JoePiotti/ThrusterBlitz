@@ -264,7 +264,9 @@ public class Hd2Pistol : MonoBehaviour
         projectile.owner = transform.root;
         projectile.damage = normalDamage * (charged ? chargedAmmoCost : 1);
         projectile.bouncesRemaining = charged ? chargedBounces : 0;
+        projectile.gravel = !charged;
         projectile.UsePlasma(shotColor, charged ? radius * 2.2f : radius * 1.8f);
+        projectile.minBoltLength = shotSpeed * 0.016f;
         const float gap = 1f;
         if (!projectile.CoverGap(origin.position, direction, gap))
             projectile.StartAhead(origin.position, direction, gap);
