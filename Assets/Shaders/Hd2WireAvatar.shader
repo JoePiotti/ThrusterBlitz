@@ -2,7 +2,7 @@ Shader "HD2/WireAvatar"
 {
     Properties
     {
-        _BaseColor ("Color", Color) = (0.2, 0.92, 0.28, 1)
+        _BaseColor ("Color", Color) = (0.2, 0.92, 0.28, 0.25)
     }
 
     SubShader

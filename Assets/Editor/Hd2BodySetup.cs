@@ -3,6 +3,19 @@ using UnityEngine;
 
 public class Hd2BodyImporter : AssetPostprocessor
 {
+    void OnPreprocessModel()
+    {
+        if (assetPath != Hd2BodySetup.RobotPath)
+            return;
+
+        var importer = (ModelImporter)assetImporter;
+        importer.isReadable = true;
+        importer.animationType = ModelImporterAnimationType.Generic;
+        importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+        importer.importAnimation = false;
+        importer.optimizeBones = false;
+    }
+
     static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
     {
         for (int i = 0; i < imported.Length; i++)
@@ -16,9 +29,12 @@ public class Hd2BodyImporter : AssetPostprocessor
 [InitializeOnLoad]
 public static class Hd2BodySetup
 {
-    public const string RobotPath = "Assets/Models/StandIn/StandInRobot.fbx";
+    public const string RobotPath = "Assets/Models/Bot/LowPolyRobot.fbx";
+    const string TexturePath = "Assets/Models/Bot/LowPolyRobot_BaseColor.png";
+    const string MaterialPath = "Assets/Models/Bot/LowPolyRobot.mat";
     const string PlayerPath = "Assets/Prefabs/VRPlayer.prefab";
-    const string SessionKey = "HD2_BODY_RIG_V3";
+    const string SessionKey = "HD2_BODY_RIG_V6";
+    static int rigTries;
 
     static Hd2BodySetup()
     {
@@ -41,7 +57,7 @@ public static class Hd2BodySetup
         try
         {
             var existing = root.transform.Find("Body");
-            if (existing != null && FindChild(existing, "Arm.L") == null)
+            if (existing != null && !UsesModel(existing.gameObject, RobotPath))
             {
                 Object.DestroyImmediate(existing.gameObject);
                 existing = null;
@@ -54,7 +70,7 @@ public static class Hd2BodySetup
                 instance.transform.localPosition = Vector3.zero;
                 instance.transform.localRotation = Quaternion.identity;
                 instance.transform.localScale = Vector3.one;
-                AssignStandInMaterials(instance);
+                AssignBotMaterial(instance);
                 existing = instance.transform;
             }
 
@@ -70,10 +86,18 @@ public static class Hd2BodySetup
                 body.rightHand = locomotion.rightHand;
             }
 
+            var upperArmL = FindChild(existing, "Arm.L");
+            if (upperArmL == null)
+            {
+                if (rigTries++ < 30)
+                    EditorApplication.delayCall += AttachIfNeeded;
+                return;
+            }
+
             body.body = existing;
             body.bodyRestEuler = Vector3.zero;
             body.scaleWholeBody = true;
-            body.upperArmL = FindChild(existing, "Arm.L");
+            body.upperArmL = upperArmL;
             body.forearmL = FindChild(existing, "Arm.L.002");
             body.handL = FindChild(existing, "Hand.L");
             body.upperArmR = FindChild(existing, "Arm.R");
@@ -84,7 +108,7 @@ public static class Hd2BodySetup
             SetActive(root.transform, "RightHandVisual", false);
 
             PrefabUtility.SaveAsPrefabAsset(root, PlayerPath);
-            Debug.Log("HD2 stand-in robot attached to VRPlayer.");
+            Debug.Log("HD2 low poly robot attached to VRPlayer.");
         }
         finally
         {
@@ -106,6 +130,38 @@ public static class Hd2BodySetup
         }
 
         return null;
+    }
+
+    static bool UsesModel(GameObject instance, string assetPath)
+    {
+        var source = PrefabUtility.GetCorrespondingObjectFromOriginalSource(instance);
+        return source != null && AssetDatabase.GetAssetPath(source) == assetPath;
+    }
+
+    static void AssignBotMaterial(GameObject instance)
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit");
+        var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
+        if (material == null && shader != null)
+        {
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, MaterialPath);
+        }
+
+        if (material == null)
+            return;
+
+        var color = AssetDatabase.LoadAssetAtPath<Texture2D>(TexturePath);
+        if (color != null)
+        {
+            material.SetTexture("_BaseMap", color);
+            material.SetTexture("_MainTex", color);
+        }
+
+        EditorUtility.SetDirty(material);
+        var renderers = instance.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+            renderers[i].sharedMaterial = material;
     }
 
     static void AssignStandInMaterials(GameObject instance)

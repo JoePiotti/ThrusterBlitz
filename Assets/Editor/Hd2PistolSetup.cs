@@ -9,9 +9,9 @@ using UnityEngine;
 [InitializeOnLoad]
 public static class Hd2PistolSetup
 {
-    const string ModelPath = "Assets/Models/Pistol/StartingPistol.fbx";
-    const string TexturePath = "Assets/Models/Pistol/StartingPistol_BaseColor.png";
-    const string LitMaterialPath = "Assets/Models/Pistol/StartingPistol.mat";
+    const string LeftModelPath = "Assets/Models/Pistol/GripPistolLeft.fbx";
+    const string RightModelPath = "Assets/Models/Pistol/GripPistolRight.fbx";
+    const string GripMaterialPath = "Assets/Models/Pistol/GripPistol.mat";
     const string PrefabPath = "Assets/Prefabs/VRPlayer.prefab";
     const string ScenePath = "Assets/Scenes/Greybox.unity";
 
@@ -33,26 +33,27 @@ public static class Hd2PistolSetup
         if (tries++ > 40)
             return;
 
-        var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
-        if (model == null)
+        var leftModel = AssetDatabase.LoadAssetAtPath<GameObject>(LeftModelPath);
+        var rightModel = AssetDatabase.LoadAssetAtPath<GameObject>(RightModelPath);
+        if (leftModel == null || rightModel == null)
         {
             EditorApplication.delayCall += Ensure;
             return;
         }
 
         tries = 100;
-        EnsurePrefab(model);
+        EnsurePrefab(leftModel, rightModel);
         EnsureTarget();
     }
 
-    static void EnsurePrefab(GameObject model)
+    static void EnsurePrefab(GameObject leftModel, GameObject rightModel)
     {
         var root = PrefabUtility.LoadPrefabContents(PrefabPath);
         try
         {
             bool changed = false;
-            changed |= EnsureHandPistol(root, model, "RightHand", Hd2Pistol.Hand.Right);
-            changed |= EnsureHandPistol(root, model, "LeftHand", Hd2Pistol.Hand.Left);
+            changed |= EnsureHandPistol(root, rightModel, RightModelPath, "RightHand", Hd2Pistol.Hand.Right);
+            changed |= EnsureHandPistol(root, leftModel, LeftModelPath, "LeftHand", Hd2Pistol.Hand.Left);
             if (!changed)
                 return;
 
@@ -76,8 +77,9 @@ public static class Hd2PistolSetup
     // 180 on X, Y, and Z together is no rotation. The pistol is exported on the
     // same axes as the SMG, which is already aimed correctly with none.
     static readonly Quaternion PistolRotation = Quaternion.identity;
+    const float GripScale = 0.65f;
 
-    static bool EnsureHandPistol(GameObject root, GameObject model, string handName, Hd2Pistol.Hand hand)
+    static bool EnsureHandPistol(GameObject root, GameObject model, string modelPath, string handName, Hd2Pistol.Hand hand)
     {
         var handTransform = root.transform.Find(handName);
         if (handTransform == null)
@@ -86,12 +88,12 @@ public static class Hd2PistolSetup
         if (current != null)
         {
             var source = PrefabUtility.GetCorrespondingObjectFromOriginalSource(current.gameObject);
-            if (source != null && AssetDatabase.GetAssetPath(source) == ModelPath)
+            if (source != null && AssetDatabase.GetAssetPath(source) == modelPath)
             {
-                // Keep a position the user already moved. Only correct the roll.
-                if (Quaternion.Angle(current.transform.localRotation, PistolRotation) < 0.5f)
+                Vector3 gripScale = Vector3.one * GripScale;
+                if ((current.transform.localScale - gripScale).sqrMagnitude < 0.0001f)
                     return false;
-                current.transform.localRotation = PistolRotation;
+                current.transform.localScale = gripScale;
                 return true;
             }
             Object.DestroyImmediate(current.gameObject);
@@ -101,9 +103,9 @@ public static class Hd2PistolSetup
         pistol.name = "Pistol";
         pistol.transform.localPosition = new Vector3(0f, -0.02f, 0.05f);
         pistol.transform.localRotation = PistolRotation;
-        pistol.transform.localScale = Vector3.one;
+        pistol.transform.localScale = Vector3.one * GripScale;
 
-        var material = StartingPistolMaterial();
+        var material = GripPistolMaterial();
         if (material != null)
         {
             var renderers = pistol.GetComponentsInChildren<Renderer>(true);
@@ -123,20 +125,20 @@ public static class Hd2PistolSetup
         return true;
     }
 
-    static Material StartingPistolMaterial()
+    static Material GripPistolMaterial()
     {
         var shader = Shader.Find("Universal Render Pipeline/Lit");
-        var material = AssetDatabase.LoadAssetAtPath<Material>(LitMaterialPath);
+        var material = AssetDatabase.LoadAssetAtPath<Material>(GripMaterialPath);
         if (material == null && shader != null)
         {
             material = new Material(shader);
-            AssetDatabase.CreateAsset(material, LitMaterialPath);
+            AssetDatabase.CreateAsset(material, GripMaterialPath);
         }
 
         if (material == null)
             return null;
 
-        var color = AssetDatabase.LoadAssetAtPath<Texture2D>(TexturePath);
+        var color = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Models/Pistol/GripPistol_BaseColor.png");
         if (color != null)
         {
             material.SetTexture("_BaseMap", color);

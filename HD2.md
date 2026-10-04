@@ -86,6 +86,8 @@ Default Quest bindings. The Greybox prototype implements walk, stick-click sprin
   - The move is a constant speed (default 20 m/s), about 0.5 s at 10 m. The target can be as far as 10 meters.
   - Release does nothing if the arc has no valid hit.
   - A grind rail is a valid Thrust target. If the landing puts the bot’s feet on a rail, they grind it.
+  - The practice bot and other solid targets block the pointer. Other players do not. The arc passes through them so you can land directly behind another player.
+- **Players overlap.** Players do not collide with each other. Walking, sprinting, grinding, and the straight thrust move all pass through other players.
 - **Grind:** Once grinding, the player does not hold a button to stay on. They continue until the end of the rail, then drop off with gravity, or until they Thrust off the rail.
 - **Grip (each hand):** reload that hand’s gun, or pick up a weapon. Grip is not grind.
 - **Trigger:** fire. Pistols fire a single shot on trigger release. Holding the trigger charges the shot, and release fires the charged shot. Charged shots bounce off walls and floors.

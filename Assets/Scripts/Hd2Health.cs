@@ -91,6 +91,18 @@ public class Hd2Health : MonoBehaviour
         if (meter != null)
             meter.ResetToBase();
 
-        transform.SetPositionAndRotation(spawnPosition, spawnRotation);
+        Vector3 pos = spawnPosition;
+        Quaternion rot = spawnRotation;
+        if (Hd2SpawnDirector.Instance != null)
+        {
+            var farthest = Hd2SpawnDirector.Instance.PickFarthest(transform);
+            if (farthest != null)
+            {
+                pos = farthest.position;
+                rot = farthest.rotation;
+            }
+        }
+
+        transform.SetPositionAndRotation(pos, rot);
     }
 }

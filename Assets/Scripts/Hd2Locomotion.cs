@@ -15,7 +15,7 @@ using UnityEngine.XR;
 /// - Thrust: hold left primary (X) or right primary (A). An arc is drawn from that hand. If the
 ///   arc ends in the air or on a wall, a straight line drops to the surface below and the marker
 ///   sits there. The arc stops
-///   at the first solid hit. Release moves the root in a straight line to that point at
+///   at the first solid hit. Release moves the root toward that point at
 ///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, or a hit on
 ///   Hd2NoLanding does nothing.
 ///   The local player's aim arc ignores Hd2SpawnField and continues to a landing beyond it.
@@ -71,13 +71,15 @@ public class Hd2Locomotion : MonoBehaviour
     [Header("Thrust")]
     [Tooltip("Straight-line travel speed in meters per second. Time is distance divided by this speed.")]
     public float thrustSpeed = 30f;
-    public float thrustMaxDistance = 10f;
+    public float thrustMaxDistance = 13f;
+    [Tooltip("Extra height at the middle of a thrust. A level jump rises by this much, then comes back down.")]
+    public float thrustHopHeight = 0.5f;
     [Tooltip("Initial speed of the aim arc, meters per second.")]
     public float arcSpeed = 16f;
     [Tooltip("Downward acceleration of the aim arc. The arc stops at the first solid hit.")]
-    public float arcGravity = 28f;
-    [Tooltip("Degrees to pitch the thrust arc down from the controller forward. 0 follows the hand. Higher values leave the hand more forward and less upward.")]
-    public float arcLaunchAngle = 40f;
+    public float arcGravity = 34f;
+    [Tooltip("Offset of the thrust arc from the gun aim. -65 lifts the arc slightly above the barrel.")]
+    public float arcLaunchAngle = -65f;
 
     [Header("Grind")]
     public float grindSpeed = 8f;
@@ -87,8 +89,12 @@ public class Hd2Locomotion : MonoBehaviour
     public float bodyHeight = 1.7f;
     public float gravity = 15f;
     public float terminalVelocity = 25f;
+    [Tooltip("Seconds of uninterrupted falling before the player dies.")]
+    public float fallDeathSeconds = 5f;
     public float skinWidth = 0.05f;
     public float groundProbe = 0.3f;
+    [Tooltip("Floor changes this tall or shorter are walked over. Taller faces still stop the player.")]
+    public float stepHeight = 0.2f;
 
     const int ArcPointCapacity = 64;
     const float SnapEngage = 0.6f;
@@ -104,6 +110,7 @@ public class Hd2Locomotion : MonoBehaviour
     InputAction viewThrustAction;
 
     float verticalVelocity;
+    float fallTime;
     bool snapArmed = true;
     float editorYaw;
     float editorPitch = -18f;
@@ -127,6 +134,7 @@ public class Hd2Locomotion : MonoBehaviour
         grindRail = null;
         thrustRail = null;
         verticalVelocity = 0f;
+        fallTime = 0f;
     }
     float grindSign = 1f;
     float grindDistance;
@@ -149,6 +157,7 @@ public class Hd2Locomotion : MonoBehaviour
     readonly Vector3[] wireCorners = new Vector3[8];
     GameObject thrustGhost;
     Material wireMaterial;
+    AudioSource grindLoopSource;
     Material previewMaterial;
 
     static readonly int[] boxEdges =
@@ -162,6 +171,19 @@ public class Hd2Locomotion : MonoBehaviour
     static readonly Color illegalArcColor = new Color(0.95f, 0.12f, 0.1f, 1f);
 
     public bool IsGrinding => grinding;
+    public Vector3 PlanarVelocity { get; private set; }
+
+    public Vector3 GrindDirection
+    {
+        get
+        {
+            if (!grinding || grindRail == null)
+                return Vector3.zero;
+            Vector3 tangent = grindRail.PlanarTangent(grindDistance) * grindSign;
+            tangent.y = 0f;
+            return tangent.sqrMagnitude > 0.0001f ? tangent.normalized : Vector3.zero;
+        }
+    }
     public bool IsThrusting => thrusting;
 
     public bool IsSprinting
@@ -189,6 +211,41 @@ public class Hd2Locomotion : MonoBehaviour
             rightHand = transform.Find("RightHand");
 
         CreatePreview();
+        CreateGrindLoop();
+    }
+
+    void CreateGrindLoop()
+    {
+        var clip = Resources.Load<AudioClip>("Audio/RailGrindLoop");
+        if (clip == null)
+            return;
+
+        grindLoopSource = gameObject.AddComponent<AudioSource>();
+        grindLoopSource.clip = clip;
+        grindLoopSource.loop = true;
+        grindLoopSource.playOnAwake = false;
+        grindLoopSource.spatialBlend = 1f;
+        grindLoopSource.dopplerLevel = 0f;
+        grindLoopSource.minDistance = 2f;
+        grindLoopSource.maxDistance = 14f;
+        grindLoopSource.rolloffMode = AudioRolloffMode.Linear;
+    }
+
+    void UpdateGrindAudio()
+    {
+        if (grindLoopSource == null)
+            return;
+
+        bool onRail = grinding && grindRail != null;
+        if (onRail)
+        {
+            if (!grindLoopSource.isPlaying)
+                grindLoopSource.Play();
+            return;
+        }
+
+        if (grindLoopSource.isPlaying)
+            grindLoopSource.Stop();
     }
 
     void OnEnable()
@@ -246,6 +303,8 @@ public class Hd2Locomotion : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         HidePreview();
+        if (grindLoopSource != null && grindLoopSource.isPlaying)
+            grindLoopSource.Stop();
         Dispose(ref moveAction);
         Dispose(ref turnAction);
         Dispose(ref sprintAction);
@@ -272,6 +331,7 @@ public class Hd2Locomotion : MonoBehaviour
     void LateUpdate()
     {
         float dt = Time.deltaTime;
+        PlanarVelocity = Vector3.zero;
         if (dt <= 0f)
             return;
 
@@ -288,6 +348,7 @@ public class Hd2Locomotion : MonoBehaviour
         {
             HidePreview();
             AdvanceThrust(dt);
+            UpdateGrindAudio();
             return;
         }
 
@@ -309,21 +370,30 @@ public class Hd2Locomotion : MonoBehaviour
             BeginThrust();
             HidePreview();
             AdvanceThrust(dt);
+            UpdateGrindAudio();
             return;
         }
 
         if (grinding && grindRail != null)
         {
             if (TickGrind(dt))
+            {
+                UpdateGrindAudio();
                 return;
+            }
         }
 
         if (thrusting)
+        {
+            UpdateGrindAudio();
             return;
+        }
 
-        Vector3 horizontal = PlanarStick() * CurrentSpeed() * dt;
-        MoveHorizontal(horizontal);
+        PlanarVelocity = PlanarStick() * CurrentSpeed();
+        MoveHorizontal(PlanarVelocity * dt);
         ApplyGravity(dt);
+        PopOutOfWalls();
+        UpdateGrindAudio();
     }
 
     static bool HeadsetPresent()
@@ -520,15 +590,14 @@ public class Hd2Locomotion : MonoBehaviour
 
             if (Mathf.Abs(arcLaunchAngle) > 0.01f)
             {
-                direction = Quaternion.AngleAxis(arcLaunchAngle, aim.right) * direction;
+                // -65 on this axis lifts the arc slightly above where the gun is aiming.
+                direction = Quaternion.AngleAxis(-arcLaunchAngle, aim.right) * direction;
                 if (direction.sqrMagnitude < 0.0001f)
                     direction = aim.forward;
                 direction.Normalize();
             }
         }
 
-        if (origin.y < 0.08f)
-            origin.y = 0.08f;
         origin += direction * 0.08f;
         return true;
     }
@@ -573,10 +642,7 @@ public class Hd2Locomotion : MonoBehaviour
 
                 if ((hit.point - player).sqrMagnitude > maxSqr)
                 {
-                    Vector3 clipped = ClipToRange(pos, hit.point, player, maxSqr);
-                    if (arcPointCount < ArcPointCapacity)
-                        arcPoints[arcPointCount++] = clipped;
-                    DropToSurfaceBelow(clipped, player, maxSqr);
+                    KeepSurfaceWithinRange(pos, hit, player, maxSqr);
                     return;
                 }
 
@@ -613,14 +679,60 @@ public class Hd2Locomotion : MonoBehaviour
             DropToSurfaceBelow(arcPoints[arcPointCount - 1], player, maxSqr);
     }
 
+    void KeepSurfaceWithinRange(Vector3 from, RaycastHit hit, Vector3 player, float maxSqr)
+    {
+        if (hit.normal.y <= 0.55f)
+        {
+            Vector3 clipped = ClipToRange(from, hit.point, player, maxSqr);
+            if (arcPointCount < ArcPointCapacity)
+                arcPoints[arcPointCount++] = clipped;
+            DropToSurfaceBelow(clipped, player, maxSqr);
+            return;
+        }
+
+        // The lowest floor is past the jump limit. Walk back along the arc and
+        // stay on that same floor, instead of dropping onto a deck or into the air.
+        Vector3 landing = hit.point;
+        bool found = false;
+        for (int i = 0; i <= 16; i++)
+        {
+            Vector3 sample = Vector3.Lerp(hit.point, from, i / 16f);
+            if ((sample - player).sqrMagnitude > maxSqr)
+                continue;
+
+            Vector3 origin = new Vector3(sample.x, hit.point.y + 0.4f, sample.z);
+            if (!Physics.Raycast(origin, Vector3.down, out RaycastHit down, 1.2f, ~0, QueryTriggerInteraction.Ignore))
+                continue;
+            if (down.collider != hit.collider || down.normal.y <= 0.55f)
+                continue;
+
+            landing = down.point;
+            found = true;
+            break;
+        }
+
+        if (!found)
+        {
+            landing = ClampToRange(player, hit.point, Mathf.Sqrt(maxSqr));
+            landing.y = hit.point.y;
+        }
+
+        if (arcPointCount < ArcPointCapacity)
+            arcPoints[arcPointCount++] = landing;
+
+        var grounded = hit;
+        grounded.point = landing;
+        AcceptSurfaceHit(grounded, player, maxSqr);
+    }
+
     void AcceptSurfaceHit(RaycastHit hit, Vector3 player, float maxSqr)
     {
         Vector3 landing = LandingFromHit(hit, out Hd2GrindRail rail, out float railSign);
-        float maxDistance = Mathf.Sqrt(maxSqr);
-        if ((landing - player).sqrMagnitude > maxSqr)
-            landing = ClampToRange(player, landing, maxDistance);
-
         bool blocked = IsNoLanding(hit.collider);
+        bool onFloor = rail == null && hit.normal.y > 0.55f;
+        if (!onFloor && (landing - player).sqrMagnitude > maxSqr)
+            landing = ClampToRange(player, landing, Mathf.Sqrt(maxSqr));
+
         aimLanding = landing;
         aimShowOutline = true;
         if (rail != null && !blocked)
@@ -977,15 +1089,19 @@ public class Hd2Locomotion : MonoBehaviour
     void TrimArcToRange(Vector3 player, float maxDistance)
     {
         float maxSqr = maxDistance * maxDistance;
+        int last = arcPointCount - 1;
         for (int i = 1; i < arcPointCount; i++)
         {
             if ((arcPoints[i] - player).sqrMagnitude <= maxSqr)
                 continue;
 
+            // The floor under a high player can sit just past the limit. Keep that
+            // landing on the ground instead of pulling the marker up into the air.
+            if (i == last && aimShowOutline && (arcPoints[i] - aimLanding).sqrMagnitude < 0.05f)
+                return;
+
             arcPoints[i] = ClipToRange(arcPoints[i - 1], arcPoints[i], player, maxSqr);
             arcPointCount = i + 1;
-            if ((aimLanding - player).sqrMagnitude > maxSqr)
-                aimLanding = arcPoints[i];
             return;
         }
     }
@@ -1015,7 +1131,8 @@ public class Hd2Locomotion : MonoBehaviour
         float duration = distance / speed;
         thrustElapsed += dt;
         float t = duration <= 0f ? 1f : Mathf.Clamp01(thrustElapsed / duration);
-        transform.position = Vector3.Lerp(thrustStart, thrustEnd, t);
+        float hop = 4f * thrustHopHeight * t * (1f - t);
+        transform.position = Vector3.Lerp(thrustStart, thrustEnd, t) + Vector3.up * hop;
         if (t < 1f)
             return;
 
@@ -1033,6 +1150,7 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         thrustRail = null;
+        PopOutOfWalls();
     }
 
     bool TickGrind(float dt)
@@ -1165,6 +1283,106 @@ public class Hd2Locomotion : MonoBehaviour
         return Vector3.Cross(Vector3.up, HeadForward());
     }
 
+    static readonly Collider[] stuckOverlap = new Collider[16];
+
+    void PopOutOfWalls()
+    {
+        for (int pass = 0; pass < 4; pass++)
+        {
+            CapsuleEnds(out Vector3 bottom, out Vector3 top);
+            float radius = Mathf.Max(0.05f, bodyRadius) * 0.9f;
+            int count = Physics.OverlapCapsuleNonAlloc(bottom, top, radius, stuckOverlap, ~0, QueryTriggerInteraction.Ignore);
+            bool moved = false;
+            for (int i = 0; i < count; i++)
+            {
+                Collider collider = stuckOverlap[i];
+                if (!TryWallPush(collider, bottom, top, radius, out Vector3 push))
+                    continue;
+                transform.position += push;
+                moved = true;
+            }
+
+            if (!moved)
+                return;
+        }
+    }
+
+    bool TryWallPush(Collider collider, Vector3 bottom, Vector3 top, float radius, out Vector3 push)
+    {
+        push = Vector3.zero;
+        if (collider == null || collider.isTrigger)
+            return false;
+        if (collider.transform == transform || collider.transform.IsChildOf(transform))
+            return false;
+        if (collider.GetComponentInParent<Hd2SpawnField>() != null)
+            return false;
+        if (collider.GetComponentInParent<Hd2GrindRail>() != null)
+            return false;
+
+        Vector3 mid = (bottom + top) * 0.5f;
+        Vector3[] samples = { bottom, mid, top };
+        for (int i = 0; i < samples.Length; i++)
+        {
+            Vector3 sample = samples[i];
+            if (collider is BoxCollider box && TryBoxExit(box, sample, radius, out Vector3 exit))
+            {
+                if (Vector3.Dot(exit, Vector3.up) > 0.45f * exit.magnitude)
+                    continue;
+                push += exit;
+                continue;
+            }
+
+            Vector3 closest = collider.ClosestPoint(sample);
+            Vector3 away = sample - closest;
+            float distance = away.magnitude;
+            if (distance >= radius || distance < 0.0001f)
+                continue;
+            Vector3 step = away / distance * (radius - distance + skinWidth);
+            if (Vector3.Dot(step, Vector3.up) > 0.45f * step.magnitude)
+                continue;
+            push += step;
+        }
+
+        return push.sqrMagnitude > 0.0000001f;
+    }
+
+    static bool TryBoxExit(BoxCollider box, Vector3 worldPoint, float radius, out Vector3 exit)
+    {
+        exit = Vector3.zero;
+        Vector3 local = box.transform.InverseTransformPoint(worldPoint) - box.center;
+        Vector3 half = box.size * 0.5f;
+        if (Mathf.Abs(local.x) > half.x || Mathf.Abs(local.y) > half.y || Mathf.Abs(local.z) > half.z)
+            return false;
+
+        Vector3 scale = box.transform.lossyScale;
+        float penX = (half.x - Mathf.Abs(local.x)) * Mathf.Abs(scale.x) + radius;
+        float penY = (half.y - Mathf.Abs(local.y)) * Mathf.Abs(scale.y) + radius;
+        float penZ = (half.z - Mathf.Abs(local.z)) * Mathf.Abs(scale.z) + radius;
+        Vector3 localDir;
+        float penetration;
+        if (penX <= penY && penX <= penZ)
+        {
+            localDir = new Vector3(Mathf.Sign(local.x == 0f ? 1f : local.x), 0f, 0f);
+            penetration = penX;
+        }
+        else if (penY <= penZ)
+        {
+            localDir = new Vector3(0f, Mathf.Sign(local.y == 0f ? 1f : local.y), 0f);
+            penetration = penY;
+        }
+        else
+        {
+            localDir = new Vector3(0f, 0f, Mathf.Sign(local.z == 0f ? 1f : local.z));
+            penetration = penZ;
+        }
+
+        Vector3 worldDir = box.transform.TransformDirection(localDir);
+        if (worldDir.sqrMagnitude < 0.0001f)
+            return false;
+        exit = worldDir.normalized * (penetration + 0.02f);
+        return true;
+    }
+
     void MoveHorizontal(Vector3 delta)
     {
         if (thrusting)
@@ -1182,6 +1400,9 @@ public class Hd2Locomotion : MonoBehaviour
             if (CastBody(bottom, top, bodyRadius * 0.9f, direction, distance + skinWidth, out RaycastHit hit))
             {
                 float travel = Mathf.Max(0f, hit.distance - skinWidth);
+                if (TryStep(direction, distance, travel))
+                    return;
+
                 transform.position += direction * travel;
                 delta = Vector3.ProjectOnPlane(direction * (distance - travel), hit.normal);
                 delta.y = 0f;
@@ -1194,11 +1415,57 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
 
+    // A lip of stepHeight or less is not a wall. Lift over it, finish the step,
+    // then put the feet on the floor on the other side, up or down.
+    bool TryStep(Vector3 direction, float distance, float blockedTravel)
+    {
+        float rise = stepHeight;
+        if (rise < 0.01f)
+            return false;
+
+        float remaining = distance - blockedTravel;
+        if (remaining < 0.001f)
+            return false;
+
+        CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        float radius = bodyRadius * 0.9f;
+        if (CastBody(bottom, top, radius, Vector3.up, rise + skinWidth, out RaycastHit ceiling))
+        {
+            rise = Mathf.Max(0f, ceiling.distance - skinWidth);
+            if (rise < 0.02f)
+                return false;
+        }
+
+        Vector3 raised = Vector3.up * rise;
+        if (CastBody(bottom + raised, top + raised, radius, direction, remaining + skinWidth, out RaycastHit wall))
+        {
+            remaining = Mathf.Max(0f, wall.distance - skinWidth);
+            if (remaining < 0.01f)
+                return false;
+        }
+
+        Vector3 feet = transform.position;
+        Vector3 landed = feet + direction * (blockedTravel + remaining) + raised;
+        if (!RaycastBody(landed + Vector3.up * 0.05f, Vector3.down, rise + stepHeight + 0.15f, out RaycastHit floor))
+            return false;
+
+        float change = floor.point.y - feet.y;
+        if (change > stepHeight + 0.001f || change < -stepHeight - 0.001f)
+            return false;
+        if (Mathf.Abs(change) < 0.01f)
+            return false;
+
+        landed.y = floor.point.y;
+        transform.position = landed;
+        return true;
+    }
+
     void ApplyGravity(float dt)
     {
         if (verticalVelocity <= 0f && TryGround(out float groundY))
         {
             verticalVelocity = 0f;
+            fallTime = 0f;
             Vector3 grounded = transform.position;
             grounded.y = groundY;
             transform.position = grounded;
@@ -1221,11 +1488,31 @@ public class Hd2Locomotion : MonoBehaviour
             float travel = Mathf.Max(0f, hit.distance - skinWidth);
             transform.position += direction * travel;
             verticalVelocity = 0f;
+            fallTime = 0f;
+            return;
         }
-        else
+
+        transform.position += Vector3.up * dy;
+        if (dy < 0f)
+            CountFall(dt);
+    }
+
+    void CountFall(float dt)
+    {
+        if (thrusting || grinding)
         {
-            transform.position += Vector3.up * dy;
+            fallTime = 0f;
+            return;
         }
+
+        fallTime += dt;
+        if (fallTime < fallDeathSeconds)
+            return;
+
+        fallTime = 0f;
+        var health = GetComponent<Hd2Health>();
+        if (health != null && !health.IsDead)
+            health.ApplyHit(health.Health, false);
     }
 
     bool TryGround(out float groundY)
@@ -1305,10 +1592,12 @@ public class Hd2Locomotion : MonoBehaviour
 
         if (wireMaterial != null)
         {
+            Color wire = color;
+            wire.a = 0.25f;
             if (wireMaterial.HasProperty("_BaseColor"))
-                wireMaterial.SetColor("_BaseColor", color);
+                wireMaterial.SetColor("_BaseColor", wire);
             if (wireMaterial.HasProperty("_Color"))
-                wireMaterial.SetColor("_Color", color);
+                wireMaterial.SetColor("_Color", wire);
         }
 
         if (wireLines == null)
@@ -1333,7 +1622,8 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         var skin = avatar.body.GetComponentInChildren<SkinnedMeshRenderer>(true);
-        if (skin != null && skin.sharedMesh != null)
+        var shaped = avatar.body.GetComponentInChildren<MeshRenderer>(true);
+        if ((skin != null && skin.sharedMesh != null) || (shaped != null && shaped.enabled))
         {
             ShowSkinnedGhost(avatar.body, landing);
             return;
@@ -1395,7 +1685,9 @@ public class Hd2Locomotion : MonoBehaviour
             }
         }
 
-        Vector3 delta = landing - transform.position;
+        // The preview body's origin is its feet. Put those feet on the landing.
+        // Offset from the tracking origin instead shifted the robot with real-world facing.
+        Vector3 delta = landing - source.position;
         thrustGhost.SetActive(true);
         CopyPose(source, thrustGhost.transform, delta);
     }
@@ -1406,7 +1698,9 @@ public class Hd2Locomotion : MonoBehaviour
             return wireMaterial != null;
 
         Shader shader = Shader.Find("HD2/WireAvatar");
-        if (shader == null || source.GetComponentInChildren<SkinnedMeshRenderer>(true) == null)
+        bool hasSkin = source.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
+        bool hasMesh = source.GetComponentInChildren<MeshRenderer>(true) != null;
+        if (shader == null || (!hasSkin && !hasMesh))
             return false;
 
         thrustGhost = Instantiate(source.gameObject);
@@ -1434,6 +1728,20 @@ public class Hd2Locomotion : MonoBehaviour
             skin.updateWhenOffscreen = true;
             skin.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             skin.receiveShadows = false;
+        }
+
+        var filters = thrustGhost.GetComponentsInChildren<MeshFilter>(true);
+        for (int i = 0; i < filters.Length; i++)
+        {
+            MeshFilter filter = filters[i];
+            var renderer = filter.GetComponent<MeshRenderer>();
+            if (renderer == null)
+                continue;
+            if (filter.sharedMesh != null && filter.sharedMesh.isReadable)
+                filter.sharedMesh = MakeWireMesh(filter.sharedMesh);
+            renderer.sharedMaterial = wireMaterial;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
         }
 
         thrustGhost.SetActive(false);
@@ -1480,7 +1788,8 @@ public class Hd2Locomotion : MonoBehaviour
         mesh.colors32 = colors;
         if (hasWeights)
             mesh.boneWeights = weights;
-        mesh.bindposes = source.bindposes;
+        if (source.bindposes != null && source.bindposes.Length > 0)
+            mesh.bindposes = source.bindposes;
         mesh.triangles = indices;
         return mesh;
     }

@@ -24,15 +24,15 @@ public class Hd2Pistol : MonoBehaviour
     public float reloadDuration = 2f;
 
     [Header("Shot")]
-    public float shotSpeed = 45f;
+    public float shotSpeed = 100f;
     public float shotLifetime = 2f;
-    public float shotRadius = 0.03f;
+    public float shotRadius = 0.04f;
     public float normalDamage = 10f;
-    public Color shotColor = new Color(1f, 0.85f, 0.25f, 1f);
+    public Color shotColor = new Color(0.55f, 0.88f, 1f, 1f);
 
     [Header("Charged shot")]
     public float chargeHoldTime = 1f;
-    public float chargedRadius = 0.045f;
+    public float chargedRadius = 0.06f;
     public float chargedSpeedMultiplier = 0.7f;
     public int chargedAmmoCost = 3;
     public int chargedBounces = 6;
@@ -41,13 +41,26 @@ public class Hd2Pistol : MonoBehaviour
     public float kickDegrees = 4f;
     public float kickReturnSpeed = 18f;
 
+    [Header("Haptics")]
+    [Tooltip("Strength of the tick on each shot, from 0 to 1.")]
+    public float shotHapticAmplitude = 0.7f;
+    [Tooltip("Length of the tick on each shot, in seconds.")]
+    public float shotHapticDuration = 0.04f;
+    [Tooltip("Strength of the pulse when a charged shot becomes ready, from 0 to 1.")]
+    public float chargeReadyHapticAmplitude = 0.5f;
+    [Tooltip("Length of the pulse when a charged shot becomes ready, in seconds.")]
+    public float chargeReadyHapticDuration = 0.16f;
+
     [Tooltip("Bore tip. Local euler (90, 0, 0) so forward is the pistol's -Y, out the barrel away from the player.")]
     public Transform muzzle;
 
     int rounds;
     float nextFireTime;
     float triggerPressedAt = -1f;
+    bool chargeReadyPulsed;
     bool reloading;
+    int reloadPulsesLeft;
+    float nextReloadPulseAt;
     float reloadEndsAt;
     float kick;
     Quaternion restLocalRotation;
@@ -56,9 +69,14 @@ public class Hd2Pistol : MonoBehaviour
     InputAction reloadAction;
     InputAction editorFireAction;
     InputAction editorReloadAction;
+    AudioSource shotSource;
+    AudioClip shotClip;
+    AudioClip chargedShotClip;
 
     static readonly System.Collections.Generic.List<XRDisplaySubsystem> displays =
         new System.Collections.Generic.List<XRDisplaySubsystem>();
+    static readonly System.Collections.Generic.List<UnityEngine.XR.InputDevice> hapticDevices =
+        new System.Collections.Generic.List<UnityEngine.XR.InputDevice>();
 
     public int Rounds => rounds;
     public bool IsReloading => reloading;
@@ -74,6 +92,17 @@ public class Hd2Pistol : MonoBehaviour
 
         restLocalRotation = transform.localRotation;
         rounds = magazineSize;
+
+        shotClip = Resources.Load<AudioClip>("Audio/PistolShot");
+        chargedShotClip = Resources.Load<AudioClip>("Audio/ChargedPistolShot");
+        if (shotClip == null && chargedShotClip == null)
+            return;
+
+        shotSource = gameObject.AddComponent<AudioSource>();
+        shotSource.playOnAwake = false;
+        shotSource.spatialBlend = 1f;
+        shotSource.minDistance = 0.4f;
+        shotSource.maxDistance = 12f;
     }
 
     void OnEnable()
@@ -115,6 +144,13 @@ public class Hd2Pistol : MonoBehaviour
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
 
+        if (reloadPulsesLeft > 0 && Time.time >= nextReloadPulseAt)
+        {
+            reloadPulsesLeft--;
+            Pulse(shotHapticAmplitude, shotHapticDuration);
+            nextReloadPulseAt = Time.time + 0.09f;
+        }
+
         bool editorReload = EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
         if (reloadAction.WasPressedThisFrame() || editorReload)
             Reload();
@@ -128,7 +164,17 @@ public class Hd2Pistol : MonoBehaviour
         }
 
         if (pressed)
+        {
             triggerPressedAt = Time.time;
+            chargeReadyPulsed = false;
+        }
+
+        if (!chargeReadyPulsed && triggerPressedAt >= 0f && !reloading && rounds > 0
+            && Time.time - triggerPressedAt >= chargeHoldTime)
+        {
+            chargeReadyPulsed = true;
+            Pulse(chargeReadyHapticAmplitude, chargeReadyHapticDuration);
+        }
 
         if (released)
         {
@@ -158,6 +204,9 @@ public class Hd2Pistol : MonoBehaviour
     {
         rounds = magazineSize;
         reloading = false;
+        Pulse(shotHapticAmplitude, shotHapticDuration);
+        reloadPulsesLeft = 1;
+        nextReloadPulseAt = Time.time + 0.09f;
     }
 
     void TryFire(bool charged)
@@ -171,10 +220,24 @@ public class Hd2Pistol : MonoBehaviour
         rounds -= cost;
         nextFireTime = Time.time + 1f / Mathf.Max(0.01f, shotsPerSecond);
         kick = charged ? kickDegrees * 1.5f : kickDegrees;
+        Pulse(shotHapticAmplitude, shotHapticDuration);
+        PlayShot(charged);
         SpawnShot(charged);
 
         if (rounds <= 0)
             Reload();
+    }
+
+    void PlayShot(bool charged)
+    {
+        if (shotSource == null)
+            return;
+
+        AudioClip clip = charged ? chargedShotClip : shotClip;
+        if (clip == null)
+            clip = shotClip;
+        if (clip != null)
+            shotSource.PlayOneShot(clip);
     }
 
     void SpawnShot(bool charged)
@@ -186,22 +249,13 @@ public class Hd2Pistol : MonoBehaviour
         var shot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         shot.name = charged ? "ChargedShot" : "Shot";
         shot.transform.SetParent(null, true);
-        shot.transform.position = origin.position + direction * 0.08f;
-        shot.transform.localScale = Vector3.one * (radius * 2f);
-
+        shot.transform.position = origin.position;
+        shot.transform.rotation = Quaternion.LookRotation(direction);
         var collider = shot.GetComponent<Collider>();
         if (collider != null)
         {
             collider.enabled = false;
             Destroy(collider);
-        }
-
-        var renderer = shot.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            var material = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            material.color = shotColor;
-            renderer.sharedMaterial = material;
         }
 
         var projectile = shot.AddComponent<Hd2Shot>();
@@ -210,6 +264,59 @@ public class Hd2Pistol : MonoBehaviour
         projectile.owner = transform.root;
         projectile.damage = normalDamage * (charged ? chargedAmmoCost : 1);
         projectile.bouncesRemaining = charged ? chargedBounces : 0;
+        projectile.UsePlasma(shotColor, charged ? radius * 2.2f : radius * 1.8f);
+        const float gap = 1f;
+        if (!projectile.CoverGap(origin.position, direction, gap))
+            projectile.StartAhead(origin.position, direction, gap);
+        SpawnFlash(origin);
+    }
+
+    void SpawnFlash(Transform barrel)
+    {
+        if (barrel == null)
+            return;
+
+        var flash = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        flash.name = "MuzzleFlash";
+        var collider = flash.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.enabled = false;
+            Destroy(collider);
+        }
+
+        flash.transform.SetParent(barrel, false);
+        Vector3 parentScale = barrel.lossyScale;
+        float ScaleOf(float axis, float worldSize)
+        {
+            return Mathf.Abs(axis) > 0.001f ? worldSize / axis : worldSize;
+        }
+
+        flash.transform.localPosition = new Vector3(0f, 0f, ScaleOf(parentScale.z, 0.06f));
+        flash.transform.localRotation = Quaternion.identity;
+        flash.transform.localScale = new Vector3(
+            ScaleOf(parentScale.x, 0.1f),
+            ScaleOf(parentScale.y, 0.1f),
+            ScaleOf(parentScale.z, 0.28f));
+        var glow = flash.AddComponent<Hd2Shot>();
+        glow.UsePlasma(shotColor, 0.1f);
+        glow.enabled = false;
+        flash.AddComponent<Hd2MuzzleFlash>();
+    }
+
+    void Pulse(float amplitude, float duration)
+    {
+        if (amplitude <= 0f || duration <= 0f)
+            return;
+
+        var node = hand == Hand.Left ? XRNode.LeftHand : XRNode.RightHand;
+        InputDevices.GetDevicesAtXRNode(node, hapticDevices);
+        for (int i = 0; i < hapticDevices.Count; i++)
+        {
+            UnityEngine.XR.InputDevice device = hapticDevices[i];
+            if (device.TryGetHapticCapabilities(out HapticCapabilities caps) && caps.supportsImpulse)
+                device.SendHapticImpulse(0, Mathf.Clamp01(amplitude), duration);
+        }
     }
 
     static bool EditorFallback
@@ -236,5 +343,33 @@ public class Hd2Pistol : MonoBehaviour
         action.Disable();
         action.Dispose();
         action = null;
+    }
+}
+
+/// <summary>
+/// A short glow at the barrel so the bolt can begin a meter ahead without a visible gap.
+/// </summary>
+public class Hd2MuzzleFlash : MonoBehaviour
+{
+    const float life = 0.05f;
+    float age;
+    Vector3 startScale;
+
+    void Awake()
+    {
+        startScale = transform.localScale;
+    }
+
+    void Update()
+    {
+        age += Time.deltaTime;
+        float t = age / life;
+        if (t >= 1f)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        transform.localScale = startScale * Mathf.Lerp(1.15f, 0.15f, t);
     }
 }
