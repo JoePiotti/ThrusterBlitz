@@ -215,9 +215,7 @@ public class Hd2Smg : MonoBehaviour
         projectile.bouncesRemaining = 0;
         projectile.UsePlasma(shotColor, shotRadius * 1.8f);
         projectile.minBoltLength = bulletSpeed * 0.016f;
-        const float gap = 1f;
-        if (!projectile.CoverGap(origin.position, direction, gap))
-            projectile.StartAhead(origin.position, direction, gap);
+        projectile.ReleaseFromMuzzle(origin.position, direction);
         SpawnFlash(origin);
     }
 

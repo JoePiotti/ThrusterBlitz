@@ -25,12 +25,15 @@ using UnityEngine.XR;
 ///   for being too far. With less than one thrust charge the lines keep that color,
 ///   and the robot preview is hidden.
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
-///   or until the next thrust starts. Grip is not grind.
+///   or until the next thrust starts. Walking onto a rail steps up onto it or over it.
+///   Grip is not grind.
 /// - Jump: hold B. Smoke vents from the two backpack nozzles and the player rises,
 ///   up to 1.5 meters, for as long as the button is held, thrust remains, and 1.5 seconds
 ///   have not passed. Thrust is spent at 1 bar per second. Releasing B, running out of
-///   thrust, or reaching the cap ends the rise until the feet touch the ground again.
-///   Walk, sprint, and a blitz still work in the air. There is no double jump.
+///   thrust, or reaching the cap ends the rise. Touching the ground clears the jump
+///   so it can be used again. It is not required to start one, including while falling
+///   or grinding. A second jump in the air does not start.
+///   Walk, sprint, and a blitz still work in the air and on a rail. There is no double jump.
 ///
 /// Editor fallback when no headset is running: WASD / arrows walk, Left Shift sprint,
 /// Q snap left, E snap right (one snap per key press),
@@ -571,7 +574,14 @@ public class Hd2Locomotion : MonoBehaviour
             return;
         }
 
-        if (grinding && grindRail != null)
+        bool planted = FeetPlanted();
+        if (planted && !jumpBoosting)
+            jumpSpent = false;
+
+        if (!jumpSpent && !jumpBoosting && jumpAction != null && jumpAction.WasPressedThisFrame())
+            BeginJump();
+
+        if (grinding && grindRail != null && !jumpBoosting)
         {
             if (TickGrind(dt))
             {
@@ -585,13 +595,6 @@ public class Hd2Locomotion : MonoBehaviour
             UpdateGrindAudio();
             return;
         }
-
-        bool planted = FeetPlanted();
-        if (planted && !jumpBoosting)
-            jumpSpent = false;
-
-        if (!jumpSpent && planted && jumpAction != null && jumpAction.WasPressedThisFrame())
-            BeginJump();
 
         PlanarVelocity = PlanarStick() * CurrentSpeed();
         MoveHorizontal(PlanarVelocity * dt);
@@ -1719,6 +1722,10 @@ public class Hd2Locomotion : MonoBehaviour
             if (CastBody(bottom, top, bodyRadius * 0.9f, direction, distance + skinWidth, out RaycastHit hit))
             {
                 float travel = Mathf.Max(0f, hit.distance - skinWidth);
+                Hd2GrindRail rail = hit.collider != null ? hit.collider.GetComponentInParent<Hd2GrindRail>() : null;
+                if (rail != null && TryWalkOnRail(rail, direction, distance))
+                    return;
+
                 if (TryStep(direction, distance, travel))
                     return;
 
@@ -1732,6 +1739,41 @@ public class Hd2Locomotion : MonoBehaviour
                 return;
             }
         }
+    }
+
+    // A rail is a floor you can step onto and walk along. It only becomes a grind
+    // when a blitz lands on it. A face taller than a step still stops the player.
+    bool TryWalkOnRail(Hd2GrindRail rail, Vector3 direction, float distance)
+    {
+        const float railStep = 0.4f;
+        const float beamReach = 0.22f;
+
+        Vector3 feet = transform.position;
+        Vector3 probe = feet + direction * Mathf.Min(distance, 0.45f);
+        Vector3 aheadDeck = rail.PointAlong(rail.DistanceAlong(probe));
+        float aheadRise = aheadDeck.y - feet.y;
+        if (aheadRise > railStep)
+            return false;
+
+        Collider beam = rail.GetComponent<Collider>();
+        bool hidden = beam != null && beam.enabled;
+        if (hidden)
+            beam.enabled = false;
+        transform.position += direction * distance;
+        if (hidden)
+            beam.enabled = true;
+
+        Vector3 stand = rail.PointAlong(rail.DistanceAlong(transform.position));
+        Vector3 off = transform.position - stand;
+        off.y = 0f;
+        if (off.sqrMagnitude <= beamReach * beamReach && stand.y <= feet.y + railStep && stand.y >= feet.y - railStep)
+        {
+            Vector3 planted = transform.position;
+            planted.y = stand.y;
+            transform.position = planted;
+        }
+
+        return true;
     }
 
     // A lip of stepHeight or less is not a wall. Lift over it, finish the step,
@@ -1795,6 +1837,8 @@ public class Hd2Locomotion : MonoBehaviour
 
         jumpBoosting = true;
         jumpSpent = true;
+        grinding = false;
+        grindRail = null;
         jumpOriginY = transform.position.y;
         jumpTime = 0f;
         verticalVelocity = 0f;

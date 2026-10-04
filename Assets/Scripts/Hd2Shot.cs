@@ -72,6 +72,20 @@ public class Hd2Shot : MonoBehaviour
         return true;
     }
 
+    public void ReleaseFromMuzzle(Vector3 origin, Vector3 direction)
+    {
+        const float gap = 1f;
+        if (direction.sqrMagnitude < 0.0001f)
+            return;
+
+        direction.Normalize();
+        float reach = gap + BoltLength(0.016f);
+        if (CoverGap(origin, direction, reach))
+            return;
+
+        StartAhead(origin, direction, gap);
+    }
+
     public void StartAhead(Vector3 origin, Vector3 direction, float gap)
     {
         if (direction.sqrMagnitude < 0.0001f)
@@ -116,8 +130,11 @@ public class Hd2Shot : MonoBehaviour
             return true;
         }
 
-        if (hit.collider.GetComponentInParent<Hd2GrindRail>() != null)
+        bool rail = hit.collider.GetComponentInParent<Hd2GrindRail>() != null;
+        if (rail)
             MetalSparks(hit.point, hit.normal);
+        else
+            ScoreMark(hit.point, hit.normal);
 
         if (bouncesRemaining > 0)
         {
@@ -132,7 +149,7 @@ public class Hd2Shot : MonoBehaviour
             return true;
         }
 
-        if (gravel && hit.collider.GetComponentInParent<Hd2GrindRail>() == null)
+        if (gravel && !rail)
             GravelBurst(hit.point, hit.normal);
 
         Destroy(gameObject);
@@ -140,6 +157,55 @@ public class Hd2Shot : MonoBehaviour
     }
 
     static Material sparkMaterial;
+
+    static Material scoreMarkMaterial;
+
+    static void ScoreMark(Vector3 point, Vector3 normal)
+    {
+        if (normal.sqrMagnitude < 0.0001f)
+            normal = Vector3.up;
+        normal.Normalize();
+
+        Material material = ScoreMarkMaterial();
+        if (material == null)
+            return;
+
+        var mark = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        mark.name = "ShotScoreMark";
+        var collider = mark.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.enabled = false;
+            Destroy(collider);
+        }
+
+        Vector3 up = Mathf.Abs(normal.y) > 0.85f ? Vector3.forward : Vector3.up;
+        Quaternion face = Quaternion.LookRotation(normal, up);
+        face = Quaternion.AngleAxis(Random.Range(0f, 360f), normal) * face;
+        mark.transform.SetPositionAndRotation(point + normal * 0.02f, face);
+        mark.transform.localScale = Vector3.one * 0.11f;
+        var renderer = mark.GetComponent<MeshRenderer>();
+        renderer.sharedMaterial = material;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        Destroy(mark, 10f);
+    }
+
+    static Material ScoreMarkMaterial()
+    {
+        if (scoreMarkMaterial != null)
+            return scoreMarkMaterial;
+
+        Shader shader = Shader.Find("HD2/ShotScoreMark");
+        Texture2D texture = Resources.Load<Texture2D>("Textures/ShotScoreMark");
+        if (shader == null || texture == null)
+            return null;
+
+        scoreMarkMaterial = new Material(shader);
+        scoreMarkMaterial.SetTexture("_MainTex", texture);
+        scoreMarkMaterial.SetColor("_Color", Color.white);
+        return scoreMarkMaterial;
+    }
 
     static void MetalSparks(Vector3 point, Vector3 normal)
     {
