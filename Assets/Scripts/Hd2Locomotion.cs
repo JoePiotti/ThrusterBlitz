@@ -26,10 +26,16 @@ using UnityEngine.XR;
 ///   and the robot preview is hidden.
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
 ///   or until the next thrust starts. Grip is not grind.
+/// - Jump: hold B. Smoke vents from the two backpack nozzles and the player rises,
+///   up to 1.5 meters, for as long as the button is held, thrust remains, and 1.5 seconds
+///   have not passed. Thrust is spent at 1 bar per second. Releasing B, running out of
+///   thrust, or reaching the cap ends the rise until the feet touch the ground again.
+///   Walk, sprint, and a blitz still work in the air. There is no double jump.
 ///
 /// Editor fallback when no headset is running: WASD / arrows walk, Left Shift sprint,
 /// Q snap left, E snap right (one snap per key press),
 /// hold Space or left mouse to aim an arc along the view, release to thrust.
+/// C is the jump.
 /// Mouse look turns the player root so the view can aim. It does not run while a headset is active.
 /// </summary>
 [DefaultExecutionOrder(100)]
@@ -84,6 +90,18 @@ public class Hd2Locomotion : MonoBehaviour
     [Header("Grind")]
     public float grindSpeed = 8f;
 
+    [Header("Jump")]
+    [Tooltip("Highest the B-button jump lifts the feet, in meters.")]
+    public float jumpHeight = 1.5f;
+    [Tooltip("Longest the jump can rise, in seconds. Thrust is spent at jumpThrustPerSecond for this whole rise.")]
+    public float jumpMaxTime = 1.5f;
+    [Tooltip("Thrust bars spent per second while rising.")]
+    public float jumpThrustPerSecond = 1f;
+
+    [Header("Team")]
+    [Tooltip("Blitz sparkle color. Use red or blue for a team. Gold is the demo default.")]
+    public Color teamColor = new Color(1f, 0.76f, 0.22f, 1f);
+
     [Header("Body")]
     public float bodyRadius = 0.25f;
     public float bodyHeight = 1.7f;
@@ -108,6 +126,7 @@ public class Hd2Locomotion : MonoBehaviour
     InputAction leftThrustAction;
     InputAction rightThrustAction;
     InputAction viewThrustAction;
+    InputAction jumpAction;
 
     float verticalVelocity;
     float fallTime;
@@ -127,6 +146,17 @@ public class Hd2Locomotion : MonoBehaviour
     bool grinding;
     Hd2GrindRail grindRail;
 
+    bool jumpBoosting;
+    bool jumpSpent;
+    float jumpOriginY;
+    float jumpTime;
+    ParticleSystem[] jumpExhaust;
+    Vector3[] jumpNozzles;
+    bool jumpNozzlesReady;
+    AudioSource jumpThrustSource;
+    float jumpThrustFade;
+    const float JumpThrustFadeTime = 0.75f;
+
     public void HaltTravel()
     {
         thrusting = false;
@@ -135,6 +165,10 @@ public class Hd2Locomotion : MonoBehaviour
         thrustRail = null;
         verticalVelocity = 0f;
         fallTime = 0f;
+        wasOffGround = false;
+        EndJumpBoost();
+        StopBlitzTrail();
+        jumpSpent = false;
     }
     float grindSign = 1f;
     float grindDistance;
@@ -158,6 +192,11 @@ public class Hd2Locomotion : MonoBehaviour
     GameObject thrustGhost;
     Material wireMaterial;
     AudioSource grindLoopSource;
+    AudioSource walkLoopSource;
+    AudioSource landSource;
+    AudioSource blitzSource;
+    ParticleSystem blitzTrail;
+    bool wasOffGround;
     Material previewMaterial;
 
     static readonly int[] boxEdges =
@@ -185,6 +224,7 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
     public bool IsThrusting => thrusting;
+    public bool IsAirborne => jumpBoosting || jumpSpent;
 
     public bool IsSprinting
     {
@@ -212,6 +252,10 @@ public class Hd2Locomotion : MonoBehaviour
 
         CreatePreview();
         CreateGrindLoop();
+        CreateWalkLoop();
+        CreateLandSound();
+        CreateBlitzSound();
+        CreateJumpThrust();
     }
 
     void CreateGrindLoop()
@@ -231,21 +275,157 @@ public class Hd2Locomotion : MonoBehaviour
         grindLoopSource.rolloffMode = AudioRolloffMode.Linear;
     }
 
-    void UpdateGrindAudio()
+    void CreateWalkLoop()
     {
-        if (grindLoopSource == null)
+        var clip = Resources.Load<AudioClip>("Audio/RobotWalk");
+        if (clip == null)
             return;
 
-        bool onRail = grinding && grindRail != null;
-        if (onRail)
+        walkLoopSource = gameObject.AddComponent<AudioSource>();
+        walkLoopSource.clip = clip;
+        walkLoopSource.loop = true;
+        walkLoopSource.playOnAwake = false;
+        walkLoopSource.volume = 0.32f;
+        walkLoopSource.spatialBlend = 1f;
+        walkLoopSource.dopplerLevel = 0f;
+        walkLoopSource.minDistance = 2f;
+        walkLoopSource.maxDistance = 14f;
+        walkLoopSource.rolloffMode = AudioRolloffMode.Linear;
+    }
+
+    void CreateLandSound()
+    {
+        var clip = Resources.Load<AudioClip>("Audio/RobotLand");
+        if (clip == null)
+            return;
+
+        landSource = gameObject.AddComponent<AudioSource>();
+        landSource.clip = clip;
+        landSource.loop = false;
+        landSource.playOnAwake = false;
+        landSource.spatialBlend = 1f;
+        landSource.dopplerLevel = 0f;
+        landSource.minDistance = 2f;
+        landSource.maxDistance = 14f;
+        landSource.rolloffMode = AudioRolloffMode.Linear;
+    }
+
+    void CreateBlitzSound()
+    {
+        var clip = Resources.Load<AudioClip>("Audio/RobotBlitz");
+        if (clip == null)
+            return;
+
+        blitzSource = gameObject.AddComponent<AudioSource>();
+        blitzSource.clip = clip;
+        blitzSource.loop = false;
+        blitzSource.playOnAwake = false;
+        blitzSource.spatialBlend = 1f;
+        blitzSource.dopplerLevel = 0f;
+        blitzSource.minDistance = 2f;
+        blitzSource.maxDistance = 14f;
+        blitzSource.rolloffMode = AudioRolloffMode.Linear;
+    }
+
+    void NoteLanding()
+    {
+        if (thrusting)
+            return;
+
+        bool planted = FeetPlanted();
+        if (!planted)
         {
-            if (!grindLoopSource.isPlaying)
-                grindLoopSource.Play();
+            wasOffGround = true;
             return;
         }
 
-        if (grindLoopSource.isPlaying)
-            grindLoopSource.Stop();
+        if (!wasOffGround)
+            return;
+
+        wasOffGround = false;
+        if (landSource != null && landSource.clip != null)
+            landSource.PlayOneShot(landSource.clip, 0.85f);
+    }
+
+    void UpdateWalkAudio()
+    {
+        if (walkLoopSource == null)
+            return;
+
+        bool stepping = !thrusting && !grinding && !IsAirborne && FeetPlanted() && PlanarVelocity.sqrMagnitude > 0.04f;
+        if (!stepping)
+        {
+            if (walkLoopSource.isPlaying)
+                walkLoopSource.Stop();
+            return;
+        }
+
+        walkLoopSource.pitch = IsSprinting ? 1.55f : 1f;
+        walkLoopSource.volume = 0.32f;
+        if (!walkLoopSource.isPlaying)
+            walkLoopSource.Play();
+    }
+
+    void CreateJumpThrust()
+    {
+        var clip = Resources.Load<AudioClip>("Audio/JumpThrust");
+        if (clip == null)
+            return;
+
+        jumpThrustSource = gameObject.AddComponent<AudioSource>();
+        jumpThrustSource.clip = clip;
+        jumpThrustSource.loop = true;
+        jumpThrustSource.playOnAwake = false;
+        jumpThrustSource.spatialBlend = 1f;
+        jumpThrustSource.dopplerLevel = 0f;
+        jumpThrustSource.minDistance = 2f;
+        jumpThrustSource.maxDistance = 14f;
+        jumpThrustSource.rolloffMode = AudioRolloffMode.Linear;
+    }
+
+    void UpdateJumpThrustAudio(float dt)
+    {
+        if (jumpThrustSource == null)
+            return;
+
+        if (jumpBoosting)
+        {
+            jumpThrustFade = 0f;
+            jumpThrustSource.volume = 1f;
+            if (!jumpThrustSource.isPlaying)
+                jumpThrustSource.Play();
+            return;
+        }
+
+        if (jumpThrustFade <= 0f)
+            return;
+
+        jumpThrustFade -= dt;
+        jumpThrustSource.volume = Mathf.Clamp01(jumpThrustFade / JumpThrustFadeTime);
+        if (jumpThrustFade > 0f)
+            return;
+
+        jumpThrustSource.Stop();
+        jumpThrustSource.volume = 1f;
+    }
+
+    void UpdateGrindAudio()
+    {
+        if (grindLoopSource != null)
+        {
+            bool onRail = grinding && grindRail != null;
+            if (onRail)
+            {
+                if (!grindLoopSource.isPlaying)
+                    grindLoopSource.Play();
+            }
+            else if (grindLoopSource.isPlaying)
+            {
+                grindLoopSource.Stop();
+            }
+        }
+
+        UpdateWalkAudio();
     }
 
     void OnEnable()
@@ -286,6 +466,11 @@ public class Hd2Locomotion : MonoBehaviour
         viewThrustAction.AddBinding("<Mouse>/leftButton");
         viewThrustAction.Enable();
 
+        jumpAction = new InputAction("Hd2Jump", InputActionType.Button);
+        jumpAction.AddBinding("<XRController>{RightHand}/secondaryButton");
+        jumpAction.AddBinding("<Keyboard>/c");
+        jumpAction.Enable();
+
         Vector3 euler = transform.eulerAngles;
         editorYaw = euler.y;
         editorPitch = -18f;
@@ -305,12 +490,22 @@ public class Hd2Locomotion : MonoBehaviour
         HidePreview();
         if (grindLoopSource != null && grindLoopSource.isPlaying)
             grindLoopSource.Stop();
+        if (walkLoopSource != null && walkLoopSource.isPlaying)
+            walkLoopSource.Stop();
+        if (jumpThrustSource != null)
+        {
+            jumpThrustSource.Stop();
+            jumpThrustSource.volume = 1f;
+        }
+        jumpThrustFade = 0f;
         Dispose(ref moveAction);
         Dispose(ref turnAction);
         Dispose(ref sprintAction);
         Dispose(ref leftThrustAction);
         Dispose(ref rightThrustAction);
         Dispose(ref viewThrustAction);
+        Dispose(ref jumpAction);
+        EndJumpBoost();
     }
 
     void OnDestroy()
@@ -334,6 +529,8 @@ public class Hd2Locomotion : MonoBehaviour
         PlanarVelocity = Vector3.zero;
         if (dt <= 0f)
             return;
+
+        UpdateJumpThrustAudio(dt);
 
         float snap = ReadSnapDegrees();
         if (EditorFallback)
@@ -389,10 +586,21 @@ public class Hd2Locomotion : MonoBehaviour
             return;
         }
 
+        bool planted = FeetPlanted();
+        if (planted && !jumpBoosting)
+            jumpSpent = false;
+
+        if (!jumpSpent && planted && jumpAction != null && jumpAction.WasPressedThisFrame())
+            BeginJump();
+
         PlanarVelocity = PlanarStick() * CurrentSpeed();
         MoveHorizontal(PlanarVelocity * dt);
-        ApplyGravity(dt);
+        if (jumpBoosting)
+            TickJump(dt);
+        else
+            ApplyGravity(dt);
         PopOutOfWalls();
+        NoteLanding();
         UpdateGrindAudio();
     }
 
@@ -1121,9 +1329,11 @@ public class Hd2Locomotion : MonoBehaviour
         if (meter != null && !meter.TrySpend())
             return;
 
+        EndJumpBoost();
         grinding = false;
         grindRail = null;
         thrusting = true;
+        wasOffGround = false;
         thrustElapsed = 0f;
         thrustStart = transform.position;
         thrustEnd = aimLanding;
@@ -1131,6 +1341,9 @@ public class Hd2Locomotion : MonoBehaviour
         thrustGrindSign = aimGrindSign;
         verticalVelocity = 0f;
         aimValid = false;
+        if (blitzSource != null && blitzSource.clip != null)
+            blitzSource.PlayOneShot(blitzSource.clip);
+        PlayBlitzTrail();
     }
 
     void AdvanceThrust(float dt)
@@ -1159,7 +1372,104 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         thrustRail = null;
+        StopBlitzTrail();
         PopOutOfWalls();
+    }
+
+    void PlayBlitzTrail()
+    {
+        EnsureBlitzTrail();
+        if (blitzTrail == null)
+            return;
+
+        var main = blitzTrail.main;
+        Color spark = Color.Lerp(teamColor, Color.white, 0.62f);
+        spark.a = 1f;
+        Color edge = teamColor;
+        edge.a = 0.9f;
+        main.startColor = new ParticleSystem.MinMaxGradient(spark, edge);
+        blitzTrail.Play();
+    }
+
+    void StopBlitzTrail()
+    {
+        if (blitzTrail != null && blitzTrail.isPlaying)
+            blitzTrail.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+    }
+
+    void EnsureBlitzTrail()
+    {
+        if (blitzTrail != null)
+            return;
+
+        var trail = new GameObject("BlitzTrail");
+        trail.hideFlags = HideFlags.DontSave;
+        trail.transform.SetParent(transform, false);
+        trail.transform.localPosition = new Vector3(0f, 1.05f, 0f);
+        trail.transform.localRotation = Quaternion.identity;
+
+        blitzTrail = trail.AddComponent<ParticleSystem>();
+        blitzTrail.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = blitzTrail.main;
+        main.playOnAwake = false;
+        main.loop = true;
+        main.duration = 1f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.7f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.7f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.012f, 0.028f);
+        main.gravityModifier = 0.05f;
+        main.maxParticles = 96;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+        var emission = blitzTrail.emission;
+        emission.rateOverTime = 70f;
+
+        var shape = blitzTrail.shape;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 0.12f;
+
+        var size = blitzTrail.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+            new Keyframe(0f, 1f),
+            new Keyframe(1f, 0.15f)));
+
+        var color = blitzTrail.colorOverLifetime;
+        color.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(Color.white, 0f),
+                new GradientColorKey(Color.white, 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(0.9f, 0f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        color.color = gradient;
+
+        var renderer = trail.GetComponent<ParticleSystemRenderer>();
+        renderer.material = BlitzTrailMaterial();
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+    }
+
+    static Material blitzTrailMaterial;
+
+    static Material BlitzTrailMaterial()
+    {
+        if (blitzTrailMaterial != null)
+            return blitzTrailMaterial;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Particles/Standard Unlit");
+        blitzTrailMaterial = new Material(shader);
+        if (blitzTrailMaterial.HasProperty("_BaseColor"))
+            blitzTrailMaterial.SetColor("_BaseColor", Color.white);
+        return blitzTrailMaterial;
     }
 
     bool TickGrind(float dt)
@@ -1469,9 +1779,285 @@ public class Hd2Locomotion : MonoBehaviour
         return true;
     }
 
+    bool FeetPlanted()
+    {
+        if (!TryGround(out float groundY))
+            return false;
+
+        return Mathf.Abs(transform.position.y - groundY) <= 0.04f;
+    }
+
+    void BeginJump()
+    {
+        var meter = GetComponent<Hd2ThrustMeter>();
+        if (meter == null || meter.Charges <= 0.001f)
+            return;
+
+        jumpBoosting = true;
+        jumpSpent = true;
+        jumpOriginY = transform.position.y;
+        jumpTime = 0f;
+        verticalVelocity = 0f;
+        fallTime = 0f;
+        SetJumpExhaust(true);
+        if (jumpThrustSource != null)
+        {
+            jumpThrustFade = 0f;
+            jumpThrustSource.volume = 1f;
+            if (!jumpThrustSource.isPlaying)
+                jumpThrustSource.Play();
+        }
+    }
+
+    void TickJump(float dt)
+    {
+        var meter = GetComponent<Hd2ThrustMeter>();
+        bool held = jumpAction != null && jumpAction.IsPressed();
+        float risen = transform.position.y - jumpOriginY;
+        float timeLeft = Mathf.Max(0.05f, jumpMaxTime) - jumpTime;
+        if (!held || timeLeft <= 0f || risen >= jumpHeight - 0.001f || meter == null || meter.Charges <= 0.001f)
+        {
+            EndJumpBoost();
+            return;
+        }
+
+        float speed = jumpHeight / Mathf.Max(0.05f, jumpMaxTime);
+        float want = Mathf.Min(speed * Mathf.Min(dt, timeLeft), jumpHeight - risen);
+        CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        if (CastBody(bottom, top, bodyRadius * 0.9f, Vector3.up, want + skinWidth, out RaycastHit ceiling))
+            want = Mathf.Max(0f, ceiling.distance - skinWidth);
+        if (want <= 0.0001f)
+        {
+            EndJumpBoost();
+            return;
+        }
+
+        float cost = want / speed * Mathf.Max(0.01f, jumpThrustPerSecond);
+        float spent = meter.SpendUpTo(cost);
+        float rise = spent / Mathf.Max(0.01f, jumpThrustPerSecond) * speed;
+        if (rise <= 0.0001f)
+        {
+            EndJumpBoost();
+            return;
+        }
+
+        transform.position += Vector3.up * rise;
+        jumpTime += rise / speed;
+        verticalVelocity = 0f;
+        fallTime = 0f;
+    }
+
+    void EndJumpBoost()
+    {
+        bool wasBoosting = jumpBoosting;
+        if (!wasBoosting && (jumpExhaust == null || !jumpExhaust[0].isPlaying))
+            return;
+
+        jumpBoosting = false;
+        verticalVelocity = 0f;
+        SetJumpExhaust(false);
+        if (wasBoosting && jumpThrustSource != null && jumpThrustSource.isPlaying)
+            jumpThrustFade = JumpThrustFadeTime;
+    }
+
+    void SetJumpExhaust(bool playing)
+    {
+        EnsureJumpExhaust();
+        if (jumpExhaust == null)
+            return;
+
+        for (int i = 0; i < jumpExhaust.Length; i++)
+        {
+            if (jumpExhaust[i] == null)
+                continue;
+            if (playing)
+                jumpExhaust[i].Play();
+            else
+                jumpExhaust[i].Stop(false, ParticleSystemStopBehavior.StopEmitting);
+        }
+    }
+
+    void EnsureJumpExhaust()
+    {
+        if (jumpExhaust != null)
+            return;
+
+        var avatar = GetComponent<Hd2Body>();
+        Transform root = avatar != null && avatar.body != null ? avatar.body : transform;
+        if (!jumpNozzlesReady)
+            jumpNozzles = FindJumpNozzles(root);
+        jumpNozzlesReady = true;
+
+        jumpExhaust = new ParticleSystem[jumpNozzles.Length];
+        for (int i = 0; i < jumpNozzles.Length; i++)
+        {
+            var vent = new GameObject(i == 0 ? "JumpExhaustL" : "JumpExhaustR");
+            vent.hideFlags = HideFlags.DontSave;
+            vent.transform.SetParent(root, false);
+            vent.transform.localPosition = jumpNozzles[i];
+            vent.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            jumpExhaust[i] = CreateJumpExhaust(vent);
+        }
+    }
+
+    static Vector3[] FindJumpNozzles(Transform root)
+    {
+        var fallback = new[]
+        {
+            new Vector3(-0.14f, 1.03f, 0.3f),
+            new Vector3(0.14f, 1.03f, 0.3f)
+        };
+        var skin = root.GetComponentInChildren<SkinnedMeshRenderer>();
+        if (skin == null || skin.sharedMesh == null || !skin.sharedMesh.isReadable)
+            return fallback;
+
+        Vector3[] verts = skin.sharedMesh.vertices;
+        var upper = new List<Vector3>(256);
+        for (int i = 0; i < verts.Length; i++)
+        {
+            Vector3 local = root.InverseTransformPoint(skin.transform.TransformPoint(verts[i]));
+            if (local.y < 0.95f || local.y > 1.55f || Mathf.Abs(local.x) > 0.55f)
+                continue;
+            upper.Add(local);
+        }
+
+        if (upper.Count < 24)
+            return fallback;
+
+        Vector3 center = Vector3.zero;
+        for (int i = 0; i < upper.Count; i++)
+            center += upper[i];
+        center /= upper.Count;
+
+        Vector3 tip = upper[0];
+        float best = 0f;
+        for (int i = 0; i < upper.Count; i++)
+        {
+            Vector3 flat = upper[i] - center;
+            flat.y = 0f;
+            float distance = flat.sqrMagnitude;
+            if (distance <= best)
+                continue;
+            best = distance;
+            tip = upper[i];
+        }
+
+        Vector3 back = tip - center;
+        back.y = 0f;
+        if (back.sqrMagnitude < 0.0001f)
+            return fallback;
+        back.Normalize();
+        Vector3 side = Vector3.Cross(Vector3.up, back);
+
+        Vector3 left = Vector3.zero;
+        Vector3 right = Vector3.zero;
+        float leftY = float.PositiveInfinity;
+        float rightY = float.PositiveInfinity;
+        int leftCount = 0;
+        int rightCount = 0;
+        for (int i = 0; i < upper.Count; i++)
+        {
+            Vector3 point = upper[i];
+            if (Vector3.Dot(point - center, back) < 0.1f)
+                continue;
+            float lateral = Vector3.Dot(point - center, side);
+            if (lateral < -0.04f && point.y < leftY)
+            {
+                leftY = point.y;
+                left = point;
+                leftCount++;
+            }
+            else if (lateral > 0.04f && point.y < rightY)
+            {
+                rightY = point.y;
+                right = point;
+                rightCount++;
+            }
+        }
+
+        if (leftCount == 0 || rightCount == 0)
+            return fallback;
+
+        left.y -= 0.02f;
+        right.y -= 0.02f;
+        return new[] { left, right };
+    }
+
+    static ParticleSystem CreateJumpExhaust(GameObject vent)
+    {
+        var particles = vent.AddComponent<ParticleSystem>();
+        particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = particles.main;
+        main.playOnAwake = false;
+        main.loop = true;
+        main.duration = 1f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.28f, 0.55f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(1.4f, 2.6f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.08f);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(0.55f, 0.58f, 0.6f, 0.45f),
+            new Color(0.82f, 0.84f, 0.86f, 0.7f));
+        main.gravityModifier = 0.15f;
+        main.maxParticles = 48;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+        var emission = particles.emission;
+        emission.rateOverTime = 36f;
+
+        var shape = particles.shape;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 14f;
+        shape.radius = 0.015f;
+
+        var size = particles.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+            new Keyframe(0f, 0.45f),
+            new Keyframe(1f, 1.5f)));
+
+        var color = particles.colorOverLifetime;
+        color.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(new Color(0.75f, 0.78f, 0.8f), 0f),
+                new GradientColorKey(new Color(0.45f, 0.48f, 0.5f), 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(0.65f, 0f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        color.color = gradient;
+
+        var renderer = vent.GetComponent<ParticleSystemRenderer>();
+        renderer.material = JumpExhaustMaterial();
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        return particles;
+    }
+
+    static Material jumpExhaustMaterial;
+
+    static Material JumpExhaustMaterial()
+    {
+        if (jumpExhaustMaterial != null)
+            return jumpExhaustMaterial;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Particles/Standard Unlit");
+        jumpExhaustMaterial = new Material(shader);
+        if (jumpExhaustMaterial.HasProperty("_BaseColor"))
+            jumpExhaustMaterial.SetColor("_BaseColor", Color.white);
+        return jumpExhaustMaterial;
+    }
+
     void ApplyGravity(float dt)
     {
-        if (verticalVelocity <= 0f && TryGround(out float groundY))
+        bool fallingBack = jumpSpent && transform.position.y > jumpOriginY + 0.02f;
+        if (!fallingBack && verticalVelocity <= 0f && TryGround(out float groundY))
         {
             verticalVelocity = 0f;
             fallTime = 0f;

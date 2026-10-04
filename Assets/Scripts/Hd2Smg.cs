@@ -43,6 +43,8 @@ public class Hd2Smg : MonoBehaviour
     float climb;
     bool firing;
     Quaternion restLocalRotation;
+    AudioSource shotSource;
+    AudioClip shotClip;
 
     InputAction triggerAction;
     InputAction reloadAction;
@@ -63,6 +65,16 @@ public class Hd2Smg : MonoBehaviour
 
         restLocalRotation = transform.localRotation;
         rounds = magazineSize;
+
+        shotClip = Resources.Load<AudioClip>("Audio/SmgShot");
+        if (shotClip == null)
+            return;
+
+        shotSource = gameObject.AddComponent<AudioSource>();
+        shotSource.playOnAwake = false;
+        shotSource.spatialBlend = 1f;
+        shotSource.minDistance = 0.4f;
+        shotSource.maxDistance = 12f;
     }
 
     void OnEnable()
@@ -172,6 +184,8 @@ public class Hd2Smg : MonoBehaviour
         }
 
         SpawnShot();
+        if (shotSource != null && shotClip != null)
+            shotSource.PlayOneShot(shotClip);
         if (rounds <= 0)
             Reload();
     }
@@ -228,7 +242,11 @@ public class Hd2Smg : MonoBehaviour
             return Mathf.Abs(axis) > 0.001f ? worldSize / axis : worldSize;
         }
 
-        flash.transform.localPosition = new Vector3(0f, 0f, ScaleOf(parentScale.z, 0.06f));
+        float side = hand == Hd2Pistol.Hand.Right ? -1f : 1f;
+        flash.transform.localPosition = new Vector3(
+            -side * ScaleOf(parentScale.x, 0.025f),
+            0f,
+            ScaleOf(parentScale.z, 0.06f));
         flash.transform.localRotation = Quaternion.identity;
         flash.transform.localScale = new Vector3(
             ScaleOf(parentScale.x, 0.08f),

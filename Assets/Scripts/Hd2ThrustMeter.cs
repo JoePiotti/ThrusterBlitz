@@ -2,8 +2,9 @@ using UnityEngine;
 
 /// <summary>
 /// Segmented thrust bar drawn under the pointer target. No HUD.
-/// Starts at 3 charges. One thrust spends one block. A missing block returns every 3 seconds
-/// unless the player is sprinting. A kill adds one immediately, even while sprinting.
+/// Starts at 3 charges. A blitz spends one whole block. A jump spends a fraction of a block.
+/// A missing block returns over rechargeSeconds unless the player is sprinting.
+/// A kill adds one immediately, even while sprinting.
 /// Pickups can later raise the maximum to 5 and refill.
 /// </summary>
 public class Hd2ThrustMeter : MonoBehaviour
@@ -13,8 +14,7 @@ public class Hd2ThrustMeter : MonoBehaviour
     public int chargeCap = 5;
     public float rechargeSeconds = 3f;
 
-    int charges;
-    float recharge;
+    float charges;
     Transform blocksRoot;
     readonly Transform[] blocks = new Transform[5];
     static readonly Color filled = new Color(0.25f, 0.85f, 1f, 1f);
@@ -22,7 +22,7 @@ public class Hd2ThrustMeter : MonoBehaviour
     Material filledMaterial;
     Material emptyMaterial;
 
-    public int Charges => charges;
+    public float Charges => charges;
     public int MaxCharges => maxCharges;
 
     void Awake()
@@ -39,24 +39,25 @@ public class Hd2ThrustMeter : MonoBehaviour
         bool sprinting = locomotion != null && locomotion.IsSprinting;
         if (!sprinting && charges < maxCharges)
         {
-            recharge += Time.deltaTime;
-            if (recharge >= rechargeSeconds)
-            {
-                recharge = 0f;
-                charges++;
-                Refresh();
-            }
+            charges = Mathf.Min(maxCharges, charges + Time.deltaTime / Mathf.Max(0.01f, rechargeSeconds));
+            Refresh();
         }
     }
 
     public bool TrySpend()
     {
-        if (charges <= 0)
-            return false;
+        return SpendUpTo(1f) >= 1f - 0.001f;
+    }
 
-        charges--;
+    public float SpendUpTo(float amount)
+    {
+        if (amount <= 0f || charges <= 0f)
+            return 0f;
+
+        float spent = Mathf.Min(amount, charges);
+        charges -= spent;
         Refresh();
-        return true;
+        return spent;
     }
 
     public void AddCharge()
@@ -75,7 +76,6 @@ public class Hd2ThrustMeter : MonoBehaviour
             charges = maxCharges;
         else
             charges = Mathf.Min(charges, maxCharges);
-        recharge = 0f;
         Refresh();
     }
 
@@ -83,7 +83,6 @@ public class Hd2ThrustMeter : MonoBehaviour
     {
         maxCharges = Mathf.Clamp(startingCharges, 1, chargeCap);
         charges = maxCharges;
-        recharge = 0f;
         Refresh();
     }
 
@@ -148,9 +147,8 @@ public class Hd2ThrustMeter : MonoBehaviour
         const float width = 0.084f;
         const float gap = 0.0144f;
         float step = width + gap;
-        float fill = maxCharges > 0 && charges < maxCharges
-            ? Mathf.Clamp01(recharge / Mathf.Max(0.01f, rechargeSeconds))
-            : 0f;
+        int fullBars = Mathf.Clamp(Mathf.FloorToInt(charges + 0.0001f), 0, maxCharges);
+        float partial = Mathf.Clamp01(charges - fullBars);
 
         for (int i = 0; i < blocks.Length; i++)
         {
@@ -162,7 +160,7 @@ public class Hd2ThrustMeter : MonoBehaviour
             if (!shown)
                 continue;
 
-            float amount = i < charges ? 1f : (i == charges ? fill : 0.08f);
+            float amount = i < fullBars ? 1f : (i == fullBars && partial > 0.001f ? partial : 0.08f);
             float shownWidth = width * Mathf.Clamp(amount, 0.08f, 1f);
             float slotCenter = ((maxCharges - 1) * 0.5f - i) * step;
             float userLeftEdge = slotCenter + width * 0.5f;
@@ -171,7 +169,7 @@ public class Hd2ThrustMeter : MonoBehaviour
 
             var renderer = blocks[i].GetComponent<Renderer>();
             if (renderer != null)
-                renderer.sharedMaterial = i < charges || (i == charges && fill > 0f) ? filledMaterial : emptyMaterial;
+                renderer.sharedMaterial = i < fullBars || (i == fullBars && partial > 0.001f) ? filledMaterial : emptyMaterial;
         }
     }
 

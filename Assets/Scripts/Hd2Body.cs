@@ -239,10 +239,20 @@ public class Hd2Body : MonoBehaviour
         Vector3 rail = locomotion.GrindDirection;
         if (locomotion.IsGrinding && rail.sqrMagnitude > 0.0001f)
         {
+            ClearHangStretch();
             gaitWeight = 0f;
             PoseSkate(rail);
             return;
         }
+
+        if (locomotion.IsAirborne)
+        {
+            gaitWeight = 0f;
+            PoseHang();
+            return;
+        }
+
+        ClearHangStretch();
 
         Vector3 move = locomotion.PlanarVelocity;
         move.y = 0f;
@@ -273,6 +283,57 @@ public class Hd2Body : MonoBehaviour
         gait += (backward ? -speed : speed) * walkStepRate * Time.deltaTime;
         PoseWalkLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, Mathf.Sin(gait), Mathf.Max(0f, Mathf.Cos(gait)), stride);
         PoseWalkLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, Mathf.Sin(gait + Mathf.PI), Mathf.Max(0f, Mathf.Cos(gait + Mathf.PI)), stride);
+    }
+
+    bool legsHung;
+
+    void PoseHang()
+    {
+        PoseHangLeg(thighL, shinL, footL, restThighL, restShinL, restFootL);
+        PoseHangLeg(thighR, shinR, footR, restThighR, restShinR, restFootR);
+        legsHung = true;
+    }
+
+    void PoseHangLeg(
+        Transform thigh,
+        Transform shin,
+        Transform foot,
+        Quaternion thighRest,
+        Quaternion shinRest,
+        Quaternion footRest)
+    {
+        SetLocal(thigh, thighRest);
+        SetLocal(shin, shinRest);
+        SetLocal(foot, footRest);
+        if (thigh == null || shin == null)
+            return;
+
+        Vector3 thighDir = shin.position - thigh.position;
+        AimBone(thigh, thighDir, Vector3.down);
+        if (foot == null)
+            return;
+
+        Vector3 shinDir = foot.position - shin.position;
+        AimBone(shin, shinDir, Vector3.down);
+        SetLocal(foot, footRest);
+        SetAxisScale(thigh, LengthAxis(thigh, shin), 1.15f);
+        SetAxisScale(shin, LengthAxis(shin, foot), 1.15f);
+    }
+
+    void ClearHangStretch()
+    {
+        if (!legsHung)
+            return;
+
+        if (thighL != null)
+            thighL.localScale = Vector3.one;
+        if (thighR != null)
+            thighR.localScale = Vector3.one;
+        if (shinL != null)
+            shinL.localScale = Vector3.one;
+        if (shinR != null)
+            shinR.localScale = Vector3.one;
+        legsHung = false;
     }
 
     void ResetLegs()
