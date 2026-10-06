@@ -15,7 +15,7 @@ public class Hd2SmgPickup : MonoBehaviour
     public float cooldown = 10f;
 
     static readonly Color pickupColor = new Color(0.72f, 0.16f, 0.2f, 1f);
-    static readonly Vector3 equippedPosition = new Vector3(0f, -0.02f, 0.05f);
+    static readonly Vector3 equippedPosition = new Vector3(0f, 0.01f, 0.05f);
     static readonly Vector3 equippedEuler = Vector3.zero;
     static readonly Vector3 gripEquippedEuler = new Vector3(0f, 0f, 180f);
     const float equippedScale = 0.75f;

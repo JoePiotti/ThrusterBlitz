@@ -460,13 +460,34 @@ public class Hd2Shot : MonoBehaviour
         if (owner != null)
             health.LastAttacker = owner;
         float dealt = damage;
-        if (IsHead(hit.collider.transform))
+        if (IsHeadshot(hit))
             dealt *= headMultiplier;
         health.ApplyHit(dealt, false);
         return true;
     }
 
-    static bool IsHead(Transform hitTransform)
+    static bool IsHeadshot(RaycastHit hit)
+    {
+        if (IsNamedHead(hit.collider.transform))
+            return true;
+
+        Transform head = FindBone(hit.collider.transform, "Head");
+        if (head == null)
+            return false;
+
+        Vector3 skull = head.position;
+        if (head.childCount > 0)
+            skull = (head.position + head.GetChild(0).position) * 0.5f;
+
+        float headDist = (hit.point - skull).sqrMagnitude;
+        Transform neck = FindBone(hit.collider.transform, "Neck");
+        Transform chest = FindBone(hit.collider.transform, "Chest");
+        float neckDist = neck != null ? (hit.point - neck.position).sqrMagnitude : float.MaxValue;
+        float chestDist = chest != null ? (hit.point - chest.position).sqrMagnitude : float.MaxValue;
+        return headDist <= neckDist && headDist <= chestDist;
+    }
+
+    static bool IsNamedHead(Transform hitTransform)
     {
         Transform current = hitTransform;
         while (current != null)
@@ -477,5 +498,28 @@ public class Hd2Shot : MonoBehaviour
         }
 
         return false;
+    }
+
+    static Transform FindBone(Transform start, string boneName)
+    {
+        Transform root = start;
+        while (root.parent != null && root.parent.GetComponent<Hd2Health>() == null)
+            root = root.parent;
+
+        return FindNamed(root, boneName);
+    }
+
+    static Transform FindNamed(Transform root, string boneName)
+    {
+        if (root.name == boneName)
+            return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindNamed(root.GetChild(i), boneName);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 }

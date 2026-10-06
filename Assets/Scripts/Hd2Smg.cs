@@ -23,6 +23,10 @@ public class Hd2Smg : MonoBehaviour
     public float bodyDamage = 10f;
     public float headDamage = 20f;
     public Color shotColor = new Color(1f, 0.7f, 0.18f, 1f);
+    [Tooltip("Strength of the tick on each shot, from 0 to 1.")]
+    public float shotHapticAmplitude = 0.22f;
+    [Tooltip("Length of the tick on each shot, in seconds.")]
+    public float shotHapticDuration = 0.02f;
 
     [Header("Recoil")]
     [Tooltip("How many rounds at the start of a burst climb the barrel.")]
@@ -53,6 +57,8 @@ public class Hd2Smg : MonoBehaviour
 
     static readonly System.Collections.Generic.List<XRDisplaySubsystem> displays =
         new System.Collections.Generic.List<XRDisplaySubsystem>();
+    static readonly System.Collections.Generic.List<UnityEngine.XR.InputDevice> hapticDevices =
+        new System.Collections.Generic.List<UnityEngine.XR.InputDevice>();
 
     void Awake()
     {
@@ -186,6 +192,7 @@ public class Hd2Smg : MonoBehaviour
         SpawnShot();
         if (shotSource != null && shotClip != null)
             shotSource.PlayOneShot(shotClip);
+        Pulse(shotHapticAmplitude, shotHapticDuration);
         if (rounds <= 0)
             Reload();
     }
@@ -254,6 +261,21 @@ public class Hd2Smg : MonoBehaviour
         glow.UsePlasma(shotColor, 0.08f);
         glow.enabled = false;
         flash.AddComponent<Hd2MuzzleFlash>();
+    }
+
+    void Pulse(float amplitude, float duration)
+    {
+        if (amplitude <= 0f || duration <= 0f)
+            return;
+
+        var node = hand == Hd2Pistol.Hand.Left ? XRNode.LeftHand : XRNode.RightHand;
+        InputDevices.GetDevicesAtXRNode(node, hapticDevices);
+        for (int i = 0; i < hapticDevices.Count; i++)
+        {
+            UnityEngine.XR.InputDevice device = hapticDevices[i];
+            if (device.TryGetHapticCapabilities(out HapticCapabilities caps) && caps.supportsImpulse)
+                device.SendHapticImpulse(0, Mathf.Clamp01(amplitude), duration);
+        }
     }
 
     static bool EditorFallback

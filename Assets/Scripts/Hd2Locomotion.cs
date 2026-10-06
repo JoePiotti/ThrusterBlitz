@@ -567,11 +567,13 @@ public class Hd2Locomotion : MonoBehaviour
 
         if (released && aimSource == AimSource.None && aimValid)
         {
-            BeginThrust();
             HidePreview();
-            AdvanceThrust(dt);
-            UpdateGrindAudio();
-            return;
+            if (BeginThrust())
+            {
+                AdvanceThrust(dt);
+                UpdateGrindAudio();
+                return;
+            }
         }
 
         bool planted = FeetPlanted();
@@ -1326,11 +1328,11 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
 
-    void BeginThrust()
+    bool BeginThrust()
     {
         var meter = GetComponent<Hd2ThrustMeter>();
         if (meter != null && !meter.TrySpend())
-            return;
+            return false;
 
         EndJumpBoost();
         grinding = false;
@@ -1347,6 +1349,7 @@ public class Hd2Locomotion : MonoBehaviour
         if (blitzSource != null && blitzSource.clip != null)
             blitzSource.PlayOneShot(blitzSource.clip);
         PlayBlitzTrail();
+        return true;
     }
 
     void AdvanceThrust(float dt)

@@ -8,7 +8,7 @@ using UnityEngine;
 /// </summary>
 public static class Hd2PracticeBotSetup
 {
-    public const string PrefabPath = "Assets/Prefabs/PracticeRobot.prefab";
+    public const string PrefabPath = "Assets/Prefabs/HumanoidPractice.prefab";
 
     [MenuItem("HD2/Bake Practice Bot Hitboxes")]
     public static void BakeFromMenu()

@@ -101,7 +101,7 @@ public static class Hd2PistolSetup
 
         var pistol = (GameObject)PrefabUtility.InstantiatePrefab(model, handTransform);
         pistol.name = "Pistol";
-        pistol.transform.localPosition = new Vector3(0f, -0.02f, 0.05f);
+        pistol.transform.localPosition = new Vector3(0f, 0.01f, 0.05f);
         pistol.transform.localRotation = PistolRotation;
         pistol.transform.localScale = Vector3.one * GripScale;
 

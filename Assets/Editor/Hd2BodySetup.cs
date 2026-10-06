@@ -29,16 +29,15 @@ public class Hd2BodyImporter : AssetPostprocessor
 [InitializeOnLoad]
 public static class Hd2BodySetup
 {
-    public const string RobotPath = "Assets/Models/Bot/LowPolyRobot.fbx";
-    const string TexturePath = "Assets/Models/Bot/LowPolyRobot_BaseColor.png";
-    const string MaterialPath = "Assets/Models/Bot/LowPolyRobot.mat";
+    public const string RobotPath = "Assets/Models/Bot/HumanoidRobot.fbx";
+    const string TexturePath = "Assets/Models/Bot/HumanoidRobot_BaseColor.png";
+    const string MaterialPath = "Assets/Models/Bot/HumanoidRobot.mat";
     const string PlayerPath = "Assets/Prefabs/VRPlayer.prefab";
-    const string SessionKey = "HD2_BODY_RIG_V6";
+    const string SessionKey = "HD2_BODY_RIG_V12";
     static int rigTries;
 
     static Hd2BodySetup()
     {
-        EditorApplication.delayCall += AttachIfNeeded;
     }
 
     public static void AttachIfNeeded()
@@ -52,6 +51,18 @@ public static class Hd2BodySetup
         var player = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPath);
         if (robot == null || player == null)
             return;
+
+        var importer = AssetImporter.GetAtPath(RobotPath) as ModelImporter;
+        if (importer != null && (!importer.isReadable || importer.animationType != ModelImporterAnimationType.Generic))
+        {
+            importer.isReadable = true;
+            importer.animationType = ModelImporterAnimationType.Generic;
+            importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+            importer.importAnimation = false;
+            importer.optimizeBones = false;
+            importer.SaveAndReimport();
+            return;
+        }
 
         var root = PrefabUtility.LoadPrefabContents(PlayerPath);
         try
@@ -70,7 +81,7 @@ public static class Hd2BodySetup
                 instance.transform.localPosition = Vector3.zero;
                 instance.transform.localRotation = Quaternion.identity;
                 instance.transform.localScale = Vector3.one;
-                AssignBotMaterial(instance);
+                AssignPartMaterials(instance);
                 existing = instance.transform;
             }
 
@@ -103,12 +114,28 @@ public static class Hd2BodySetup
             body.upperArmR = FindChild(existing, "Arm.R");
             body.forearmR = FindChild(existing, "Arm.R.002");
             body.handR = FindChild(existing, "Hand.R");
+            var chest = FindChild(existing, "Chest");
+            body.shoulderPivotL = EnsurePivot(chest, upperArmL, "LeftShoulderPivot");
+            body.shoulderPivotR = EnsurePivot(chest, body.upperArmR, "RightShoulderPivot");
+            var locomotionHands = root.GetComponent<Hd2Locomotion>();
+            if (locomotionHands != null)
+            {
+                body.gripPivotL = EnsureGripPivot(locomotionHands.leftHand, false);
+                body.gripPivotR = EnsureGripPivot(locomotionHands.rightHand, true);
+            }
+
+            AssignPartMaterials(existing.gameObject);
+
+            // Boxes are hand-tuned after the rig settles. Only fill them in
+            // when this body has none yet, and never replace ones already there.
+            if (existing.GetComponentInChildren<Collider>() == null)
+                Hd2PracticeBot.FitHitboxes(existing);
 
             SetActive(root.transform, "LeftHandVisual", false);
             SetActive(root.transform, "RightHandVisual", false);
 
             PrefabUtility.SaveAsPrefabAsset(root, PlayerPath);
-            Debug.Log("HD2 low poly robot attached to VRPlayer.");
+            Debug.Log("HD2 humanoid robot attached to VRPlayer.");
         }
         finally
         {
@@ -116,6 +143,50 @@ public static class Hd2BodySetup
         }
 
         SessionState.SetBool(SessionKey, true);
+    }
+
+    static Transform EnsurePivot(Transform chest, Transform arm, string name)
+    {
+        if (chest == null || arm == null)
+            return null;
+
+        var pivot = chest.Find(name);
+        if (pivot == null)
+        {
+            var marker = new GameObject(name);
+            pivot = marker.transform;
+            pivot.SetParent(chest, false);
+            pivot.SetPositionAndRotation(arm.position, arm.rotation);
+        }
+
+        if (pivot.GetComponent<Hd2ShoulderPivot>() == null)
+            pivot.gameObject.AddComponent<Hd2ShoulderPivot>();
+        return pivot;
+    }
+
+    static Transform EnsureGripPivot(Transform hand, bool right)
+    {
+        if (hand == null)
+            return null;
+
+        string name = right ? "RightGripPivot" : "LeftGripPivot";
+        var pivot = FindChild(hand, name);
+        var gun = hand.GetComponentInChildren<Hd2Pistol>(true);
+        if (pivot == null)
+        {
+            var marker = new GameObject(name);
+            pivot = marker.transform;
+            pivot.SetParent(gun != null ? gun.transform : hand, false);
+            float side = right ? -1f : 1f;
+            pivot.localPosition = gun != null
+                ? new Vector3(0.014f * side, 0.101f, 0.088f)
+                : new Vector3(0f, 0.01f, 0.05f);
+            pivot.localRotation = Quaternion.identity;
+        }
+
+        if (pivot.GetComponent<Hd2ShoulderPivot>() == null)
+            pivot.gameObject.AddComponent<Hd2ShoulderPivot>();
+        return pivot;
     }
 
     static Transform FindChild(Transform root, string name)
@@ -136,6 +207,50 @@ public static class Hd2BodySetup
     {
         var source = PrefabUtility.GetCorrespondingObjectFromOriginalSource(instance);
         return source != null && AssetDatabase.GetAssetPath(source) == assetPath;
+    }
+
+    static void AssignPartMaterials(GameObject instance)
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit");
+        var renderer = instance.GetComponentInChildren<SkinnedMeshRenderer>();
+        if (renderer == null || renderer.sharedMesh == null || shader == null)
+            return;
+
+        int count = renderer.sharedMesh.subMeshCount;
+        var materials = new Material[count];
+        for (int i = 0; i < count; i++)
+        {
+            string texturePath = "Assets/Models/Bot/Parts/tripo_part_" + i + ".png";
+            materials[i] = PartMaterial(i, texturePath, shader);
+        }
+
+        renderer.sharedMaterials = materials;
+    }
+
+    static Material PartMaterial(int index, string texturePath, Shader shader)
+    {
+        const string folder = "Assets/Models/Bot/Materials";
+        if (!AssetDatabase.IsValidFolder(folder))
+            AssetDatabase.CreateFolder("Assets/Models/Bot", "Materials");
+
+        string path = folder + "/Part_" + index + ".mat";
+        var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, path);
+        }
+
+        material.shader = shader;
+        var color = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+        if (color != null)
+        {
+            material.SetTexture("_BaseMap", color);
+            material.SetTexture("_MainTex", color);
+        }
+
+        EditorUtility.SetDirty(material);
+        return material;
     }
 
     static void AssignBotMaterial(GameObject instance)

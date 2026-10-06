@@ -46,6 +46,14 @@ public class Hd2Body : MonoBehaviour
     public float armReachScale = 0.6f;
     [Tooltip("How many times longer the upper arm and the forearm may each get. Extra reach is split between them.")]
     public float forearmMaxStretch = 2.5f;
+    [Tooltip("Drag these in the prefab. They are not skinned, so the arm mesh stays put. Play mode swings the arm around them.")]
+    public Transform shoulderPivotL;
+    [Tooltip("Drag these in the prefab. They are not skinned, so the arm mesh stays put. Play mode swings the arm around them.")]
+    public Transform shoulderPivotR;
+    [Tooltip("Where the end of the left forearm should meet the gun. Drag this while the game is stopped.")]
+    public Transform gripPivotL;
+    [Tooltip("Where the end of the right forearm should meet the gun. Drag this while the game is stopped.")]
+    public Transform gripPivotR;
 
     Transform hips;
     Transform neck;
@@ -131,6 +139,78 @@ public class Hd2Body : MonoBehaviour
         return action;
     }
 
+    bool shoulderPivotApplied;
+
+    void ApplyShoulderPivots()
+    {
+        if (shoulderPivotApplied)
+            return;
+        if (shoulderPivotL == null && shoulderPivotR == null)
+        {
+            shoulderPivotApplied = true;
+            return;
+        }
+
+        var skin = body.GetComponentInChildren<SkinnedMeshRenderer>();
+        if (skin == null || skin.sharedMesh == null || upperArmL == null || upperArmR == null)
+            return;
+
+        Vector3 scale = body.localScale;
+        body.localScale = Vector3.one;
+        Vector3 leftPivot = shoulderPivotL != null ? shoulderPivotL.position : upperArmL.position;
+        Vector3 rightPivot = shoulderPivotR != null ? shoulderPivotR.position : upperArmR.position;
+        var mesh = Instantiate(skin.sharedMesh);
+        mesh.name = skin.sharedMesh.name + " Pivot";
+        var poses = mesh.bindposes;
+        var bones = skin.bones;
+        ShiftPivot(upperArmL, leftPivot, bones, poses);
+        ShiftPivot(upperArmR, rightPivot, bones, poses);
+        mesh.bindposes = poses;
+        skin.sharedMesh = mesh;
+        body.localScale = scale;
+        shoulderPivotApplied = true;
+    }
+
+    static void ShiftPivot(Transform bone, Vector3 worldPivot, Transform[] bones, Matrix4x4[] poses)
+    {
+        if (bone == null || bone.parent == null)
+            return;
+
+        Vector3 worldDelta = worldPivot - bone.position;
+        if (worldDelta.sqrMagnitude < 0.0000001f)
+            return;
+
+        int index = -1;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            if (bones[i] == bone)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+            return;
+
+        int childCount = bone.childCount;
+        var childPositions = new Vector3[childCount];
+        var childRotations = new Quaternion[childCount];
+        for (int i = 0; i < childCount; i++)
+        {
+            Transform child = bone.GetChild(i);
+            childPositions[i] = child.position;
+            childRotations[i] = child.rotation;
+        }
+
+        Matrix4x4 oldWorld = bone.localToWorldMatrix;
+        bone.localPosition += bone.parent.InverseTransformVector(worldDelta);
+        Matrix4x4 newWorld = bone.localToWorldMatrix;
+        poses[index] = newWorld.inverse * oldWorld * poses[index];
+        for (int i = 0; i < childCount; i++)
+            bone.GetChild(i).SetPositionAndRotation(childPositions[i], childRotations[i]);
+    }
+
     void LateUpdate()
     {
         if (head == null || body == null)
@@ -145,6 +225,7 @@ public class Hd2Body : MonoBehaviour
         UpdateBodyYaw(look);
 
         EnsureBones();
+        ApplyShoulderPivots();
         if (!fingersCached)
             CacheFingers();
         if (!poseReady)
@@ -532,6 +613,12 @@ public class Hd2Body : MonoBehaviour
 
     void SolveArmChain(Transform[] chain, Transform upper, Transform forearm, Transform hand, Transform target, float side)
     {
+        if (upper != null && forearm != null && hand != null)
+        {
+            SolveArm(upper, forearm, hand, target, side);
+            return;
+        }
+
         if (chain == null || chain.Length < 2)
         {
             SolveArm(upper, forearm, hand, target, side);
@@ -697,12 +784,14 @@ public class Hd2Body : MonoBehaviour
         if (upper == null || forearm == null || hand == null || target == null || body == null)
             return;
 
-        Vector3 wrist = WristPoint(target);
+        Vector3 wrist = GripAtForearmEnd(forearm, hand, GripPoint(target));
         StretchArm(upper, forearm, hand, wrist);
         float upperLength = Vector3.Distance(upper.position, forearm.position);
         float foreLength = Vector3.Distance(forearm.position, hand.position);
         if (upperLength < 0.02f || foreLength < 0.02f)
             return;
+
+        EnsureMedial();
 
         Vector3 shoulder = upper.position;
         Vector3 toTarget = wrist - shoulder;
@@ -725,10 +814,100 @@ public class Hd2Body : MonoBehaviour
         Vector3 elbow = shoulder + direction * (upperLength * cosShoulder) + poleDirection * (upperLength * sinShoulder);
         if (Vector3.Dot(elbow - shoulder, pole - shoulder) < 0f)
             elbow = shoulder + direction * (upperLength * cosShoulder) - poleDirection * (upperLength * sinShoulder);
+        elbow = KeepElbowOnOwnSide(shoulder, elbow, upperLength, side);
+        float stopped = Vector3.Distance(shoulder, elbow);
+        if (stopped < upperLength - 0.001f)
+        {
+            int upperAxis = LengthAxis(upper, forearm);
+            SetAxisScale(upper, upperAxis, Mathf.Clamp(stopped / upperLength, 0.3f, 1f));
+            int foreAxis = LengthAxis(forearm, hand);
+            Vector3 foreScaleNow = forearm.localScale;
+            float foreScale = foreAxis == 0 ? foreScaleNow.x : foreAxis == 1 ? foreScaleNow.y : foreScaleNow.z;
+            float restFore = foreScale > 0.01f ? foreLength / foreScale : foreLength;
+            float needed = Vector3.Distance(elbow, wrist);
+            float maxScale = Mathf.Max(Mathf.Clamp(armReachScale, 0.2f, 1f), forearmMaxStretch);
+            SetAxisScale(forearm, foreAxis, Mathf.Clamp(needed / Mathf.Max(restFore, 0.02f), 0.35f, maxScale));
+        }
 
         PointAt(upper, forearm, elbow);
+        SeatAgainstBody(upper, forearm, upper == upperArmL);
         PointAt(forearm, hand, wrist);
+        KeepForearmStraight(hand);
         PlaceHandOnGun(hand, target);
+    }
+
+    // Upper arms may meet in front of the chest, but neither elbow may cross
+    // the center line. The forearm bends in to cover whatever is left.
+    Vector3 KeepElbowOnOwnSide(Vector3 shoulder, Vector3 elbow, float upperLength, float side)
+    {
+        Vector3 across = body.right;
+        float pastCenter = Vector3.Dot(elbow - body.position, across);
+        bool crossed = side < 0f ? pastCenter > 0f : pastCenter < 0f;
+        if (!crossed)
+            return elbow;
+
+        Vector3 parked = elbow - across * pastCenter;
+        Vector3 dir = parked - shoulder;
+        if (dir.sqrMagnitude < 0.0001f)
+            dir = Vector3.ProjectOnPlane(body.forward, across);
+        if (dir.sqrMagnitude < 0.0001f)
+            return elbow;
+        // The bone is a fixed length, so aiming at the plane still swings the
+        // elbow through it. Stop the elbow on the plane instead.
+        float stop = Mathf.Min(upperLength, dir.magnitude);
+        return shoulder + dir.normalized * stop;
+    }
+
+    Vector3 medialUpperL;
+    Vector3 medialUpperR;
+    bool medialReady;
+
+    void EnsureMedial()
+    {
+        if (medialReady || upperArmL == null || forearmL == null)
+            return;
+        if (upperArmR == null || forearmR == null)
+            return;
+
+        CaptureMedial(upperArmL, forearmL, ShoulderInward(true), ref medialUpperL);
+        CaptureMedial(upperArmR, forearmR, ShoulderInward(false), ref medialUpperR);
+        medialReady = true;
+    }
+
+    // Horizontal, toward the chest. The player root is at the feet, so a
+    // direction to body.position points down and rolls the shoulder cap.
+    Vector3 ShoulderInward(bool left)
+    {
+        float side = left ? -1f : 1f;
+        Vector3 inward = body.right * -side;
+        inward.y = 0f;
+        if (inward.sqrMagnitude < 0.0001f)
+            return Vector3.right;
+        return inward.normalized;
+    }
+
+    void CaptureMedial(Transform bone, Transform child, Vector3 inward, ref Vector3 local)
+    {
+        Vector3 axis = child.position - bone.position;
+        Vector3 toward = Vector3.ProjectOnPlane(inward, axis);
+        if (axis.sqrMagnitude < 0.0001f || toward.sqrMagnitude < 0.0001f)
+            return;
+        local = Quaternion.Inverse(bone.rotation) * toward.normalized;
+    }
+
+    void SeatAgainstBody(Transform bone, Transform child, bool left)
+    {
+        Vector3 local = left ? medialUpperL : medialUpperR;
+        if (local.sqrMagnitude < 0.0001f)
+            return;
+
+        Vector3 axis = child.position - bone.position;
+        Vector3 desired = Vector3.ProjectOnPlane(ShoulderInward(left), axis);
+        Vector3 current = Vector3.ProjectOnPlane(bone.rotation * local, axis);
+        if (desired.sqrMagnitude < 0.0001f || current.sqrMagnitude < 0.0001f)
+            return;
+
+        bone.rotation = Quaternion.FromToRotation(current.normalized, desired.normalized) * bone.rotation;
     }
 
     void StretchArm(Transform upper, Transform forearm, Transform hand, Vector3 wrist)
@@ -745,19 +924,89 @@ public class Hd2Body : MonoBehaviour
 
         float reachScale = Mathf.Clamp(armReachScale, 0.2f, 1f);
         float gap = Vector3.Distance(upper.position, wrist);
-        float extra = Mathf.Max(0f, gap - (upperLength + foreLength) * reachScale);
-        float share = extra * 0.5f;
         float maxScale = Mathf.Max(reachScale, forearmMaxStretch);
-        float upperScale = Mathf.Clamp((upperLength * reachScale + share) / upperLength, reachScale, maxScale);
-        float foreScale = Mathf.Clamp((foreLength * reachScale + share) / foreLength, reachScale, maxScale);
-        SetAxisScale(upper, LengthAxis(upper, forearm), upperScale);
+        // Leave the upper arm at its real length. Scaling it stretches the
+        // shoulder into a wing. The forearm takes whatever extra reach is needed.
+        float foreScale = Mathf.Clamp((gap - upperLength) / foreLength, 0.35f, maxScale);
         SetAxisScale(forearm, LengthAxis(forearm, hand), foreScale);
+    }
+
+    Quaternion restHandL = Quaternion.identity;
+    Quaternion restHandR = Quaternion.identity;
+    bool handRestReady;
+
+    Vector3 GripPoint(Transform target)
+    {
+        Transform pivot = target == rightHand ? gripPivotR : gripPivotL;
+        if (pivot != null)
+            return pivot.position;
+        return WristPoint(target);
+    }
+
+    public Vector3 ForearmEndPosition(bool left)
+    {
+        Transform hand = left ? handL : handR;
+        if (hand == null)
+            return Vector3.zero;
+        for (int i = 0; i < hand.childCount; i++)
+        {
+            Transform child = hand.GetChild(i);
+            if (child.name.Contains("Tip"))
+                return child.position;
+        }
+        return hand.position;
+    }
+
+    // Hand.L/R is the end of the forearm. The grip should meet that tip,
+    // not the bone origin in the middle of the piece.
+    Vector3 GripAtForearmEnd(Transform forearm, Transform hand, Vector3 grip)
+    {
+        Transform tip = null;
+        for (int i = 0; i < hand.childCount; i++)
+        {
+            Transform child = hand.GetChild(i);
+            if (child.name.Contains("Tip"))
+                tip = child;
+        }
+
+        float extra = tip != null ? Vector3.Distance(hand.position, tip.position) : 0.06f;
+        Vector3 along = hand.position - forearm.position;
+        if (along.sqrMagnitude < 0.0001f)
+            along = grip - forearm.position;
+        if (along.sqrMagnitude < 0.0001f)
+            return grip;
+        return grip - along.normalized * extra;
+    }
+
+    void KeepForearmStraight(Transform hand)
+    {
+        if (hand == null || fingers.Count > 0)
+            return;
+
+        if (!handRestReady)
+        {
+            if (handL != null)
+                restHandL = handL.localRotation;
+            if (handR != null)
+                restHandR = handR.localRotation;
+            handRestReady = true;
+        }
+
+        hand.localRotation = hand == handR ? restHandR : restHandL;
     }
 
     void PlaceHandOnGun(Transform hand, Transform target)
     {
         Transform gun = GunInHand(target);
         bool pistol = gun != null && gun.GetComponent<Hd2Pistol>() != null;
+        if (fingers.Count == 0)
+        {
+            if (pistol)
+                PullGunTrigger(gun, ReadFinger(hand == handR ? rightTrigger : leftTrigger, true, hand == handR));
+            else if (gun != null)
+                PullGunTrigger(gun, ReadFinger(hand == handR ? rightTrigger : leftTrigger, true, hand == handR));
+            return;
+        }
         if (pistol)
             AimPistolGrip(hand, gun);
         else if (gun != null)
@@ -957,7 +1206,44 @@ public class Hd2Body : MonoBehaviour
         indexSpread.Clear();
         CollectFingers(handL);
         CollectFingers(handR);
-        fingersCached = fingers.Count > 0;
+        if (fingers.Count == 0)
+        {
+            CacheSolidHand(handL);
+            CacheSolidHand(handR);
+        }
+
+        fingersCached = true;
+    }
+
+    void CacheSolidHand(Transform hand)
+    {
+        if (hand == null)
+            return;
+
+        Transform tip = null;
+        for (int i = 0; i < hand.childCount; i++)
+        {
+            Transform child = hand.GetChild(i);
+            if (child.name.Contains("Tip"))
+                tip = child;
+        }
+
+        if (tip == null)
+            return;
+
+        Vector3 length = tip.position - hand.position;
+        if (length.sqrMagnitude < 0.0001f)
+            return;
+
+        Vector3 towardBody = Vector3.ProjectOnPlane(body.position - hand.position, length);
+        if (towardBody.sqrMagnitude < 0.0001f)
+            towardBody = Vector3.down;
+        Vector3 side = Vector3.Cross(length, towardBody);
+        lengthAxis[hand] = hand.InverseTransformDirection(length.normalized);
+        fingerAxis[hand] = lengthAxis[hand];
+        palmAxis[hand] = hand.InverseTransformDirection(towardBody.normalized);
+        if (side.sqrMagnitude > 0.0001f)
+            indexSpread[hand] = hand.InverseTransformDirection(side.normalized);
     }
 
     void CollectFingers(Transform hand)
