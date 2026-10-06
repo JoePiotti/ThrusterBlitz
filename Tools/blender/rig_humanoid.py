@@ -242,6 +242,61 @@ bot.parent = arm_obj
 modifier = bot.modifiers.new("Armature", "ARMATURE")
 modifier.object = arm_obj
 
+jet_src = r"C:\Users\joepi\Downloads\bot jet pack.glb"
+bpy.ops.import_scene.gltf(filepath=jet_src)
+jet = next(o for o in bpy.data.objects if o.type == "MESH" and o != bot)
+coords = np.array([tuple(v.co) for v in jet.data.vertices])
+# Turn the nozzles to the robot's back. Source nozzles sit on -Y.
+coords[:, 0] *= -1.0
+coords[:, 1] *= -1.0
+pack_scale = 0.36 / float(coords[:, 0].max() - coords[:, 0].min())
+coords *= pack_scale
+coords[:, 0] -= (coords[:, 0].min() + coords[:, 0].max()) * 0.5
+coords[:, 1] -= coords[:, 1].min()
+coords[:, 1] += 0.18
+coords[:, 2] -= coords[:, 2].min()
+coords[:, 2] += 1.05
+for index, vertex in enumerate(jet.data.vertices):
+    vertex.co = Vector(coords[index])
+jet.data.update()
+jet.name = "Jetpack"
+
+bottom = coords[coords[:, 2] < np.percentile(coords[:, 2], 18)]
+left_nozzle = bottom[bottom[:, 0] < 0].mean(axis=0)
+right_nozzle = bottom[bottom[:, 0] > 0].mean(axis=0)
+left_nozzle[2] -= 0.02
+right_nozzle[2] -= 0.02
+print("NOZZLES", [round(float(v), 3) for v in left_nozzle], [round(float(v), 3) for v in right_nozzle])
+
+group = jet.vertex_groups.new(name="Back")
+group.add(list(range(len(jet.data.vertices))), 1.0, "REPLACE")
+jet.parent = arm_obj
+jet_mod = jet.modifiers.new("Armature", "ARMATURE")
+jet_mod.object = arm_obj
+
+def nozzle(name, co):
+    empty = bpy.data.objects.new(name, None)
+    empty.empty_display_type = "SPHERE"
+    empty.empty_display_size = 0.03
+    empty.location = Vector(co)
+    bpy.context.collection.objects.link(empty)
+    empty.parent = arm_obj
+    return empty
+
+jump_l = nozzle("JumpNozzleL", left_nozzle)
+jump_r = nozzle("JumpNozzleR", right_nozzle)
+
+for mat in jet.data.materials:
+    if not mat or not mat.use_nodes:
+        continue
+    for node in mat.node_tree.nodes:
+        if node.type == "TEX_IMAGE" and node.image:
+            image = node.image
+            image.filepath_raw = os.path.join(out_dir, "Jetpack_BaseColor.png")
+            image.file_format = "PNG"
+            image.save()
+            print("JET TEX", image.filepath_raw)
+
 bpy.context.view_layer.objects.active = arm_obj
 bpy.ops.object.mode_set(mode="POSE")
 arm_obj.pose.bones["Arm.L"].rotation_mode = "XYZ"
@@ -272,6 +327,9 @@ bpy.ops.object.mode_set(mode="OBJECT")
 bpy.ops.object.select_all(action="DESELECT")
 arm_obj.select_set(True)
 bot.select_set(True)
+jet.select_set(True)
+jump_l.select_set(True)
+jump_r.select_set(True)
 bpy.context.view_layer.objects.active = arm_obj
 bpy.ops.export_scene.fbx(
     filepath=dst,
@@ -279,7 +337,7 @@ bpy.ops.export_scene.fbx(
     apply_scale_options="FBX_SCALE_ALL",
     axis_forward="-Z",
     axis_up="Y",
-    object_types={"ARMATURE", "MESH"},
+    object_types={"ARMATURE", "MESH", "EMPTY"},
     use_armature_deform_only=True,
     add_leaf_bones=False,
     bake_anim=False,

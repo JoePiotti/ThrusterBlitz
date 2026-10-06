@@ -116,6 +116,18 @@ public class Hd2ThrustMeter : MonoBehaviour
             blocksRoot.gameObject.SetActive(false);
     }
 
+    public void SetOwnerOnly(bool owner)
+    {
+        for (int i = 0; i < blocks.Length; i++)
+        {
+            if (blocks[i] == null)
+                continue;
+            var renderer = blocks[i].GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.forceRenderingOff = !owner;
+        }
+    }
+
     void EnsureBlocks()
     {
         if (blocksRoot != null)

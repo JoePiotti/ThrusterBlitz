@@ -18,8 +18,8 @@ public class Hd2SmgPickup : MonoBehaviour
     static readonly Vector3 equippedPosition = new Vector3(0f, 0.01f, 0.05f);
     static readonly Vector3 equippedEuler = Vector3.zero;
     static readonly Vector3 gripEquippedEuler = new Vector3(0f, 0f, 180f);
-    const float equippedScale = 0.75f;
-    const float displayScale = 1.05f;
+    const float equippedScale = 0.55f;
+    const float displayScale = 1.35f;
     static readonly Vector3 displayEuler = new Vector3(-90f, 0f, 0f);
 
     Transform sphere;

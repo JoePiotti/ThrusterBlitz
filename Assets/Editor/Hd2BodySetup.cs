@@ -33,7 +33,7 @@ public static class Hd2BodySetup
     const string TexturePath = "Assets/Models/Bot/HumanoidRobot_BaseColor.png";
     const string MaterialPath = "Assets/Models/Bot/HumanoidRobot.mat";
     const string PlayerPath = "Assets/Prefabs/VRPlayer.prefab";
-    const string SessionKey = "HD2_BODY_RIG_V12";
+    const string SessionKey = "HD2_BODY_RIG_V13";
     static int rigTries;
 
     static Hd2BodySetup()
@@ -212,7 +212,18 @@ public static class Hd2BodySetup
     static void AssignPartMaterials(GameObject instance)
     {
         var shader = Shader.Find("Universal Render Pipeline/Lit");
-        var renderer = instance.GetComponentInChildren<SkinnedMeshRenderer>();
+        var skins = instance.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        SkinnedMeshRenderer renderer = null;
+        int best = 0;
+        for (int i = 0; i < skins.Length; i++)
+        {
+            if (skins[i].sharedMesh == null)
+                continue;
+            if (skins[i].sharedMesh.subMeshCount <= best)
+                continue;
+            best = skins[i].sharedMesh.subMeshCount;
+            renderer = skins[i];
+        }
         if (renderer == null || renderer.sharedMesh == null || shader == null)
             return;
 
@@ -225,6 +236,18 @@ public static class Hd2BodySetup
         }
 
         renderer.sharedMaterials = materials;
+        AssignJetpackMaterial(instance, shader);
+    }
+
+    static void AssignJetpackMaterial(GameObject instance, Shader shader)
+    {
+        var renderers = instance.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i].name != "Jetpack")
+                continue;
+            renderers[i].sharedMaterial = PartMaterial(100, "Assets/Models/Bot/Jetpack_BaseColor.png", shader);
+        }
     }
 
     static Material PartMaterial(int index, string texturePath, Shader shader)

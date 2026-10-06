@@ -2,7 +2,7 @@ Shader "HD2/WireAvatar"
 {
     Properties
     {
-        _BaseColor ("Color", Color) = (0.2, 0.92, 0.28, 0.25)
+        _BaseColor ("Color", Color) = (0.2, 0.92, 0.28, 0.2)
     }
 
     SubShader
@@ -34,7 +34,7 @@ Shader "HD2/WireAvatar"
             struct Attributes
             {
                 float4 positionOS : POSITION;
-                float4 color : COLOR;
+                float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -55,7 +55,7 @@ Shader "HD2/WireAvatar"
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
-                output.bary = input.color.rgb;
+                output.bary = float3(input.uv, saturate(1.0 - input.uv.x - input.uv.y));
                 return output;
             }
 

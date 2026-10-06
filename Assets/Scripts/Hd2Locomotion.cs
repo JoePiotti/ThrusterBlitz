@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
 using UnityEngine.XR;
 
 /// <summary>
@@ -24,6 +25,7 @@ using UnityEngine.XR;
 ///   is illegal or there is no valid hit. The arc stops at thrustMaxDistance instead of turning red
 ///   for being too far. With less than one thrust charge the lines keep that color,
 ///   and the robot preview is hidden.
+///   The arc, landing wireframe, and charge marks render only for this player's camera.
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
 ///   or until the next thrust starts. Walking onto a rail steps up onto it or over it.
 ///   Grip is not grind.
@@ -193,7 +195,14 @@ public class Hd2Locomotion : MonoBehaviour
     MeshFilter[] wireParts;
     readonly Vector3[] wireCorners = new Vector3[8];
     GameObject thrustGhost;
+    Renderer[] ghostRenderers = System.Array.Empty<Renderer>();
+    Camera ownerCamera;
     Material wireMaterial;
+    GameObject heldGhostRoot;
+    MeshRenderer[] heldSources = System.Array.Empty<MeshRenderer>();
+    Transform[] heldClones = System.Array.Empty<Transform>();
+    readonly List<MeshRenderer> heldScan = new List<MeshRenderer>();
+    readonly List<MeshRenderer> heldScratch = new List<MeshRenderer>();
     AudioSource grindLoopSource;
     AudioSource walkLoopSource;
     AudioSource landSource;
@@ -477,6 +486,9 @@ public class Hd2Locomotion : MonoBehaviour
         Vector3 euler = transform.eulerAngles;
         editorYaw = euler.y;
         editorPitch = -18f;
+
+        RenderPipelineManager.beginCameraRendering += CullPreviewToOwner;
+        RenderPipelineManager.endCameraRendering += RestorePreviewAfterCamera;
     }
 
     void OnDisable()
@@ -509,12 +521,20 @@ public class Hd2Locomotion : MonoBehaviour
         Dispose(ref viewThrustAction);
         Dispose(ref jumpAction);
         EndJumpBoost();
+        RenderPipelineManager.beginCameraRendering -= CullPreviewToOwner;
+        RenderPipelineManager.endCameraRendering -= RestorePreviewAfterCamera;
+        SetPreviewForcedOff(false);
     }
 
     void OnDestroy()
     {
         if (previewMaterial != null)
             Destroy(previewMaterial);
+        if (wireMaterial != null)
+            Destroy(wireMaterial);
+        if (thrustGhost != null)
+            Destroy(thrustGhost);
+        ClearHeldGhost();
     }
 
     static void Dispose(ref InputAction action)
@@ -1931,6 +1951,16 @@ public class Hd2Locomotion : MonoBehaviour
 
         var avatar = GetComponent<Hd2Body>();
         Transform root = avatar != null && avatar.body != null ? avatar.body : transform;
+        Transform leftNozzle = FindNamed(root, "JumpNozzleL");
+        Transform rightNozzle = FindNamed(root, "JumpNozzleR");
+        if (leftNozzle != null && rightNozzle != null)
+        {
+            jumpExhaust = new ParticleSystem[2];
+            jumpExhaust[0] = CreateJumpExhaust(AttachVent(leftNozzle, "JumpExhaustL"));
+            jumpExhaust[1] = CreateJumpExhaust(AttachVent(rightNozzle, "JumpExhaustR"));
+            return;
+        }
+
         if (!jumpNozzlesReady)
             jumpNozzles = FindJumpNozzles(root);
         jumpNozzlesReady = true;
@@ -1945,6 +1975,30 @@ public class Hd2Locomotion : MonoBehaviour
             vent.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             jumpExhaust[i] = CreateJumpExhaust(vent);
         }
+    }
+
+    static GameObject AttachVent(Transform nozzle, string name)
+    {
+        var vent = new GameObject(name);
+        vent.hideFlags = HideFlags.DontSave;
+        vent.transform.SetParent(nozzle, false);
+        vent.transform.localPosition = Vector3.zero;
+        vent.transform.rotation = Quaternion.LookRotation(Vector3.down, Vector3.forward);
+        return vent;
+    }
+
+    static Transform FindNamed(Transform root, string name)
+    {
+        if (root.name == name)
+            return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindNamed(root.GetChild(i), name);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 
     static Vector3[] FindJumpNozzles(Transform root)
@@ -2235,7 +2289,7 @@ public class Hd2Locomotion : MonoBehaviour
         if (wireMaterial != null)
         {
             Color wire = color;
-            wire.a = 0.25f;
+            wire.a = 0.2f;
             if (wireMaterial.HasProperty("_BaseColor"))
                 wireMaterial.SetColor("_BaseColor", wire);
             if (wireMaterial.HasProperty("_Color"))
@@ -2332,6 +2386,113 @@ public class Hd2Locomotion : MonoBehaviour
         Vector3 delta = landing - source.position;
         thrustGhost.SetActive(true);
         CopyPose(source, thrustGhost.transform, delta);
+        var avatar = source.GetComponentInParent<Hd2Body>();
+        if (avatar != null)
+            ShowHeldGhost(avatar, delta);
+    }
+
+    void ShowHeldGhost(Hd2Body avatar, Vector3 delta)
+    {
+        if (wireMaterial == null)
+            return;
+
+        heldScan.Clear();
+        AppendHeldRenderers(avatar.leftHand);
+        AppendHeldRenderers(avatar.rightHand);
+        if (!HeldSetMatches())
+            RebuildHeldGhost();
+
+        if (heldGhostRoot != null)
+            heldGhostRoot.SetActive(true);
+
+        for (int i = 0; i < heldSources.Length; i++)
+        {
+            MeshRenderer source = heldSources[i];
+            Transform clone = heldClones[i];
+            if (source == null || clone == null)
+                continue;
+            clone.SetPositionAndRotation(source.transform.position + delta, source.transform.rotation);
+            clone.localScale = source.transform.lossyScale;
+        }
+    }
+
+    void AppendHeldRenderers(Transform hand)
+    {
+        if (hand == null)
+            return;
+
+        heldScratch.Clear();
+        hand.GetComponentsInChildren(false, heldScratch);
+        for (int i = 0; i < heldScratch.Count; i++)
+        {
+            MeshRenderer renderer = heldScratch[i];
+            if (renderer == null || !renderer.enabled || renderer.name == "MuzzleFlash")
+                continue;
+            MeshFilter filter = renderer.GetComponent<MeshFilter>();
+            if (filter == null || filter.sharedMesh == null || !filter.sharedMesh.isReadable)
+                continue;
+            heldScan.Add(renderer);
+        }
+    }
+
+    bool HeldSetMatches()
+    {
+        if (heldScan.Count != heldSources.Length)
+            return false;
+        for (int i = 0; i < heldScan.Count; i++)
+        {
+            if (heldScan[i] != heldSources[i])
+                return false;
+        }
+
+        return true;
+    }
+
+    void RebuildHeldGhost()
+    {
+        ClearHeldGhost();
+        if (heldScan.Count == 0 || wireMaterial == null)
+            return;
+
+        heldGhostRoot = new GameObject("ThrustHeldGhost");
+        heldGhostRoot.hideFlags = HideFlags.DontSave;
+        heldSources = heldScan.ToArray();
+        heldClones = new Transform[heldSources.Length];
+        for (int i = 0; i < heldSources.Length; i++)
+        {
+            MeshRenderer source = heldSources[i];
+            MeshFilter sourceFilter = source.GetComponent<MeshFilter>();
+            var copy = new GameObject(source.name + " Wire");
+            copy.hideFlags = HideFlags.DontSave;
+            copy.transform.SetParent(heldGhostRoot.transform, false);
+            var filter = copy.AddComponent<MeshFilter>();
+            filter.sharedMesh = MakeWireMesh(sourceFilter.sharedMesh);
+            var renderer = copy.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = wireMaterial;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            heldClones[i] = copy.transform;
+        }
+    }
+
+    void ClearHeldGhost()
+    {
+        if (heldGhostRoot != null)
+        {
+            var filters = heldGhostRoot.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < filters.Length; i++)
+            {
+                Mesh mesh = filters[i].sharedMesh;
+                if (mesh != null && (mesh.hideFlags & HideFlags.DontSave) != 0)
+                    Destroy(mesh);
+            }
+
+            Destroy(heldGhostRoot);
+        }
+
+        heldGhostRoot = null;
+        heldSources = System.Array.Empty<MeshRenderer>();
+        heldClones = System.Array.Empty<Transform>();
     }
 
     bool EnsureGhost(Transform source)
@@ -2366,7 +2527,7 @@ public class Hd2Locomotion : MonoBehaviour
             SkinnedMeshRenderer skin = skins[i];
             if (skin.sharedMesh != null && skin.sharedMesh.isReadable)
                 skin.sharedMesh = MakeWireMesh(skin.sharedMesh);
-            skin.sharedMaterial = wireMaterial;
+            skin.sharedMaterials = new Material[] { wireMaterial };
             skin.updateWhenOffscreen = true;
             skin.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             skin.receiveShadows = false;
@@ -2381,13 +2542,64 @@ public class Hd2Locomotion : MonoBehaviour
                 continue;
             if (filter.sharedMesh != null && filter.sharedMesh.isReadable)
                 filter.sharedMesh = MakeWireMesh(filter.sharedMesh);
-            renderer.sharedMaterial = wireMaterial;
+            renderer.sharedMaterials = new Material[] { wireMaterial };
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
         }
 
         thrustGhost.SetActive(false);
+        ghostRenderers = thrustGhost.GetComponentsInChildren<Renderer>(true);
         return true;
+    }
+
+    void CullPreviewToOwner(ScriptableRenderContext context, Camera camera)
+    {
+        SetPreviewForcedOff(camera != OwnerCamera());
+    }
+
+    void RestorePreviewAfterCamera(ScriptableRenderContext context, Camera camera)
+    {
+        SetPreviewForcedOff(false);
+    }
+
+    Camera OwnerCamera()
+    {
+        if (ownerCamera == null)
+            ownerCamera = GetComponentInChildren<Camera>();
+        return ownerCamera;
+    }
+
+    void SetPreviewForcedOff(bool off)
+    {
+        if (arcLine != null)
+            arcLine.forceRenderingOff = off;
+        if (wireLines != null)
+        {
+            for (int i = 0; i < wireLines.Length; i++)
+            {
+                if (wireLines[i] != null)
+                    wireLines[i].forceRenderingOff = off;
+            }
+        }
+
+        for (int i = 0; i < ghostRenderers.Length; i++)
+        {
+            if (ghostRenderers[i] != null)
+                ghostRenderers[i].forceRenderingOff = off;
+        }
+
+        for (int i = 0; i < heldClones.Length; i++)
+        {
+            if (heldClones[i] == null)
+                continue;
+            var renderer = heldClones[i].GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.forceRenderingOff = off;
+        }
+
+        var meter = GetComponent<Hd2ThrustMeter>();
+        if (meter != null)
+            meter.SetOwnerOnly(!off);
     }
 
     static Mesh MakeWireMesh(Mesh source)
@@ -2399,7 +2611,7 @@ public class Hd2Locomotion : MonoBehaviour
         int count = tris.Length;
         var verts = new Vector3[count];
         var normals = new Vector3[count];
-        var colors = new Color32[count];
+        var uvs = new Vector2[count];
         var weights = new BoneWeight[count];
         var indices = new int[count];
         bool hasNormals = srcNormals != null && srcNormals.Length == srcVerts.Length;
@@ -2413,9 +2625,7 @@ public class Hd2Locomotion : MonoBehaviour
             if (hasWeights)
                 weights[i] = srcWeights[sourceIndex];
             int corner = i % 3;
-            colors[i] = corner == 0
-                ? new Color32(255, 0, 0, 255)
-                : corner == 1 ? new Color32(0, 255, 0, 255) : new Color32(0, 0, 255, 255);
+            uvs[i] = corner == 0 ? new Vector2(1f, 0f) : corner == 1 ? new Vector2(0f, 1f) : Vector2.zero;
             indices[i] = i;
         }
 
@@ -2427,7 +2637,7 @@ public class Hd2Locomotion : MonoBehaviour
         mesh.vertices = verts;
         if (hasNormals)
             mesh.normals = normals;
-        mesh.colors32 = colors;
+        mesh.uv = uvs;
         if (hasWeights)
             mesh.boneWeights = weights;
         if (source.bindposes != null && source.bindposes.Length > 0)
@@ -2523,6 +2733,8 @@ public class Hd2Locomotion : MonoBehaviour
     {
         if (thrustGhost != null)
             thrustGhost.SetActive(false);
+        if (heldGhostRoot != null)
+            heldGhostRoot.SetActive(false);
         if (wireLines == null)
             return;
         for (int i = 0; i < wireLines.Length; i++)
