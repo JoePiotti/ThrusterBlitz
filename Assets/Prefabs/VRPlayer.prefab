@@ -1299,7 +1299,7 @@ MonoBehaviour:
   hand: 0
   magazineSize: 16
   shotsPerSecond: 8
-  reloadDuration: 2
+  reloadDuration: 1
   shotSpeed: 100
   shotLifetime: 2
   shotRadius: 0.04
@@ -1449,7 +1449,7 @@ MonoBehaviour:
   hand: 1
   magazineSize: 16
   shotsPerSecond: 8
-  reloadDuration: 2
+  reloadDuration: 1
   shotSpeed: 100
   shotLifetime: 2
   shotRadius: 0.04

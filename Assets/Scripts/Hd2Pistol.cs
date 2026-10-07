@@ -24,7 +24,7 @@ public class Hd2Pistol : MonoBehaviour
     [Header("Magazine")]
     public int magazineSize = 16;
     public float shotsPerSecond = 8f;
-    public float reloadDuration = 2f;
+    public float reloadDuration = 1f;
 
     [Header("Shot")]
     public float shotSpeed = 100f;
@@ -176,11 +176,18 @@ public class Hd2Pistol : MonoBehaviour
         }
 
         bool editorReload = EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
-        if (reloadAction.WasPressedThisFrame() || editorReload)
+        if (ActionPressed(hand == Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight, reloadAction) || editorReload)
             Reload();
 
-        bool pressed = triggerAction.WasPressedThisFrame();
-        bool released = triggerAction.WasReleasedThisFrame();
+        bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
+        if (menuOpen && triggerPressedAt >= 0f)
+        {
+            triggerPressedAt = -1f;
+            StopCharge();
+        }
+
+        bool pressed = !menuOpen && ActionPressed(hand == Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
+        bool released = !menuOpen && ActionReleased(hand == Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
         if (EditorFallback && editorFireAction != null)
         {
             pressed = pressed || editorFireAction.WasPressedThisFrame();
@@ -490,6 +497,31 @@ public class Hd2Pistol : MonoBehaviour
             if (device.TryGetHapticCapabilities(out HapticCapabilities caps) && caps.supportsImpulse)
                 device.SendHapticImpulse(0, Mathf.Clamp01(amplitude), duration);
         }
+    }
+
+    Hd2ControlMap controlMap;
+
+    Hd2ControlMap ControlMap()
+    {
+        if (controlMap == null)
+            controlMap = GetComponentInParent<Hd2ControlMap>();
+        return controlMap;
+    }
+
+    bool ActionPressed(Hd2ControlMap.Action action, InputAction fallback)
+    {
+        var map = ControlMap();
+        if (map != null)
+            return map.Pressed(action);
+        return fallback != null && fallback.WasPressedThisFrame();
+    }
+
+    bool ActionReleased(Hd2ControlMap.Action action, InputAction fallback)
+    {
+        var map = ControlMap();
+        if (map != null)
+            return map.Released(action);
+        return fallback != null && fallback.WasReleasedThisFrame();
     }
 
     static bool EditorFallback

@@ -109,6 +109,7 @@ public class Hd2Locomotion : MonoBehaviour
 
     [Header("Body")]
     public float bodyRadius = 0.25f;
+    [Tooltip("Standing capsule height. Play mode sets this from the headset height above the floor, clamped between 1.5 and 2 meters.")]
     public float bodyHeight = 1.7f;
     public float gravity = 15f;
     public float terminalVelocity = 25f;
@@ -236,13 +237,16 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
     public bool IsThrusting => thrusting;
+    bool crouched;
     public bool IsAirborne => jumpBoosting || jumpSpent;
+
+    public bool IsCrouching => crouched;
 
     public bool IsSprinting
     {
         get
         {
-            if (sprintAction == null || !sprintAction.IsPressed())
+            if (crouched || !SprintHeld())
                 return false;
             return ApplyDeadzone(ReadMove(), stickDeadzone).sqrMagnitude > 0.0001f;
         }
@@ -461,16 +465,13 @@ public class Hd2Locomotion : MonoBehaviour
         turnAction.Enable();
 
         sprintAction = new InputAction("Hd2Sprint", InputActionType.Button);
-        sprintAction.AddBinding("<XRController>{LeftHand}/thumbstickClicked");
         sprintAction.AddBinding("<Keyboard>/leftShift");
         sprintAction.Enable();
 
         leftThrustAction = new InputAction("Hd2ThrustLeft", InputActionType.Button);
-        leftThrustAction.AddBinding("<XRController>{LeftHand}/primaryButton");
         leftThrustAction.Enable();
 
         rightThrustAction = new InputAction("Hd2ThrustRight", InputActionType.Button);
-        rightThrustAction.AddBinding("<XRController>{RightHand}/primaryButton");
         rightThrustAction.Enable();
 
         viewThrustAction = new InputAction("Hd2ThrustView", InputActionType.Button);
@@ -479,7 +480,6 @@ public class Hd2Locomotion : MonoBehaviour
         viewThrustAction.Enable();
 
         jumpAction = new InputAction("Hd2Jump", InputActionType.Button);
-        jumpAction.AddBinding("<XRController>{RightHand}/secondaryButton");
         jumpAction.AddBinding("<Keyboard>/c");
         jumpAction.Enable();
 
@@ -553,6 +553,7 @@ public class Hd2Locomotion : MonoBehaviour
         if (dt <= 0f)
             return;
 
+        UpdateStandingHeight();
         UpdateJumpThrustAudio(dt);
 
         float snap = ReadSnapDegrees();
@@ -600,7 +601,10 @@ public class Hd2Locomotion : MonoBehaviour
         if (planted && !jumpBoosting)
             jumpSpent = false;
 
-        if (!jumpSpent && !jumpBoosting && jumpAction != null && jumpAction.WasPressedThisFrame())
+        if (Controls() != null && Controls().Pressed(Hd2ControlMap.Action.Crouch))
+            crouched = !crouched;
+
+        if (!crouched && !jumpSpent && !jumpBoosting && JumpPressed())
             BeginJump();
 
         if (grinding && grindRail != null && !jumpBoosting)
@@ -689,25 +693,25 @@ public class Hd2Locomotion : MonoBehaviour
     AimSource UpdateAimSource(out bool released)
     {
         AimSource releasedSource = AimSource.None;
-        if (rightThrustAction != null && rightThrustAction.WasReleasedThisFrame())
+        if (PointerReleased(true))
             releasedSource = AimSource.Right;
-        else if (leftThrustAction != null && leftThrustAction.WasReleasedThisFrame())
+        else if (PointerReleased(false))
             releasedSource = AimSource.Left;
         else if (viewThrustAction != null && viewThrustAction.WasReleasedThisFrame())
             releasedSource = AimSource.View;
 
-        if (rightThrustAction != null && rightThrustAction.WasPressedThisFrame())
+        if (PointerPressed(true))
             aimSource = AimSource.Right;
-        else if (leftThrustAction != null && leftThrustAction.WasPressedThisFrame())
+        else if (PointerPressed(false))
             aimSource = AimSource.Left;
         else if (viewThrustAction != null && viewThrustAction.WasPressedThisFrame())
             aimSource = AimSource.View;
 
         if (!SourceHeld(aimSource))
         {
-            if (rightThrustAction != null && rightThrustAction.IsPressed())
+            if (PointerHeld(true))
                 aimSource = AimSource.Right;
-            else if (leftThrustAction != null && leftThrustAction.IsPressed())
+            else if (PointerHeld(false))
                 aimSource = AimSource.Left;
             else if (viewThrustAction != null && viewThrustAction.IsPressed())
                 aimSource = AimSource.View;
@@ -721,14 +725,69 @@ public class Hd2Locomotion : MonoBehaviour
         return released ? releasedSource : AimSource.None;
     }
 
+    Hd2ControlMap Controls()
+    {
+        return GetComponent<Hd2ControlMap>();
+    }
+
+    bool SprintHeld()
+    {
+        if (sprintAction != null && sprintAction.IsPressed())
+            return true;
+        var map = Controls();
+        return map != null && map.Held(Hd2ControlMap.Action.Sprint);
+    }
+
+    bool JumpPressed()
+    {
+        if (jumpAction != null && jumpAction.WasPressedThisFrame())
+            return true;
+        var map = Controls();
+        return map != null && map.Pressed(Hd2ControlMap.Action.Jump);
+    }
+
+    bool JumpHeld()
+    {
+        if (crouched)
+            return false;
+        if (jumpAction != null && jumpAction.IsPressed())
+            return true;
+        var map = Controls();
+        return map != null && map.Held(Hd2ControlMap.Action.Jump);
+    }
+
+    bool PointerPressed(bool right)
+    {
+        var map = Controls();
+        if (map == null)
+            return false;
+        return map.Pressed(right ? Hd2ControlMap.Action.RightPointer : Hd2ControlMap.Action.LeftPointer);
+    }
+
+    bool PointerReleased(bool right)
+    {
+        var map = Controls();
+        if (map == null)
+            return false;
+        return map.Released(right ? Hd2ControlMap.Action.RightPointer : Hd2ControlMap.Action.LeftPointer);
+    }
+
+    bool PointerHeld(bool right)
+    {
+        var map = Controls();
+        if (map == null)
+            return false;
+        return map.Held(right ? Hd2ControlMap.Action.RightPointer : Hd2ControlMap.Action.LeftPointer);
+    }
+
     bool SourceHeld(AimSource source)
     {
         switch (source)
         {
             case AimSource.Right:
-                return rightThrustAction != null && rightThrustAction.IsPressed();
+                return PointerHeld(true);
             case AimSource.Left:
-                return leftThrustAction != null && leftThrustAction.IsPressed();
+                return PointerHeld(false);
             case AimSource.View:
                 return viewThrustAction != null && viewThrustAction.IsPressed();
             default:
@@ -1526,7 +1585,10 @@ public class Hd2Locomotion : MonoBehaviour
 
     float CurrentSpeed()
     {
-        bool sprinting = sprintAction != null && sprintAction.IsPressed();
+        if (crouched)
+            return walkSpeed * 0.5f;
+
+        bool sprinting = SprintHeld();
         if (!sprinting)
             return walkSpeed;
 
@@ -1879,7 +1941,7 @@ public class Hd2Locomotion : MonoBehaviour
     void TickJump(float dt)
     {
         var meter = GetComponent<Hd2ThrustMeter>();
-        bool held = jumpAction != null && jumpAction.IsPressed();
+        bool held = JumpHeld();
         float risen = transform.position.y - jumpOriginY;
         float timeLeft = Mathf.Max(0.05f, jumpMaxTime) - jumpTime;
         if (!held || timeLeft <= 0f || risen >= jumpHeight - 0.001f || meter == null || meter.Charges <= 0.001f)
@@ -2224,6 +2286,15 @@ public class Hd2Locomotion : MonoBehaviour
 
         groundY = hit.point.y;
         return true;
+    }
+
+    void UpdateStandingHeight()
+    {
+        if (head == null)
+            return;
+
+        float measured = transform.InverseTransformPoint(head.position).y;
+        bodyHeight = Mathf.Clamp(measured, 1.5f, 2f);
     }
 
     void CapsuleEnds(out Vector3 bottom, out Vector3 top)

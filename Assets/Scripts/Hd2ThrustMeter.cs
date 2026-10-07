@@ -4,7 +4,7 @@ using UnityEngine;
 /// Segmented thrust bar drawn under the pointer target. No HUD.
 /// Starts at 3 charges. A blitz spends one whole block. A jump spends a fraction of a block.
 /// A missing block returns over rechargeSeconds unless the player is sprinting.
-/// A kill adds one immediately, even while sprinting.
+/// Filling a whole bar plays the restore sound once. A kill adds one immediately, even while sprinting.
 /// Pickups can later raise the maximum to 5 and refill.
 /// </summary>
 public class Hd2ThrustMeter : MonoBehaviour
@@ -21,6 +21,9 @@ public class Hd2ThrustMeter : MonoBehaviour
     static readonly Color empty = new Color(0.12f, 0.14f, 0.16f, 1f);
     Material filledMaterial;
     Material emptyMaterial;
+    AudioSource restoreSource;
+    AudioClip restoreClip;
+    int heardBars = -1;
 
     public float Charges => charges;
     public int MaxCharges => maxCharges;
@@ -31,6 +34,21 @@ public class Hd2ThrustMeter : MonoBehaviour
         charges = Mathf.Clamp(startingCharges, 0, maxCharges);
         filledMaterial = MakeMaterial(filled);
         emptyMaterial = MakeMaterial(empty);
+        restoreClip = Resources.Load<AudioClip>("Audio/BlitzRestore");
+        if (restoreClip != null)
+        {
+            restoreSource = gameObject.AddComponent<AudioSource>();
+            restoreSource.clip = restoreClip;
+            restoreSource.playOnAwake = false;
+            restoreSource.loop = false;
+            restoreSource.spatialBlend = 1f;
+            restoreSource.dopplerLevel = 0f;
+            restoreSource.minDistance = 2f;
+            restoreSource.maxDistance = 14f;
+            restoreSource.rolloffMode = AudioRolloffMode.Linear;
+        }
+
+        heardBars = FullBars(charges);
     }
 
     void LateUpdate()
@@ -41,6 +59,7 @@ public class Hd2ThrustMeter : MonoBehaviour
         {
             charges = Mathf.Min(maxCharges, charges + Time.deltaTime / Mathf.Max(0.01f, rechargeSeconds));
             Refresh();
+            NoteBars();
         }
     }
 
@@ -57,6 +76,7 @@ public class Hd2ThrustMeter : MonoBehaviour
         float spent = Mathf.Min(amount, charges);
         charges -= spent;
         Refresh();
+        NoteBars();
         return spent;
     }
 
@@ -67,6 +87,7 @@ public class Hd2ThrustMeter : MonoBehaviour
 
         charges++;
         Refresh();
+        NoteBars();
     }
 
     public void SetMaxCharges(int maximum, bool refill)
@@ -77,6 +98,7 @@ public class Hd2ThrustMeter : MonoBehaviour
         else
             charges = Mathf.Min(charges, maxCharges);
         Refresh();
+        NoteBars();
     }
 
     public void ResetToBase()
@@ -84,6 +106,7 @@ public class Hd2ThrustMeter : MonoBehaviour
         maxCharges = Mathf.Clamp(startingCharges, 1, chargeCap);
         charges = maxCharges;
         Refresh();
+        NoteBars();
     }
 
     public void ShowUnderTarget(Vector3 feet, Transform view)
@@ -149,6 +172,19 @@ public class Hd2ThrustMeter : MonoBehaviour
         }
 
         Hide();
+    }
+
+    static int FullBars(float amount)
+    {
+        return Mathf.FloorToInt(amount + 0.0001f);
+    }
+
+    void NoteBars()
+    {
+        int full = FullBars(charges);
+        if (heardBars >= 0 && full > heardBars && restoreSource != null && restoreClip != null)
+            restoreSource.PlayOneShot(restoreClip);
+        heardBars = full;
     }
 
     void Refresh()

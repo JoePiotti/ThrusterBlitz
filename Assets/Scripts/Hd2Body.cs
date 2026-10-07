@@ -110,6 +110,10 @@ public class Hd2Body : MonoBehaviour
             gameObject.AddComponent<Hd2Health>();
         if (GetComponent<Hd2ThrustMeter>() == null)
             gameObject.AddComponent<Hd2ThrustMeter>();
+        if (GetComponent<Hd2ControlMap>() == null)
+            gameObject.AddComponent<Hd2ControlMap>();
+        if (GetComponent<Hd2UserMenu>() == null)
+            gameObject.AddComponent<Hd2UserMenu>();
         if (body != null)
         {
             var animators = body.GetComponentsInChildren<Animator>(true);

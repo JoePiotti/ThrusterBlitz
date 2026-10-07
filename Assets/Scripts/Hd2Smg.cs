@@ -49,6 +49,7 @@ public class Hd2Smg : MonoBehaviour
     Quaternion restLocalRotation;
     AudioSource shotSource;
     AudioClip shotClip;
+    AudioClip reloadClip;
 
     InputAction triggerAction;
     InputAction reloadAction;
@@ -73,11 +74,13 @@ public class Hd2Smg : MonoBehaviour
         rounds = magazineSize;
 
         shotClip = Resources.Load<AudioClip>("Audio/SmgShot");
-        if (shotClip == null)
+        reloadClip = Resources.Load<AudioClip>("Audio/SmgReload");
+        if (shotClip == null && reloadClip == null)
             return;
 
         shotSource = gameObject.AddComponent<AudioSource>();
         shotSource.playOnAwake = false;
+        shotSource.loop = false;
         shotSource.spatialBlend = 1f;
         shotSource.minDistance = 0.4f;
         shotSource.maxDistance = 12f;
@@ -138,11 +141,14 @@ public class Hd2Smg : MonoBehaviour
             FinishReload();
 
         bool editorReload = EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
-        if (reloadAction.WasPressedThisFrame() || editorReload)
+        var fire = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight;
+        var reload = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight;
+        if (ActionPressed(reload, reloadAction) || editorReload)
             Reload();
 
-        bool held = triggerAction.IsPressed();
-        if (EditorFallback && editorFireAction != null)
+        bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
+        bool held = !menuOpen && ActionHeld(fire, triggerAction);
+        if (!menuOpen && EditorFallback && editorFireAction != null)
             held = held || editorFireAction.IsPressed();
 
         firing = held && !reloading && rounds > 0;
@@ -166,6 +172,8 @@ public class Hd2Smg : MonoBehaviour
         reloading = true;
         reloadEndsAt = Time.time + Mathf.Max(0f, reloadDuration);
         firing = false;
+        if (shotSource != null && reloadClip != null)
+            shotSource.PlayOneShot(reloadClip);
     }
 
     void FinishReload()
@@ -276,6 +284,31 @@ public class Hd2Smg : MonoBehaviour
             if (device.TryGetHapticCapabilities(out HapticCapabilities caps) && caps.supportsImpulse)
                 device.SendHapticImpulse(0, Mathf.Clamp01(amplitude), duration);
         }
+    }
+
+    Hd2ControlMap controlMap;
+
+    Hd2ControlMap ControlMap()
+    {
+        if (controlMap == null)
+            controlMap = GetComponentInParent<Hd2ControlMap>();
+        return controlMap;
+    }
+
+    bool ActionPressed(Hd2ControlMap.Action action, InputAction fallback)
+    {
+        var map = ControlMap();
+        if (map != null)
+            return map.Pressed(action);
+        return fallback != null && fallback.WasPressedThisFrame();
+    }
+
+    bool ActionHeld(Hd2ControlMap.Action action, InputAction fallback)
+    {
+        var map = ControlMap();
+        if (map != null)
+            return map.Held(action);
+        return fallback != null && fallback.IsPressed();
     }
 
     static bool EditorFallback
