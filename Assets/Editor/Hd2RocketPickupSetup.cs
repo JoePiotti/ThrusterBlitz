@@ -1,20 +1,18 @@
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// <summary>
-/// Points the rocket pickup at the gripped launcher once Unity has imported it.
-/// Does not move a pickup that is already in the scene.
+/// Points the rocket pickup prefab at the gripped launcher. Scene instances keep their own transforms.
 /// </summary>
 [InitializeOnLoad]
 public static class Hd2RocketPickupSetup
 {
-    const string PrefabPath = "Assets/Prefabs/GripRocket.prefab";
+    const string ModelPath = "Assets/Prefabs/GripRocket.prefab";
+    const string PrefabPath = "Assets/Prefabs/Pickups/RocketPickup.prefab";
 
     static Hd2RocketPickupSetup()
     {
         EditorApplication.delayCall += AssignModel;
-        EditorSceneManager.sceneOpened += (_, __) => EditorApplication.delayCall += AssignModel;
     }
 
     static void AssignModel()
@@ -25,23 +23,23 @@ public static class Hd2RocketPickupSetup
             return;
         }
 
-        var model = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
-        if (model == null)
-        {
-            EditorApplication.delayCall += AssignModel;
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
+        if (model == null || AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) == null)
             return;
-        }
 
-        var pickups = Object.FindObjectsByType<Hd2RocketPickup>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        for (int i = 0; i < pickups.Length; i++)
+        var root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
         {
-            if (pickups[i].rocketModel == model)
-                continue;
+            var pickup = root.GetComponent<Hd2RocketPickup>();
+            if (pickup == null || pickup.rocketModel == model)
+                return;
 
-            pickups[i].rocketModel = model;
-            EditorUtility.SetDirty(pickups[i]);
-            if (pickups[i].gameObject.scene.IsValid())
-                EditorSceneManager.MarkSceneDirty(pickups[i].gameObject.scene);
+            pickup.rocketModel = model;
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
         }
     }
 }

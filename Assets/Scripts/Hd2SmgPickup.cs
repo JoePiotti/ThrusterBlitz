@@ -208,6 +208,34 @@ public class Hd2SmgPickup : MonoBehaviour
         return true;
     }
 
+    public void RepairSavedMaterials()
+    {
+        EnsureMaterial(transform.Find("Pad"), pickupColor, false);
+        EnsureMaterial(transform.Find("Sphere"), new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
+        EnsureLine(transform.Find("Ring"), pickupColor);
+    }
+
+    static void EnsureMaterial(Transform target, Color color, bool transparent)
+    {
+        if (target == null)
+            return;
+        var renderer = target.GetComponent<Renderer>();
+        if (renderer != null && renderer.sharedMaterial != null && renderer.sharedMaterial.shader != null)
+            return;
+        Paint(target.gameObject, color, transparent);
+    }
+
+    static void EnsureLine(Transform target, Color color)
+    {
+        if (target == null)
+            return;
+        var line = target.GetComponent<LineRenderer>();
+        if (line == null || (line.sharedMaterial != null && line.sharedMaterial.shader != null))
+            return;
+        line.material = new Material(Shader.Find("Sprites/Default"));
+        line.startColor = line.endColor = color;
+    }
+
     void SetReady(bool value)
     {
         ready = value;

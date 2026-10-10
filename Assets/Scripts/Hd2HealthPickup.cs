@@ -83,11 +83,6 @@ public class Hd2HealthPickup : MonoBehaviour
     {
         if (transform.Find("Pad") != null)
         {
-            var existingPad = transform.Find("Pad");
-            var padRenderer = existingPad.GetComponent<Renderer>();
-            if (padRenderer != null)
-                ColorExisting(padRenderer, pickupColor);
-
             sphere = transform.Find("Sphere");
             iconQuad = transform.Find("Sphere/Icon");
             ring = transform.Find("Ring") != null ? transform.Find("Ring").GetComponent<LineRenderer>() : null;
@@ -136,6 +131,46 @@ public class Hd2HealthPickup : MonoBehaviour
         ring.startColor = ring.endColor = pickupColor;
         ring.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         ring.enabled = false;
+    }
+
+    public void RepairSavedMaterials()
+    {
+        EnsureMaterial(transform.Find("Pad"), pickupColor, false);
+        EnsureMaterial(transform.Find("Sphere"), new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
+        Transform iconTransform = transform.Find("Sphere/Icon");
+        if (iconTransform != null)
+        {
+            var renderer = iconTransform.GetComponent<Renderer>();
+            if (renderer != null && (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null))
+            {
+                var iconMaterial = new Material(Shader.Find("HD2/RepairIcon"));
+                if (icon != null)
+                    iconMaterial.mainTexture = icon;
+                iconMaterial.color = pickupColor;
+                renderer.sharedMaterial = iconMaterial;
+            }
+        }
+
+        Transform ringTransform = transform.Find("Ring");
+        if (ringTransform != null)
+        {
+            var line = ringTransform.GetComponent<LineRenderer>();
+            if (line != null && (line.sharedMaterial == null || line.sharedMaterial.shader == null))
+            {
+                line.material = new Material(Shader.Find("Sprites/Default"));
+                line.startColor = line.endColor = pickupColor;
+            }
+        }
+    }
+
+    static void EnsureMaterial(Transform target, Color color, bool transparent)
+    {
+        if (target == null)
+            return;
+        var renderer = target.GetComponent<Renderer>();
+        if (renderer != null && renderer.sharedMaterial != null && renderer.sharedMaterial.shader != null)
+            return;
+        Paint(target.gameObject, color, transparent);
     }
 
     void SetRing(float amount)

@@ -61,6 +61,8 @@ public class Hd2Body : MonoBehaviour
     Transform thighR;
     Transform footL;
     Transform footR;
+    ParticleSystem sparkL;
+    ParticleSystem sparkR;
     Transform[] chainL;
     Transform[] chainR;
     Vector3 restHipsLocal;
@@ -134,6 +136,8 @@ public class Hd2Body : MonoBehaviour
         Dispose(ref leftGrip);
         Dispose(ref rightTrigger);
         Dispose(ref rightGrip);
+        DestroySpark(sparkL);
+        DestroySpark(sparkR);
     }
 
     static InputAction FingerAxis(string node, string control)
@@ -246,6 +250,7 @@ public class Hd2Body : MonoBehaviour
         SolveArmChain(chainR, upperArmR, forearmR, handR, rightHand, 1f);
         PoseHead(look);
         PoseLegs();
+        UpdateGrindSparks();
     }
 
     void UpdateBodyYaw(Vector3 look)
@@ -483,6 +488,122 @@ public class Hd2Body : MonoBehaviour
         across.Normalize();
         PoseSkateLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, across, along * 0.18f);
         PoseSkateLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, across, -along * 0.1f);
+    }
+
+    void UpdateGrindSparks()
+    {
+        bool grinding = locomotion != null && locomotion.IsGrinding;
+        Vector3 along = grinding ? locomotion.GrindDirection : Vector3.zero;
+        if (!grinding || along.sqrMagnitude < 0.0001f || footL == null || footR == null)
+        {
+            StopSpark(sparkL);
+            StopSpark(sparkR);
+            return;
+        }
+
+        Vector3 side = Vector3.Cross(Vector3.up, along);
+        PlaceSpark(ref sparkL, footL.position, (-along + side * 0.45f + Vector3.down * 0.2f).normalized);
+        PlaceSpark(ref sparkR, footR.position, (-along - side * 0.45f + Vector3.down * 0.2f).normalized);
+    }
+
+    void PlaceSpark(ref ParticleSystem spark, Vector3 foot, Vector3 spray)
+    {
+        if (spark == null)
+            spark = CreateGrindSpark();
+        spark.transform.SetPositionAndRotation(foot + Vector3.down * 0.05f, Quaternion.LookRotation(spray));
+        if (!spark.isPlaying)
+            spark.Play();
+    }
+
+    static void StopSpark(ParticleSystem spark)
+    {
+        if (spark != null && spark.isPlaying)
+            spark.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+    }
+
+    static void DestroySpark(ParticleSystem spark)
+    {
+        if (spark != null)
+            Destroy(spark.gameObject);
+    }
+
+    static ParticleSystem CreateGrindSpark()
+    {
+        var sparkObject = new GameObject("GrindSparks");
+        sparkObject.hideFlags = HideFlags.DontSave;
+        var spark = sparkObject.AddComponent<ParticleSystem>();
+        spark.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        var main = spark.main;
+        main.playOnAwake = false;
+        main.loop = true;
+        main.duration = 1f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.12f, 0.28f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(2.4f, 5.5f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.008f, 0.016f);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(1f, 0.97f, 0.85f),
+            new Color(1f, 0.62f, 0.12f));
+        main.gravityModifier = 1.4f;
+        main.maxParticles = 48;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+        var emission = spark.emission;
+        emission.rateOverTime = 46f;
+
+        var shape = spark.shape;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 22f;
+        shape.radius = 0.02f;
+
+        var color = spark.colorOverLifetime;
+        color.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(new Color(1f, 0.98f, 0.9f), 0f),
+                new GradientColorKey(new Color(1f, 0.45f, 0.05f), 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(1f, 0f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        color.color = gradient;
+
+        var size = spark.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+            new Keyframe(0f, 1f),
+            new Keyframe(1f, 0.2f)));
+
+        var renderer = sparkObject.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = ParticleSystemRenderMode.Stretch;
+        renderer.lengthScale = 4f;
+        renderer.velocityScale = 0.04f;
+        renderer.material = GrindSparkMaterial();
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        return spark;
+    }
+
+    static Material grindSparkMaterial;
+
+    static Material GrindSparkMaterial()
+    {
+        if (grindSparkMaterial != null)
+            return grindSparkMaterial;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Particles/Standard Unlit");
+        grindSparkMaterial = new Material(shader);
+        if (grindSparkMaterial.HasProperty("_BaseColor"))
+            grindSparkMaterial.SetColor("_BaseColor", Color.white);
+        if (grindSparkMaterial.HasProperty("_Color"))
+            grindSparkMaterial.SetColor("_Color", Color.white);
+        return grindSparkMaterial;
     }
 
     void PoseSkateLeg(

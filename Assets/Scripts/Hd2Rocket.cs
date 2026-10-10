@@ -63,6 +63,23 @@ public class Hd2Rocket : MonoBehaviour
         direction.Normalize();
         velocity = direction * Mathf.Max(0.1f, launchSpeed);
         transform.rotation = Quaternion.LookRotation(direction);
+        PlayHiss();
+    }
+
+    void PlayHiss()
+    {
+        AudioClip hiss = Resources.Load<AudioClip>("Audio/RocketHiss");
+        if (hiss == null)
+            return;
+
+        var source = gameObject.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.loop = true;
+        source.spatialBlend = 1f;
+        source.minDistance = 1f;
+        source.maxDistance = 40f;
+        source.clip = hiss;
+        source.Play();
     }
 
     public void BindOwner(Hd2Health health)
@@ -257,7 +274,28 @@ public class Hd2Rocket : MonoBehaviour
 
         SpawnBurst(point, Color.white, 0.9f, 1.2f);
         SpawnBurst(point, new Color(1f, 0.92f, 0.25f), 0.55f, outerRadiusMeters * 2f);
+        PlayExplosion(point);
         Destroy(gameObject);
+    }
+
+    static void PlayExplosion(Vector3 point)
+    {
+        AudioClip clip = Resources.Load<AudioClip>("Audio/RocketExplosion");
+        if (clip == null)
+            return;
+
+        var sound = new GameObject("RocketExplosion");
+        sound.transform.position = point;
+        var source = sound.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.loop = false;
+        source.spatialBlend = 1f;
+        source.volume = 1f;
+        source.minDistance = 8f;
+        source.maxDistance = 45f;
+        source.clip = clip;
+        source.Play();
+        Destroy(sound, clip.length + 0.1f);
     }
 
     void SpawnBurst(Vector3 point, Color color, float alpha, float diameter)

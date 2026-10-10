@@ -62,6 +62,8 @@ public static class Hd2PracticeBotSetup
             var practice = bots[i];
             if (practice.gameObject.scene.path != "Assets/Scenes/Deathmatch.unity")
                 continue;
+            if (UnderManual(practice.transform))
+                continue;
 
             var existing = practice.transform.Find("PracticeRobot");
             if (existing != null)
@@ -90,5 +92,17 @@ public static class Hd2PracticeBotSetup
             EditorUtility.SetDirty(practice);
             EditorSceneManager.MarkSceneDirty(practice.gameObject.scene);
         }
+    }
+
+    static bool UnderManual(Transform target)
+    {
+        while (target != null)
+        {
+            if (target.name == "Manual")
+                return true;
+            target = target.parent;
+        }
+
+        return false;
     }
 }

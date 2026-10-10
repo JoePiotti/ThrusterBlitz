@@ -200,10 +200,15 @@ public class Hd2Locomotion : MonoBehaviour
     Camera ownerCamera;
     Material wireMaterial;
     GameObject heldGhostRoot;
-    MeshRenderer[] heldSources = System.Array.Empty<MeshRenderer>();
+    Renderer[] heldSources = System.Array.Empty<Renderer>();
     Transform[] heldClones = System.Array.Empty<Transform>();
-    readonly List<MeshRenderer> heldScan = new List<MeshRenderer>();
+    Mesh[] heldBakes = System.Array.Empty<Mesh>();
+    int[][] heldRemaps = System.Array.Empty<int[]>();
+    Vector3[][] heldWireVerts = System.Array.Empty<Vector3[]>();
+    readonly List<Renderer> heldScan = new List<Renderer>();
     readonly List<MeshRenderer> heldScratch = new List<MeshRenderer>();
+    readonly List<SkinnedMeshRenderer> skinScratch = new List<SkinnedMeshRenderer>();
+    readonly List<Vector3> bakeScratch = new List<Vector3>();
     AudioSource grindLoopSource;
     AudioSource walkLoopSource;
     AudioSource landSource;
@@ -286,6 +291,7 @@ public class Hd2Locomotion : MonoBehaviour
         grindLoopSource.playOnAwake = false;
         grindLoopSource.spatialBlend = 1f;
         grindLoopSource.dopplerLevel = 0f;
+        grindLoopSource.volume = 0.5f;
         grindLoopSource.minDistance = 2f;
         grindLoopSource.maxDistance = 14f;
         grindLoopSource.rolloffMode = AudioRolloffMode.Linear;
@@ -2478,12 +2484,16 @@ public class Hd2Locomotion : MonoBehaviour
 
         for (int i = 0; i < heldSources.Length; i++)
         {
-            MeshRenderer source = heldSources[i];
+            Renderer source = heldSources[i];
             Transform clone = heldClones[i];
             if (source == null || clone == null)
                 continue;
+            if (source is SkinnedMeshRenderer skin)
+                PoseSkinnedWire(skin, clone, i);
             clone.SetPositionAndRotation(source.transform.position + delta, source.transform.rotation);
-            clone.localScale = source.transform.lossyScale;
+            // BakeMesh already writes the transform scale into the vertices. Applying it
+            // again shrinks the launcher toward its pivot and pulls it off the hand.
+            clone.localScale = source is SkinnedMeshRenderer ? Vector3.one : source.transform.lossyScale;
         }
     }
 
@@ -2503,6 +2513,16 @@ public class Hd2Locomotion : MonoBehaviour
             if (filter == null || filter.sharedMesh == null || !filter.sharedMesh.isReadable)
                 continue;
             heldScan.Add(renderer);
+        }
+
+        skinScratch.Clear();
+        hand.GetComponentsInChildren(false, skinScratch);
+        for (int i = 0; i < skinScratch.Count; i++)
+        {
+            SkinnedMeshRenderer skin = skinScratch[i];
+            if (skin == null || !skin.enabled || skin.sharedMesh == null || !skin.sharedMesh.isReadable)
+                continue;
+            heldScan.Add(skin);
         }
     }
 
@@ -2529,20 +2549,33 @@ public class Hd2Locomotion : MonoBehaviour
         heldGhostRoot.hideFlags = HideFlags.DontSave;
         heldSources = heldScan.ToArray();
         heldClones = new Transform[heldSources.Length];
+        heldBakes = new Mesh[heldSources.Length];
+        heldRemaps = new int[heldSources.Length][];
+        heldWireVerts = new Vector3[heldSources.Length][];
         for (int i = 0; i < heldSources.Length; i++)
         {
-            MeshRenderer source = heldSources[i];
-            MeshFilter sourceFilter = source.GetComponent<MeshFilter>();
+            Renderer source = heldSources[i];
+            Mesh sourceMesh = source is SkinnedMeshRenderer skin
+                ? skin.sharedMesh
+                : source.GetComponent<MeshFilter>().sharedMesh;
             var copy = new GameObject(source.name + " Wire");
             copy.hideFlags = HideFlags.DontSave;
             copy.transform.SetParent(heldGhostRoot.transform, false);
             var filter = copy.AddComponent<MeshFilter>();
-            filter.sharedMesh = MakeWireMesh(sourceFilter.sharedMesh);
+            filter.sharedMesh = MakeWireMesh(sourceMesh);
             var renderer = copy.AddComponent<MeshRenderer>();
             renderer.sharedMaterial = wireMaterial;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
             heldClones[i] = copy.transform;
+            if (source is SkinnedMeshRenderer)
+            {
+                var bake = new Mesh();
+                bake.hideFlags = HideFlags.DontSave;
+                heldBakes[i] = bake;
+                heldRemaps[i] = sourceMesh.triangles;
+                heldWireVerts[i] = new Vector3[heldRemaps[i].Length];
+            }
         }
     }
 
@@ -2561,9 +2594,40 @@ public class Hd2Locomotion : MonoBehaviour
             Destroy(heldGhostRoot);
         }
 
+        for (int i = 0; i < heldBakes.Length; i++)
+        {
+            if (heldBakes[i] != null)
+                Destroy(heldBakes[i]);
+        }
+
         heldGhostRoot = null;
-        heldSources = System.Array.Empty<MeshRenderer>();
+        heldSources = System.Array.Empty<Renderer>();
         heldClones = System.Array.Empty<Transform>();
+        heldBakes = System.Array.Empty<Mesh>();
+        heldRemaps = System.Array.Empty<int[]>();
+        heldWireVerts = System.Array.Empty<Vector3[]>();
+    }
+
+    void PoseSkinnedWire(SkinnedMeshRenderer skin, Transform clone, int index)
+    {
+        Mesh bake = index < heldBakes.Length ? heldBakes[index] : null;
+        MeshFilter filter = clone.GetComponent<MeshFilter>();
+        if (bake == null || filter == null || filter.sharedMesh == null || skin.sharedMesh == null)
+            return;
+
+        skin.BakeMesh(bake, false);
+        bake.GetVertices(bakeScratch);
+        int[] remap = heldRemaps[index];
+        Vector3[] wireVerts = heldWireVerts[index];
+        int posed = bakeScratch.Count;
+        for (int i = 0; i < wireVerts.Length; i++)
+        {
+            int src = remap[i];
+            wireVerts[i] = src >= 0 && src < posed ? bakeScratch[src] : Vector3.zero;
+        }
+
+        filter.sharedMesh.vertices = wireVerts;
+        filter.sharedMesh.RecalculateBounds();
     }
 
     bool EnsureGhost(Transform source)

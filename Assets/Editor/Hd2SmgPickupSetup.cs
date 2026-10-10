@@ -1,9 +1,8 @@
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 
 /// <summary>
-/// Points every SMG pickup at the decimated SMG model once Unity has imported it.
+/// Points the SMG pickup prefab at the grip models. Scene instances keep their own transforms.
 /// </summary>
 [InitializeOnLoad]
 public static class Hd2SmgPickupSetup
@@ -11,11 +10,11 @@ public static class Hd2SmgPickupSetup
     const string ModelPath = "Assets/Models/SMG/Smg.fbx";
     const string GripLeftPath = "Assets/Models/SMG/GripSmgLeft.fbx";
     const string GripRightPath = "Assets/Models/SMG/GripSmgRight.fbx";
+    const string PrefabPath = "Assets/Prefabs/Pickups/SmgPickup.prefab";
 
     static Hd2SmgPickupSetup()
     {
         EditorApplication.delayCall += AssignModel;
-        EditorSceneManager.sceneOpened += (_, __) => EditorApplication.delayCall += AssignModel;
     }
 
     static void AssignModel()
@@ -29,39 +28,41 @@ public static class Hd2SmgPickupSetup
         var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
         var left = AssetDatabase.LoadAssetAtPath<GameObject>(GripLeftPath);
         var right = AssetDatabase.LoadAssetAtPath<GameObject>(GripRightPath);
-        if (model == null)
-        {
-            EditorApplication.delayCall += AssignModel;
+        if (model == null || AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) == null)
             return;
-        }
 
-        var pickups = Object.FindObjectsByType<Hd2SmgPickup>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        for (int i = 0; i < pickups.Length; i++)
+        var root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
         {
+            var pickup = root.GetComponent<Hd2SmgPickup>();
+            if (pickup == null)
+                return;
+
             bool changed = false;
-            if (pickups[i].smgModel != model)
+            if (pickup.smgModel != model)
             {
-                pickups[i].smgModel = model;
+                pickup.smgModel = model;
                 changed = true;
             }
 
-            if (left != null && pickups[i].gripLeft != left)
+            if (left != null && pickup.gripLeft != left)
             {
-                pickups[i].gripLeft = left;
+                pickup.gripLeft = left;
                 changed = true;
             }
 
-            if (right != null && pickups[i].gripRight != right)
+            if (right != null && pickup.gripRight != right)
             {
-                pickups[i].gripRight = right;
+                pickup.gripRight = right;
                 changed = true;
             }
 
-            if (!changed)
-                continue;
-
-            EditorUtility.SetDirty(pickups[i]);
-            EditorSceneManager.MarkSceneDirty(pickups[i].gameObject.scene);
+            if (changed)
+                PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
         }
     }
 }

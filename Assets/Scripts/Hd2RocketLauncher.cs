@@ -30,8 +30,8 @@ public class Hd2RocketLauncher : MonoBehaviour
     public float minTurnRadiusMeters = 10f;
     public float turnRadiusMeters = 20f;
     public float maxFlightSeconds = 6f;
-    [Tooltip("How long a fresh rocket takes to slide from the base into the tube.")]
-    public float chamberSeconds = 0.45f;
+    [Tooltip("How long a fresh rocket takes to slide from the base into the tube, after the reload delay.")]
+    public float chamberSeconds = 0.6f;
     [Tooltip("Minimum time between shots.")]
     public float shotInterval = 1.75f;
 
@@ -57,11 +57,15 @@ public class Hd2RocketLauncher : MonoBehaviour
     Material rocketMaterial;
     Transform rocketBone;
     Vector3 rocketRestScale = Vector3.one;
+    const float chamberDelay = 0.8f;
     bool chambering;
     float chamberAge;
     Vector3 chamberStart;
     Vector3 chamberEnd;
     GameObject chamberRocket;
+
+    AudioSource reloadSource;
+    AudioClip reloadClip;
 
     static readonly System.Collections.Generic.List<XRDisplaySubsystem> displays =
         new System.Collections.Generic.List<XRDisplaySubsystem>();
@@ -79,6 +83,16 @@ public class Hd2RocketLauncher : MonoBehaviour
         AimMuzzle();
         PaintSight();
         BuildLaser();
+        reloadClip = Resources.Load<AudioClip>("Audio/RocketReload");
+        if (reloadClip == null)
+            return;
+
+        reloadSource = gameObject.AddComponent<AudioSource>();
+        reloadSource.playOnAwake = false;
+        reloadSource.loop = false;
+        reloadSource.spatialBlend = 1f;
+        reloadSource.minDistance = 0.4f;
+        reloadSource.maxDistance = 12f;
     }
 
     void Start()
@@ -177,7 +191,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         Quaternion seated = rocketBone.rotation;
         Vector3 seatedAt = rocketBone.position;
         Vector3 size = rocketBone.lossyScale;
-        float slide = 0.24f;
+        float slide = 0.32f;
         var body = new GameObject("Rocket");
         body.transform.SetPositionAndRotation(seatedAt, Quaternion.LookRotation(direction));
         AttachRocketMesh(body.transform, Quaternion.Inverse(body.transform.rotation) * seated, size);
@@ -213,6 +227,8 @@ public class Hd2RocketLauncher : MonoBehaviour
         if (chamberRocket != null)
             Destroy(chamberRocket);
 
+        if (chamberSeconds < 0.6f)
+            chamberSeconds = 0.6f;
         chamberAge = 0f;
         chambering = true;
         chamberRocket = new GameObject("ChamberRocket");
@@ -223,7 +239,10 @@ public class Hd2RocketLauncher : MonoBehaviour
         chamberEnd = transform.InverseTransformPoint(seatedAt);
         chamberStart = chamberEnd - localBarrel * slide;
         chamberRocket.transform.localPosition = chamberStart;
+        chamberRocket.SetActive(false);
         AttachRocketMesh(chamberRocket.transform, Quaternion.identity, size);
+        if (reloadSource != null && reloadClip != null)
+            reloadSource.PlayOneShot(reloadClip, 0.5f);
     }
 
     void AdvanceChamber()
@@ -232,7 +251,13 @@ public class Hd2RocketLauncher : MonoBehaviour
             return;
 
         chamberAge += Time.deltaTime;
-        float t = Mathf.SmoothStep(0f, 1f, chamberAge / Mathf.Max(0.05f, chamberSeconds));
+        if (chamberAge < chamberDelay)
+            return;
+
+        if (!chamberRocket.activeSelf)
+            chamberRocket.SetActive(true);
+
+        float t = Mathf.SmoothStep(0f, 1f, (chamberAge - chamberDelay) / Mathf.Max(0.05f, chamberSeconds));
         chamberRocket.transform.localPosition = Vector3.Lerp(chamberStart, chamberEnd, t);
         if (t < 1f)
             return;

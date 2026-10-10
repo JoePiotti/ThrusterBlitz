@@ -31,7 +31,7 @@ public class Hd2GrindRail : MonoBehaviour
 
     public float length { get; private set; }
 
-    const float BeamWidth = 0.36f;
+    const float BeamWidth = 0.18f;
     const float BeamThickness = 0.18f;
     const float SampleStep = 0.35f;
 

@@ -1,8 +1,9 @@
 using UnityEngine;
 
 /// <summary>
-/// Deathmatch match start. The level itself is built by hand in the scene.
-/// At play, each player is sent to their opening spawn.
+/// Deathmatch match start. The level itself is built by hand.
+/// Children named Manual are placed by hand and must not be edited by scripts.
+/// Children named Generated are the only place scripts may add map objects.
 /// </summary>
 [DefaultExecutionOrder(-100)]
 public class Hd2DeathmatchMap : MonoBehaviour
