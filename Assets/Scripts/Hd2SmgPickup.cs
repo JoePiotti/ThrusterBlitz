@@ -172,6 +172,13 @@ public class Hd2SmgPickup : MonoBehaviour
                 Destroy(pistols[i].gameObject);
         }
 
+        var rockets = hand.GetComponentsInChildren<Hd2RocketLauncher>(true);
+        for (int i = 0; i < rockets.Length; i++)
+        {
+            if (rockets[i] != null)
+                Destroy(rockets[i].gameObject);
+        }
+
         var gun = Instantiate(equipped, hand);
         gun.name = "Smg";
         gun.transform.localPosition = equippedPosition;

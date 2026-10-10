@@ -176,6 +176,13 @@ public class Hd2UserMenu : MonoBehaviour
                 muzzle = smg.muzzle;
         }
 
+        if (muzzle == null)
+        {
+            var rocket = hand.GetComponentInChildren<Hd2RocketLauncher>();
+            if (rocket != null && rocket.muzzle != null)
+                muzzle = rocket.muzzle;
+        }
+
         if (muzzle != null)
             return muzzle.forward;
         return hand.TransformDirection(Vector3.down);

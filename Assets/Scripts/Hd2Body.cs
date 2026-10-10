@@ -94,6 +94,7 @@ public class Hd2Body : MonoBehaviour
     readonly Dictionary<Transform, Quaternion> fingerRest = new Dictionary<Transform, Quaternion>();
     readonly Dictionary<Transform, Vector3> fingerHinge = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Quaternion> triggerRest = new Dictionary<Transform, Quaternion>();
+    readonly Dictionary<Transform, Vector3> triggerRestPos = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> fingerAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> palmAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> lengthAxis = new Dictionary<Transform, Vector3>();
@@ -941,6 +942,14 @@ public class Hd2Body : MonoBehaviour
 
     Vector3 GripPoint(Transform target)
     {
+        Transform gun = GunInHand(target);
+        if (gun != null && gun.GetComponent<Hd2RocketLauncher>() != null)
+        {
+            Transform rocketWrist = Find(gun, "Wrist");
+            if (rocketWrist != null)
+                return rocketWrist.position;
+        }
+
         Transform pivot = target == rightHand ? gripPivotR : gripPivotL;
         if (pivot != null)
             return pivot.position;
@@ -1048,6 +1057,14 @@ public class Hd2Body : MonoBehaviour
 
         if (gun.GetComponent<Hd2Smg>() != null)
             return SmgWrist(target, gun);
+
+        if (gun.GetComponent<Hd2RocketLauncher>() != null)
+        {
+            Transform rocketWrist = Find(gun, "Wrist");
+            if (rocketWrist != null)
+                return rocketWrist.position;
+            return SmgWrist(target, gun);
+        }
 
         // The wrist bone is the root of the hand mesh. Sit it just behind the grip
         // so the fingers land on the gun instead of stopping short of it.
@@ -1181,12 +1198,15 @@ public class Hd2Body : MonoBehaviour
         var smg = controller.GetComponentInChildren<Hd2Smg>(true);
         if (smg != null)
             return smg.transform;
+        var rocket = controller.GetComponentInChildren<Hd2RocketLauncher>(true);
+        if (rocket != null)
+            return rocket.transform;
         return null;
     }
 
     void PullGunTrigger(Transform gun, float amount)
     {
-        Transform trigger = Find(gun, "Trigger");
+        Transform trigger = FindTrigger(gun);
         if (trigger == null)
             return;
         if (!triggerRest.TryGetValue(trigger, out Quaternion rest))
@@ -1195,7 +1215,44 @@ public class Hd2Body : MonoBehaviour
             triggerRest[trigger] = rest;
         }
 
+        var launcher = gun.GetComponent<Hd2RocketLauncher>();
+        if (launcher != null)
+        {
+            if (!triggerRestPos.TryGetValue(trigger, out Vector3 restPos))
+            {
+                restPos = trigger.localPosition;
+                triggerRestPos[trigger] = restPos;
+            }
+
+            Vector3 back = -launcher.Barrel();
+            Vector3 localBack = trigger.parent != null
+                ? trigger.parent.InverseTransformVector(back.normalized * (0.015f * amount))
+                : back.normalized * (0.015f * amount);
+            trigger.localRotation = rest;
+            trigger.localPosition = restPos + localBack;
+            return;
+        }
+
         trigger.localRotation = rest * Quaternion.Euler(gunTriggerDegrees * amount, 0f, 0f);
+    }
+
+    static Transform FindTrigger(Transform gun)
+    {
+        Transform mesh = null;
+        Transform[] all = gun.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (!string.Equals(all[i].name, "trigger", System.StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            bool visual = all[i].GetComponent<Renderer>() != null || all[i].GetComponent<MeshFilter>() != null;
+            if (!visual)
+                return all[i];
+            if (mesh == null)
+                mesh = all[i];
+        }
+
+        return mesh;
     }
 
     void CacheFingers()
