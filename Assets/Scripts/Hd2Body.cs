@@ -117,6 +117,8 @@ public class Hd2Body : MonoBehaviour
             gameObject.AddComponent<Hd2ControlMap>();
         if (GetComponent<Hd2UserMenu>() == null)
             gameObject.AddComponent<Hd2UserMenu>();
+        if (GetComponent<Hd2PlayerDeath>() == null)
+            gameObject.AddComponent<Hd2PlayerDeath>();
         if (body != null)
         {
             var animators = body.GetComponentsInChildren<Animator>(true);

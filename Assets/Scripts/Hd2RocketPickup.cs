@@ -336,7 +336,7 @@ public class Hd2RocketPickup : MonoBehaviour
             mini = transform.Find("Sphere/Mini");
             ring = transform.Find("Ring") != null ? transform.Find("Ring").GetComponent<LineRenderer>() : null;
             if (mini != null)
-                PrepareDisplay(mini.gameObject);
+                HideGrip(mini);
             return;
         }
 

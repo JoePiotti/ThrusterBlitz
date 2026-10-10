@@ -163,6 +163,8 @@ public class Hd2Locomotion : MonoBehaviour
     float jumpThrustFade;
     const float JumpThrustFadeTime = 0.75f;
 
+    public bool MovementLocked { get; set; }
+
     public void HaltTravel()
     {
         thrusting = false;
@@ -175,6 +177,7 @@ public class Hd2Locomotion : MonoBehaviour
         EndJumpBoost();
         StopBlitzTrail();
         jumpSpent = false;
+        UpdateGrindAudio();
     }
     float grindSign = 1f;
     float grindDistance;
@@ -559,6 +562,13 @@ public class Hd2Locomotion : MonoBehaviour
         if (dt <= 0f)
             return;
 
+        if (MovementLocked)
+        {
+            if (EditorFallback)
+                EditorLook();
+            return;
+        }
+
         UpdateStandingHeight();
         UpdateJumpThrustAudio(dt);
 
@@ -576,6 +586,7 @@ public class Hd2Locomotion : MonoBehaviour
             HidePreview();
             AdvanceThrust(dt);
             UpdateGrindAudio();
+            DrownIfTouchingWater();
             return;
         }
 
@@ -599,6 +610,7 @@ public class Hd2Locomotion : MonoBehaviour
             {
                 AdvanceThrust(dt);
                 UpdateGrindAudio();
+                DrownIfTouchingWater();
                 return;
             }
         }
@@ -618,6 +630,7 @@ public class Hd2Locomotion : MonoBehaviour
             if (TickGrind(dt))
             {
                 UpdateGrindAudio();
+                DrownIfTouchingWater();
                 return;
             }
         }
@@ -637,6 +650,7 @@ public class Hd2Locomotion : MonoBehaviour
         PopOutOfWalls();
         NoteLanding();
         UpdateGrindAudio();
+        DrownIfTouchingWater();
     }
 
     static bool HeadsetPresent()
@@ -2277,6 +2291,38 @@ public class Hd2Locomotion : MonoBehaviour
         var health = GetComponent<Hd2Health>();
         if (health != null && !health.IsDead)
             health.ApplyHit(health.Health, false);
+    }
+
+    static readonly Collider[] waterHits = new Collider[8];
+
+    void DrownIfTouchingWater()
+    {
+        var health = GetComponent<Hd2Health>();
+        if (health == null || health.IsDead || !TouchingWater())
+            return;
+
+        health.ApplyHit(health.Health, false);
+    }
+
+    bool TouchingWater()
+    {
+        Vector3 origin = transform.position + Vector3.up * 0.15f;
+        if (RaycastBody(origin, Vector3.down, 0.15f + groundProbe, out RaycastHit hit)
+            && hit.collider.GetComponentInParent<Hd2Water>() != null)
+        {
+            float feetGap = transform.position.y - hit.point.y;
+            if (feetGap <= groundProbe && feetGap >= -0.05f)
+                return true;
+        }
+
+        int count = Physics.OverlapSphereNonAlloc(transform.position, 0.2f, waterHits, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            if (waterHits[i] != null && waterHits[i].GetComponentInParent<Hd2Water>() != null)
+                return true;
+        }
+
+        return false;
     }
 
     bool TryGround(out float groundY)
