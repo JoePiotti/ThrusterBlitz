@@ -15,10 +15,12 @@ using UnityEngine.XR;
 /// - Sprint: left stick click held, and only while there is move input. Stick magnitude does not sprint.
 /// - Thrust: hold left primary (X) or right primary (A). An arc is drawn from that hand. If the
 ///   arc ends in the air or on a wall, a straight line drops to the surface below and the marker
-///   sits there. The arc stops
+///   sits there. If a floor at least 2 m higher is found by going up 0.4 m from that drop and
+///   then 0.2 m farther from the player, the marker sits on that floor and the drop line is hidden.
+///   The arc stops
 ///   at the first solid hit. Release moves the root toward that point at
-///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, or a hit on
-///   Hd2NoLanding does nothing.
+///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, a hit on
+///   Hd2NoLanding, or a hit on water does nothing. The pointer stays red on water.
 ///   The local player's aim arc ignores Hd2SpawnField and continues to a landing beyond it.
 ///   The shield still stops shots from outside and is meant to block enemies, not this player.
 ///   Arc color: the rail's own color on a grind rail, green on other legal landings, red when the landing
@@ -1244,6 +1246,12 @@ public class Hd2Locomotion : MonoBehaviour
             return;
         }
 
+        if (TryUpperFloor(from, player, hit.point.y, maxSqr, out RaycastHit upper))
+        {
+            AcceptSurfaceHit(upper, player, maxSqr);
+            return;
+        }
+
         while (arcPointCount > 1 && arcPoints[arcPointCount - 1].y < hit.point.y - 0.02f)
             arcPointCount--;
         if (arcPointCount > 0 && arcPointCount < ArcPointCapacity
@@ -1282,6 +1290,30 @@ public class Hd2Locomotion : MonoBehaviour
         AcceptSurfaceHit(hit, player, maxSqr);
     }
 
+    bool TryUpperFloor(Vector3 dropStart, Vector3 player, float primaryY, float maxSqr, out RaycastHit landing)
+    {
+        landing = default;
+        Vector3 raised = dropStart + Vector3.up * 0.4f;
+        Vector3 away = raised - player;
+        away.y = 0f;
+        if (away.sqrMagnitude < 0.0001f)
+            return false;
+
+        away.Normalize();
+        Vector3 origin = raised + away * 0.2f;
+        if (!TryRayDown(origin, origin.y + 0.02f, out RaycastHit hit))
+            return false;
+        if (hit.normal.y <= 0.55f || IsNoLanding(hit.collider))
+            return false;
+        if (hit.point.y < primaryY + 2f)
+            return false;
+        if ((hit.point - player).sqrMagnitude > maxSqr)
+            return false;
+
+        landing = hit;
+        return true;
+    }
+
     Vector3 LandingFromHit(RaycastHit hit, out Hd2GrindRail rail, out float railSign)
     {
         railSign = 1f;
@@ -1303,7 +1335,10 @@ public class Hd2Locomotion : MonoBehaviour
 
     static bool IsNoLanding(Collider collider)
     {
-        return collider != null && collider.GetComponentInParent<Hd2NoLanding>() != null;
+        if (collider == null)
+            return false;
+        return collider.GetComponentInParent<Hd2NoLanding>() != null
+            || collider.GetComponentInParent<Hd2Water>() != null;
     }
 
     // The spawn field stays solid so outside shots hit it. The local player walks and
@@ -2298,28 +2333,36 @@ public class Hd2Locomotion : MonoBehaviour
     void DrownIfTouchingWater()
     {
         var health = GetComponent<Hd2Health>();
-        if (health == null || health.IsDead || !TouchingWater())
+        if (health == null || health.IsDead || !TouchingWater(out Vector3 surface))
             return;
 
+        Hd2Water.Splash(surface, true);
         health.ApplyHit(health.Health, false);
     }
 
-    bool TouchingWater()
+    bool TouchingWater(out Vector3 surface)
     {
+        surface = transform.position;
         Vector3 origin = transform.position + Vector3.up * 0.15f;
         if (RaycastBody(origin, Vector3.down, 0.15f + groundProbe, out RaycastHit hit)
             && hit.collider.GetComponentInParent<Hd2Water>() != null)
         {
             float feetGap = transform.position.y - hit.point.y;
             if (feetGap <= groundProbe && feetGap >= -0.05f)
+            {
+                surface = hit.point;
                 return true;
+            }
         }
 
         int count = Physics.OverlapSphereNonAlloc(transform.position, 0.2f, waterHits, ~0, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < count; i++)
         {
-            if (waterHits[i] != null && waterHits[i].GetComponentInParent<Hd2Water>() != null)
-                return true;
+            if (waterHits[i] == null || waterHits[i].GetComponentInParent<Hd2Water>() == null)
+                continue;
+
+            surface = new Vector3(transform.position.x, waterHits[i].bounds.max.y, transform.position.z);
+            return true;
         }
 
         return false;

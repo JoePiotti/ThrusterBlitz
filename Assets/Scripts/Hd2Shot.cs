@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Visible projectile. A normal shot stops on the first collider that is not the shooter.
-/// A charged shot bounces off walls and floors, and stops on players, bots, and practice targets.
+/// A charged shot bounces off walls and floors, and stops on players, bots, practice targets, and water.
 /// Hd2SpawnField is one-way: a shot from the room side passes through. A shot from the map side stops.
 /// </summary>
 public class Hd2Shot : MonoBehaviour
@@ -126,6 +126,13 @@ public class Hd2Shot : MonoBehaviour
         if (target != null)
         {
             target.RegisterHit(hit.point, hit.normal);
+            Destroy(gameObject);
+            return true;
+        }
+
+        if (hit.collider.GetComponentInParent<Hd2Water>() != null)
+        {
+            Hd2Water.Splash(hit.point, false);
             Destroy(gameObject);
             return true;
         }

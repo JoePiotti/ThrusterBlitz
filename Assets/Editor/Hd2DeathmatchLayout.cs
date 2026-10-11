@@ -18,15 +18,30 @@ public static class Hd2DeathmatchLayout
     {
         EditorApplication.delayCall += Ensure;
         EditorSceneManager.sceneOpened += (_, __) => EditorApplication.delayCall += Ensure;
+        EditorApplication.playModeStateChanged += OnPlayMode;
+    }
+
+    static void OnPlayMode(PlayModeStateChange state)
+    {
+        if (state == PlayModeStateChange.EnteredEditMode)
+            EditorApplication.delayCall += Ensure;
+    }
+
+    static bool InPlayMode()
+    {
+        return EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode;
     }
 
     static void Ensure()
     {
-        if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling)
+        if (EditorApplication.isCompiling)
         {
             EditorApplication.delayCall += Ensure;
             return;
         }
+
+        if (InPlayMode())
+            return;
 
         var scene = EditorSceneManager.GetSceneByPath(ScenePath);
         if (!scene.isLoaded)
@@ -51,7 +66,7 @@ public static class Hd2DeathmatchLayout
         changed |= Prefabize<Hd2RocketPickup>(scene, PickupFolder + "/RocketPickup.prefab");
         changed |= Prefabize<Hd2HealthPickup>(scene, PickupFolder + "/HealthPickup.prefab");
         changed |= Prefabize<Hd2ThrustPickup>(scene, PickupFolder + "/ThrustPickup.prefab");
-        if (!changed)
+        if (!changed || InPlayMode())
             return;
 
         EditorSceneManager.MarkSceneDirty(scene);

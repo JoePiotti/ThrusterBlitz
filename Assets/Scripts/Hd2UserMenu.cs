@@ -40,6 +40,10 @@ public class Hd2UserMenu : MonoBehaviour
     Canvas canvas;
     RectTransform panel;
     GameObject controlsPage;
+    GameObject lookPage;
+    Image controlsTabImage;
+    Image lookTabImage;
+    readonly Image[] themeImages = new Image[3];
     GameObject actionList;
     Text actionListTitle;
     readonly List<Click> clicks = new List<Click>();
@@ -224,14 +228,16 @@ public class Hd2UserMenu : MonoBehaviour
         {
             for (int i = 0; i < actionClicks.Count; i++)
             {
-                if (Inside(actionClicks[i].rect, screen, cam))
+                if (actionClicks[i].rect != null && actionClicks[i].rect.gameObject.activeInHierarchy
+                    && Inside(actionClicks[i].rect, screen, cam))
                     return actionClicks[i];
             }
         }
 
         for (int i = clicks.Count - 1; i >= 0; i--)
         {
-            if (Inside(clicks[i].rect, screen, cam))
+            if (clicks[i].rect != null && clicks[i].rect.gameObject.activeInHierarchy
+                && Inside(clicks[i].rect, screen, cam))
                 return clicks[i];
         }
 
@@ -317,14 +323,20 @@ public class Hd2UserMenu : MonoBehaviour
         background.raycastTarget = false;
 
         var tab = MakeButton(panel, "Controls", new Vector2(16f, -16f), new Vector2(180f, 48f), new Color(0.2f, 0.5f, 0.78f, 1f));
+        controlsTabImage = tab.GetComponent<Image>();
         Stretch(tab.GetComponentInChildren<Text>().rectTransform, 8f);
         clicks.Add(new Click { rect = tab, action = ShowControls });
+
+        var lookTab = MakeButton(panel, "Look", new Vector2(208f, -16f), new Vector2(140f, 48f), new Color(0.14f, 0.17f, 0.22f, 1f));
+        lookTabImage = lookTab.GetComponent<Image>();
+        Stretch(lookTab.GetComponentInChildren<Text>().rectTransform, 8f);
+        clicks.Add(new Click { rect = lookTab, action = ShowLook });
 
         var title = MakeText(panel, "Controls", 34, TextAnchor.UpperLeft, Color.white);
         var titleRect = title.rectTransform;
         titleRect.anchorMin = titleRect.anchorMax = new Vector2(0f, 1f);
         titleRect.pivot = new Vector2(0f, 1f);
-        titleRect.anchoredPosition = new Vector2(220f, -18f);
+        titleRect.anchoredPosition = new Vector2(364f, -18f);
         titleRect.sizeDelta = new Vector2(500f, 46f);
 
         controlsPage = new GameObject("ControlsPage");
@@ -338,12 +350,102 @@ public class Hd2UserMenu : MonoBehaviour
         BuildTable(page);
         BuildMicrophone(page);
         BuildActionList(page);
+        BuildLook();
         RefreshLabels();
     }
 
     void ShowControls()
     {
         HideActionList();
+        if (controlsPage != null)
+            controlsPage.SetActive(true);
+        if (lookPage != null)
+            lookPage.SetActive(false);
+        PaintTabs(true);
+    }
+
+    void ShowLook()
+    {
+        HideActionList();
+        if (controlsPage != null)
+            controlsPage.SetActive(false);
+        if (lookPage != null)
+            lookPage.SetActive(true);
+        PaintTabs(false);
+        PaintThemes();
+    }
+
+    void BuildLook()
+    {
+        lookPage = new GameObject("LookPage");
+        var page = lookPage.AddComponent<RectTransform>();
+        page.SetParent(panel, false);
+        page.anchorMin = Vector2.zero;
+        page.anchorMax = Vector2.one;
+        page.offsetMin = new Vector2(24f, 24f);
+        page.offsetMax = new Vector2(-24f, -84f);
+
+        var intro = MakeText(page, "Map skin", 28, TextAnchor.MiddleLeft, Color.white);
+        Place(intro.rectTransform, 0f, -8f, 700f, 40f);
+
+        string[] names = { "Nature", "Sci-Fi", "Quarry" };
+        string[] notes =
+        {
+            "Moss, timber, and stone.",
+            "Hull plating and cyan light.",
+            "Limestone and rusted steel."
+        };
+        for (int i = 0; i < names.Length; i++)
+        {
+            float y = -64f - i * 120f;
+            var image = MakeImage(page, new Color(0.14f, 0.17f, 0.22f, 1f));
+            Place(image.rectTransform, 0f, y, 1080f, 104f);
+            themeImages[i] = image;
+            var name = MakeText(image.rectTransform, names[i], 28, TextAnchor.UpperLeft, Color.white);
+            Place(name.rectTransform, 24f, -16f, 500f, 36f);
+            var note = MakeText(image.rectTransform, notes[i], 22, TextAnchor.UpperLeft, new Color(0.75f, 0.82f, 0.88f, 1f));
+            Place(note.rectTransform, 24f, -54f, 900f, 32f);
+            int captured = i;
+            clicks.Add(new Click { rect = image.rectTransform, action = () => ChooseTheme(captured) });
+        }
+
+        lookPage.SetActive(false);
+    }
+
+    void ChooseTheme(int index)
+    {
+        var theme = Hd2MapTheme.Find();
+        if (theme != null)
+            theme.Apply(index);
+        PaintThemes();
+    }
+
+    void PaintTabs(bool controls)
+    {
+        if (controlsTabImage != null)
+            controlsTabImage.color = controls
+                ? new Color(0.2f, 0.5f, 0.78f, 1f)
+                : new Color(0.14f, 0.17f, 0.22f, 1f);
+        if (lookTabImage != null)
+            lookTabImage.color = controls
+                ? new Color(0.14f, 0.17f, 0.22f, 1f)
+                : new Color(0.2f, 0.5f, 0.78f, 1f);
+    }
+
+    void PaintThemes()
+    {
+        int selected = 0;
+        var theme = Hd2MapTheme.Find();
+        if (theme != null)
+            selected = theme.current;
+        for (int i = 0; i < themeImages.Length; i++)
+        {
+            if (themeImages[i] == null)
+                continue;
+            themeImages[i].color = i == selected
+                ? new Color(0.2f, 0.5f, 0.78f, 1f)
+                : new Color(0.14f, 0.17f, 0.22f, 1f);
+        }
     }
 
     void BuildTable(RectTransform page)

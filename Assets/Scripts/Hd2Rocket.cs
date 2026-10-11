@@ -16,7 +16,7 @@ public class Hd2Rocket : MonoBehaviour
     public bool damageOwner = true;
     public bool locked;
 
-    public float launchSpeed = 8f;
+    public float launchSpeed = 16f;
     public float acceleration = 20f;
     public float accelerationGain = 30f;
     public float maxSpeed = 60f;
@@ -72,14 +72,19 @@ public class Hd2Rocket : MonoBehaviour
         if (hiss == null)
             return;
 
-        var source = gameObject.AddComponent<AudioSource>();
-        source.playOnAwake = false;
-        source.loop = true;
-        source.spatialBlend = 1f;
-        source.minDistance = 1f;
-        source.maxDistance = 40f;
-        source.clip = hiss;
-        source.Play();
+        // One source is already at full volume, so a second voice doubles the hiss.
+        for (int i = 0; i < 2; i++)
+        {
+            var source = gameObject.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.loop = true;
+            source.spatialBlend = 1f;
+            source.volume = 1f;
+            source.minDistance = 1f;
+            source.maxDistance = 40f;
+            source.clip = hiss;
+            source.Play();
+        }
     }
 
     public void BindOwner(Hd2Health health)

@@ -20,7 +20,7 @@ public class Hd2RocketLauncher : MonoBehaviour
 
     [Header("Flight")]
     [Tooltip("Speed as the rocket leaves the tube. It then accelerates up to maxSpeed.")]
-    public float launchSpeed = 8f;
+    public float launchSpeed = 16f;
     [Tooltip("Acceleration as the rocket leaves the tube.")]
     public float acceleration = 20f;
     [Tooltip("Extra acceleration added for each second the rocket has been flying.")]
