@@ -158,8 +158,9 @@ public class Hd2UserMenu : MonoBehaviour
         if (cam == null || panel == null)
             return;
 
-        Transform left = transform.Find("LeftHand");
-        Transform right = transform.Find("RightHand");
+        var move = GetComponent<Hd2Locomotion>();
+        Transform left = move != null ? move.leftHand : transform.Find("LeftHand");
+        Transform right = move != null ? move.rightHand : transform.Find("RightHand");
         bool hit = TryHand(left, Hd2ControlMap.Button.LeftTrigger, cam);
         if (!hit)
             TryHand(right, Hd2ControlMap.Button.RightTrigger, cam);

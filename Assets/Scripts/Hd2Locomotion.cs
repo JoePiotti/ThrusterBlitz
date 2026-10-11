@@ -17,6 +17,8 @@ using UnityEngine.XR;
 ///   arc ends in the air or on a wall, a straight line drops to the surface below and the marker
 ///   sits there. If a floor at least 2 m higher is found by going up 0.4 m from that drop and
 ///   then 0.2 m farther from the player, the marker sits on that floor and the drop line is hidden.
+///   A second drop 0.2 m closer to the player cancels that upper floor when it lands at the
+///   same height, which is a floor seen from underneath rather than a cliff lip.
 ///   The arc stops
 ///   at the first solid hit. Release moves the root toward that point at
 ///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, a hit on
@@ -38,11 +40,14 @@ using UnityEngine.XR;
 ///   so it can be used again. It is not required to start one, including while falling
 ///   or grinding. A second jump in the air does not start.
 ///   Walk, sprint, and a blitz still work in the air and on a rail. There is no double jump.
+/// - Crouch: right stick click. The view and the capsule ease down to two thirds of
+///   standing eye height, and the robot squats with them. Walk speed is halved.
+///   Jump does not start while crouched. Standing back up waits if the ceiling is too low.
 ///
 /// Editor fallback when no headset is running: WASD / arrows walk, Left Shift sprint,
 /// Q snap left, E snap right (one snap per key press),
 /// hold Space or left mouse to aim an arc along the view, release to thrust.
-/// C is the jump.
+/// C is the jump. Left Ctrl toggles crouch.
 /// Mouse look turns the player root so the view can aim. It does not run while a headset is active.
 /// </summary>
 [DefaultExecutionOrder(100)]
@@ -111,7 +116,7 @@ public class Hd2Locomotion : MonoBehaviour
 
     [Header("Body")]
     public float bodyRadius = 0.25f;
-    [Tooltip("Standing capsule height. Play mode sets this from the headset height above the floor, clamped between 1.5 and 2 meters.")]
+    [Tooltip("Capsule height. Play mode sets this from the headset, and crouch shortens it to two thirds.")]
     public float bodyHeight = 1.7f;
     public float gravity = 15f;
     public float terminalVelocity = 25f;
@@ -248,9 +253,14 @@ public class Hd2Locomotion : MonoBehaviour
     }
     public bool IsThrusting => thrusting;
     bool crouched;
+    float crouchBlend;
+    float standingEye = 1.7f;
+    Transform crouchRig;
+    const float CrouchHeightScale = 2f / 3f;
     public bool IsAirborne => jumpBoosting || jumpSpent;
 
     public bool IsCrouching => crouched;
+    public float CrouchAmount => crouchBlend;
 
     public bool IsSprinting
     {
@@ -564,14 +574,16 @@ public class Hd2Locomotion : MonoBehaviour
         if (dt <= 0f)
             return;
 
+        UpdateCrouch(dt);
+
         if (MovementLocked)
         {
             if (EditorFallback)
                 EditorLook();
+            PlaceCrouchRig();
             return;
         }
 
-        UpdateStandingHeight();
         UpdateJumpThrustAudio(dt);
 
         float snap = ReadSnapDegrees();
@@ -582,6 +594,7 @@ public class Hd2Locomotion : MonoBehaviour
 
         if (!EditorFallback && Mathf.Abs(snap) > 0.01f)
             YawAroundHead(snap);
+        PlaceCrouchRig();
 
         if (thrusting)
         {
@@ -621,7 +634,7 @@ public class Hd2Locomotion : MonoBehaviour
         if (planted && !jumpBoosting)
             jumpSpent = false;
 
-        if (Controls() != null && Controls().Pressed(Hd2ControlMap.Action.Crouch))
+        if (CrouchPressed() && (!crouched || RoomToStand()))
             crouched = !crouched;
 
         if (!crouched && !jumpSpent && !jumpBoosting && JumpPressed())
@@ -758,6 +771,13 @@ public class Hd2Locomotion : MonoBehaviour
             return true;
         var map = Controls();
         return map != null && map.Held(Hd2ControlMap.Action.Sprint);
+    }
+
+    bool CrouchPressed()
+    {
+        if (Controls() != null && Controls().Pressed(Hd2ControlMap.Action.Crouch))
+            return true;
+        return EditorFallback && Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame;
     }
 
     bool JumpPressed()
@@ -1300,17 +1320,26 @@ public class Hd2Locomotion : MonoBehaviour
             return false;
 
         away.Normalize();
-        Vector3 origin = raised + away * 0.2f;
-        if (!TryRayDown(origin, origin.y + 0.02f, out RaycastHit hit))
+        Vector3 farOrigin = raised + away * 0.2f;
+        if (!TryRayDown(farOrigin, farOrigin.y + 0.02f, out RaycastHit far))
             return false;
-        if (hit.normal.y <= 0.55f || IsNoLanding(hit.collider))
+        if (far.normal.y <= 0.55f || IsNoLanding(far.collider))
             return false;
-        if (hit.point.y < primaryY + 2f)
+        if (far.point.y < primaryY + 2f)
             return false;
-        if ((hit.point - player).sqrMagnitude > maxSqr)
+        if ((far.point - player).sqrMagnitude > maxSqr)
             return false;
 
-        landing = hit;
+        // The far sample is on top of a floor we are aiming through when a drop
+        // back toward the player lands on that same floor. Keep the low target.
+        Vector3 nearOrigin = raised - away * 0.2f;
+        if (TryRayDown(nearOrigin, nearOrigin.y + 0.02f, out RaycastHit near)
+            && near.normal.y > 0.55f
+            && !IsNoLanding(near.collider)
+            && Mathf.Abs(near.point.y - far.point.y) <= 0.35f)
+            return false;
+
+        landing = far;
         return true;
     }
 
@@ -2383,13 +2412,74 @@ public class Hd2Locomotion : MonoBehaviour
         return true;
     }
 
-    void UpdateStandingHeight()
+    // Drops a parent of the headset and both hands. CameraOffset local Y stays 0,
+    // and the camera local pose is never written. The player root stays on the floor.
+    void UpdateCrouch(float dt)
     {
-        if (head == null)
+        EnsureCrouchRig();
+        float eye = EyeAboveRig();
+        if (eye > 0.75f)
+            standingEye = Mathf.Lerp(standingEye, eye, 1f - Mathf.Exp(-8f * dt));
+
+        crouchBlend = Mathf.MoveTowards(crouchBlend, crouched ? 1f : 0f, dt / 0.16f);
+        float stand = Mathf.Clamp(standingEye, 1.5f, 2f);
+        bodyHeight = stand * Mathf.Lerp(1f, CrouchHeightScale, crouchBlend);
+        PlaceCrouchRig();
+    }
+
+    void PlaceCrouchRig()
+    {
+        if (crouchRig == null)
             return;
 
-        float measured = transform.InverseTransformPoint(head.position).y;
-        bodyHeight = Mathf.Clamp(measured, 1.5f, 2f);
+        float drop = EyeAboveRig() > 0.75f ? standingEye * (1f - CrouchHeightScale) * crouchBlend : 0f;
+        crouchRig.position = transform.position + Vector3.down * drop;
+        crouchRig.localRotation = Quaternion.identity;
+        crouchRig.localScale = Vector3.one;
+    }
+
+    float EyeAboveRig()
+    {
+        if (head == null)
+            return 0f;
+        Transform origin = crouchRig != null ? crouchRig : transform;
+        return head.position.y - origin.position.y;
+    }
+
+    void EnsureCrouchRig()
+    {
+        if (crouchRig != null || head == null)
+            return;
+
+        var rigObject = new GameObject("CrouchRig");
+        crouchRig = rigObject.transform;
+        crouchRig.SetParent(transform, false);
+        crouchRig.localPosition = Vector3.zero;
+        crouchRig.localRotation = Quaternion.identity;
+        crouchRig.localScale = Vector3.one;
+
+        Transform view = head.parent != null && head.parent != transform ? head.parent : head;
+        if (view.parent == transform)
+            view.SetParent(crouchRig, true);
+        if (leftHand != null && leftHand.parent == transform)
+            leftHand.SetParent(crouchRig, true);
+        if (rightHand != null && rightHand.parent == transform)
+            rightHand.SetParent(crouchRig, true);
+    }
+
+    bool RoomToStand()
+    {
+        float radius = Mathf.Max(0.05f, bodyRadius);
+        float stand = Mathf.Clamp(standingEye, 1.5f, 2f);
+        float low = stand * CrouchHeightScale;
+        float extra = stand - low;
+        if (extra <= 0.02f)
+            return true;
+
+        Vector3 bottom = transform.position + Vector3.up * (radius + skinWidth);
+        float topHeight = Mathf.Max(low - radius, radius + skinWidth);
+        Vector3 top = transform.position + Vector3.up * topHeight;
+        return !CastBody(bottom, top, radius * 0.9f, Vector3.up, extra + skinWidth, out _);
     }
 
     void CapsuleEnds(out Vector3 bottom, out Vector3 top)

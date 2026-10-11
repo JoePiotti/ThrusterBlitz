@@ -105,9 +105,9 @@ public class Hd2Pistol : MonoBehaviour
         chargedShotClip = Resources.Load<AudioClip>("Audio/ChargedPistolShot");
         chargeClip = Resources.Load<AudioClip>("Audio/PistolCharge");
         reloadClip = Resources.Load<AudioClip>("Audio/PistolReload");
-        if (shotClip != null || chargedShotClip != null || reloadClip != null)
+        if (shotSource == null && (shotClip != null || chargedShotClip != null || reloadClip != null))
             shotSource = AddGunVoice();
-        if (chargeClip != null)
+        if (chargeSource == null && chargeClip != null)
         {
             chargeSource = AddGunVoice();
             chargeSource.clip = chargeClip;
@@ -115,6 +115,22 @@ public class Hd2Pistol : MonoBehaviour
         }
 
         EnsureAmmoScreen();
+    }
+
+    // Called after a respawn copy is parented to the hand, so the kick rests
+    // on that pose and the magazine is full.
+    public void AdoptHandPose()
+    {
+        restLocalRotation = transform.localRotation;
+        rounds = magazineSize;
+        nextFireTime = 0f;
+        triggerPressedAt = -1f;
+        chargeReadyPulsed = false;
+        reloading = false;
+        reloadPulsesLeft = 0;
+        kick = 0f;
+        StopCharge();
+        RefreshAmmo();
     }
 
     AudioSource AddGunVoice()

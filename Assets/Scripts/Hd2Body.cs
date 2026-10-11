@@ -7,6 +7,7 @@ using UnityEngine.XR;
 /// The head follows the headset. The body yaw stays put until the head is more
 /// than bodyFollowAngle degrees off, then it turns to stay at that limit.
 /// Legs walk along the stick direction and stand sideways on a rail.
+/// Crouch keeps the standing body scale and bends the knees so the feet stay down.
 /// </summary>
 [DefaultExecutionOrder(200)]
 public class Hd2Body : MonoBehaviour
@@ -92,6 +93,9 @@ public class Hd2Body : MonoBehaviour
     Quaternion restShinR = Quaternion.identity;
     Quaternion restFootL = Quaternion.identity;
     Quaternion restFootR = Quaternion.identity;
+    Quaternion restToeL = Quaternion.identity;
+    Quaternion restToeR = Quaternion.identity;
+    float standingBodyScale = 1f;
     readonly List<Finger> fingers = new List<Finger>();
     readonly Dictionary<Transform, Quaternion> fingerRest = new Dictionary<Transform, Quaternion>();
     readonly Dictionary<Transform, Vector3> fingerHinge = new Dictionary<Transform, Vector3>();
@@ -244,8 +248,13 @@ public class Hd2Body : MonoBehaviour
         var skins = body.GetComponentsInChildren<SkinnedMeshRenderer>();
         for (int i = 0; i < skins.Length; i++)
             skins[i].updateWhenOffscreen = true;
-        if (scaleWholeBody)
+        if (CrouchAmount() > 0.001f)
+            FitCrouchBody();
+        else if (scaleWholeBody)
+        {
             FitWholeBodyToHead();
+            standingBodyScale = body.localScale.y;
+        }
         else
             FitLegsToHead();
         SolveArmChain(chainL, upperArmL, forearmL, handL, leftHand, -1f);
@@ -291,6 +300,10 @@ public class Hd2Body : MonoBehaviour
             restFootL = footL.localRotation;
         if (footR != null)
             restFootR = footR.localRotation;
+        if (toeL != null)
+            restToeL = toeL.localRotation;
+        if (toeR != null)
+            restToeR = toeR.localRotation;
         poseReady = true;
     }
 
@@ -328,6 +341,14 @@ public class Hd2Body : MonoBehaviour
             locomotion = GetComponent<Hd2Locomotion>();
         if (locomotion == null)
             return;
+
+        if (locomotion.CrouchAmount > 0.001f)
+        {
+            ClearHangStretch();
+            gaitWeight = 0f;
+            PoseSquat();
+            return;
+        }
 
         Vector3 rail = locomotion.GrindDirection;
         if (locomotion.IsGrinding && rail.sqrMagnitude > 0.0001f)
@@ -765,6 +786,126 @@ public class Hd2Body : MonoBehaviour
         }
 
         PlaceHandOnGun(hand, target);
+    }
+
+    float CrouchAmount()
+    {
+        if (locomotion == null)
+            locomotion = GetComponent<Hd2Locomotion>();
+        return locomotion != null ? locomotion.CrouchAmount : 0f;
+    }
+
+    // Standing scale, then drop the chest onto the lowered headset and fold the legs.
+    void FitCrouchBody()
+    {
+        if (!scaleWholeBody)
+        {
+            FitLegsToHead();
+            if (thighL != null)
+                SetAxisScale(thighL, thighAxisL, 1f);
+            if (thighR != null)
+                SetAxisScale(thighR, thighAxisR, 1f);
+            return;
+        }
+
+        if (neck == null)
+            neck = Find(body, "Head");
+        if (neck == null || head == null)
+            return;
+
+        float scale = standingBodyScale > 0.05f ? standingBodyScale : 1f;
+        body.localScale = Vector3.one * scale;
+
+        Vector3 look = Vector3.ProjectOnPlane(head.forward, Vector3.up);
+        Vector3 desired = head.position;
+        if (look.sqrMagnitude > 0.0001f)
+            desired -= look.normalized * bodyBackOffset;
+        body.position += desired - neck.position;
+
+        if (thighL != null)
+        {
+            float minHip = transform.position.y + 0.2f;
+            if (thighL.position.y < minHip)
+                body.position += Vector3.up * (minHip - thighL.position.y);
+        }
+    }
+
+    void PoseSquat()
+    {
+        Vector3 forward = Vector3.ProjectOnPlane(body.forward, Vector3.up);
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        forward.Normalize();
+        PoseSquatLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, restToeL, forward);
+        PoseSquatLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, restToeR, forward);
+    }
+
+    void PoseSquatLeg(
+        Transform thigh,
+        Transform shin,
+        Transform foot,
+        Transform toe,
+        Quaternion thighRest,
+        Quaternion shinRest,
+        Quaternion footRest,
+        Quaternion toeRest,
+        Vector3 forward)
+    {
+        if (thigh != null)
+            thigh.localScale = Vector3.one;
+        if (shin != null)
+            shin.localScale = Vector3.one;
+        SetLocal(thigh, thighRest);
+        SetLocal(shin, shinRest);
+        SetLocal(foot, footRest);
+        SetLocal(toe, toeRest);
+        if (thigh == null || shin == null || foot == null)
+            return;
+
+        Quaternion levelFoot = foot.rotation;
+        float upper = Vector3.Distance(thigh.position, shin.position);
+        float lower = Vector3.Distance(shin.position, foot.position);
+        if (upper < 0.02f || lower < 0.02f)
+            return;
+
+        float minReach = Mathf.Abs(upper - lower) + 0.02f;
+        float maxReach = Mathf.Max(minReach + 0.01f, upper + lower - 0.02f);
+        Vector3 hip = thigh.position;
+        float ankle = foot.position.y - body.position.y;
+        Vector3 plant = new Vector3(foot.position.x, transform.position.y + ankle, foot.position.z);
+        Vector3 toPlant = plant - hip;
+        float distance = toPlant.magnitude;
+        if (distance > maxReach && distance > 0.0001f)
+            plant = hip + toPlant / distance * maxReach;
+        else if (distance < minReach)
+        {
+            float vertical = plant.y - hip.y;
+            float horizontal = Mathf.Sqrt(Mathf.Max(0f, minReach * minReach - vertical * vertical));
+            Vector3 flat = Vector3.ProjectOnPlane(toPlant, Vector3.up);
+            if (flat.sqrMagnitude < 0.0001f)
+                flat = forward;
+            plant = new Vector3(hip.x, plant.y, hip.z) + flat.normalized * horizontal;
+        }
+
+        Vector3 aim = plant - hip;
+        distance = aim.magnitude;
+        if (distance < 0.001f)
+            return;
+
+        Vector3 direction = aim / distance;
+        Vector3 bend = Vector3.Cross(direction, forward);
+        if (bend.sqrMagnitude < 0.0001f)
+            bend = Vector3.Cross(direction, Vector3.right);
+        Vector3 pole = Vector3.Cross(bend.normalized, direction);
+        if (Vector3.Dot(pole, forward) < 0f)
+            pole = -pole;
+
+        float cosine = Mathf.Clamp((upper * upper + distance * distance - lower * lower) / (2f * upper * distance), -1f, 1f);
+        float sine = Mathf.Sqrt(Mathf.Max(0f, 1f - cosine * cosine));
+        Vector3 knee = hip + direction * (upper * cosine) + pole.normalized * (upper * sine);
+        PointAt(thigh, shin, knee);
+        PointAt(shin, foot, plant);
+        foot.rotation = levelFoot;
     }
 
     void FitWholeBodyToHead()

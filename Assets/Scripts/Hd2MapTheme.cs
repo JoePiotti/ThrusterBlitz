@@ -30,9 +30,11 @@ public class Hd2MapTheme : MonoBehaviour
     }
 
     const string PrefKey = "Hd2MapTheme";
+    const string DefaultStampKey = "Hd2MapThemeDefault";
 
     public Slot[] themes;
-    public int current;
+    [Tooltip("Theme used until the player picks another. 1 is Sci-Fi.")]
+    public int current = 1;
 
     public static Hd2MapTheme Find()
     {
@@ -41,8 +43,16 @@ public class Hd2MapTheme : MonoBehaviour
 
     void Awake()
     {
-        int saved = PlayerPrefs.GetInt(PrefKey, current);
-        Apply(saved, false);
+        // A new serialized default replaces a theme saved under the previous default.
+        // The next menu pick is remembered again.
+        if (PlayerPrefs.GetInt(DefaultStampKey, -1) != current)
+        {
+            PlayerPrefs.SetInt(PrefKey, current);
+            PlayerPrefs.SetInt(DefaultStampKey, current);
+            PlayerPrefs.Save();
+        }
+
+        Apply(PlayerPrefs.GetInt(PrefKey, current), false);
     }
 
     public void Apply(int index)

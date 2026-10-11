@@ -5,7 +5,8 @@ using UnityEngine;
 /// <summary>
 /// On death the visible body drops as a ragdoll. The camera stays at that
 /// spot and can still look around, but room-scale walking and locomotion do not
-/// move it. After a few seconds the ragdoll is removed and the player respawns.
+/// move it. After a few seconds the ragdoll is removed, the player respawns,
+/// and both hands are back on the starting pistols with full magazines.
 /// </summary>
 [DefaultExecutionOrder(500)]
 public class Hd2PlayerDeath : MonoBehaviour
@@ -22,6 +23,16 @@ public class Hd2PlayerDeath : MonoBehaviour
     Vector3 frozenCameraPosition;
     readonly List<Renderer> hiddenRenderers = new List<Renderer>();
     readonly List<Collider> hiddenColliders = new List<Collider>();
+    StartingPistol rightPistol;
+    StartingPistol leftPistol;
+
+    struct StartingPistol
+    {
+        public GameObject template;
+        public Vector3 localPosition;
+        public Quaternion localRotation;
+        public Vector3 localScale;
+    }
 
     void Awake()
     {
@@ -33,6 +44,12 @@ public class Hd2PlayerDeath : MonoBehaviour
         health.autoRespawn = false;
         if (bodyDriver != null)
             head = bodyDriver.head;
+    }
+
+    void Start()
+    {
+        rightPistol = CaptureStartingPistol(Hand("RightHand"));
+        leftPistol = CaptureStartingPistol(Hand("LeftHand"));
     }
 
     void OnEnable()
@@ -90,6 +107,7 @@ public class Hd2PlayerDeath : MonoBehaviour
             locomotion.MovementLocked = false;
         if (health != null)
             health.Respawn();
+        RestoreStartingPistols();
         downed = false;
     }
 
@@ -112,6 +130,85 @@ public class Hd2PlayerDeath : MonoBehaviour
             return;
 
         transform.position -= drift;
+    }
+
+    Transform Hand(string name)
+    {
+        if (locomotion != null)
+        {
+            if (name == "RightHand" && locomotion.rightHand != null)
+                return locomotion.rightHand;
+            if (name == "LeftHand" && locomotion.leftHand != null)
+                return locomotion.leftHand;
+        }
+
+        Transform[] transforms = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i].name == name)
+                return transforms[i];
+        }
+
+        return null;
+    }
+
+    StartingPistol CaptureStartingPistol(Transform hand)
+    {
+        var saved = new StartingPistol();
+        if (hand == null)
+            return saved;
+
+        var pistol = hand.GetComponentInChildren<Hd2Pistol>(true);
+        if (pistol == null)
+            return saved;
+
+        saved.localPosition = pistol.transform.localPosition;
+        saved.localRotation = pistol.transform.localRotation;
+        saved.localScale = pistol.transform.localScale;
+        saved.template = Instantiate(pistol.gameObject, transform);
+        saved.template.name = "PistolTemplate";
+        saved.template.SetActive(false);
+        return saved;
+    }
+
+    void RestoreStartingPistols()
+    {
+        RestoreHand(Hand("RightHand"), rightPistol);
+        RestoreHand(Hand("LeftHand"), leftPistol);
+    }
+
+    static void RestoreHand(Transform hand, StartingPistol saved)
+    {
+        if (hand == null || saved.template == null)
+            return;
+
+        ClearGuns(hand);
+        var gun = Instantiate(saved.template, hand);
+        gun.name = "Pistol";
+        gun.transform.localPosition = saved.localPosition;
+        gun.transform.localRotation = saved.localRotation;
+        gun.transform.localScale = saved.localScale;
+        gun.SetActive(true);
+        var pistol = gun.GetComponent<Hd2Pistol>();
+        if (pistol != null)
+            pistol.AdoptHandPose();
+    }
+
+    static void ClearGuns(Transform hand)
+    {
+        DestroyGuns<Hd2Smg>(hand);
+        DestroyGuns<Hd2RocketLauncher>(hand);
+        DestroyGuns<Hd2Pistol>(hand);
+    }
+
+    static void DestroyGuns<T>(Transform hand) where T : Component
+    {
+        T[] guns = hand.GetComponentsInChildren<T>(true);
+        for (int i = 0; i < guns.Length; i++)
+        {
+            if (guns[i] != null)
+                Destroy(guns[i].gameObject);
+        }
     }
 
     void SpawnRagdoll()
