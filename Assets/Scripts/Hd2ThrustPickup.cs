@@ -26,6 +26,7 @@ public class Hd2ThrustPickup : MonoBehaviour
     void OnEnable()
     {
         BuildVisuals();
+        Hd2PickupGlow.Ensure(transform, pickupColor);
         SetReady(true);
     }
 

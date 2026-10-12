@@ -125,7 +125,7 @@ public class Hd2Locomotion : MonoBehaviour
     public float skinWidth = 0.05f;
     public float groundProbe = 0.3f;
     [Tooltip("Floor changes this tall or shorter are walked over. Taller faces still stop the player.")]
-    public float stepHeight = 0.2f;
+    public float stepHeight = 0.4f;
 
     const int ArcPointCapacity = 64;
     const float SnapEngage = 0.6f;

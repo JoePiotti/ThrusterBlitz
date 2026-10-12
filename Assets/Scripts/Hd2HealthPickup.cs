@@ -21,6 +21,7 @@ public class Hd2HealthPickup : MonoBehaviour
     void OnEnable()
     {
         BuildVisuals();
+        Hd2PickupGlow.Ensure(transform, pickupColor);
         SetReady(true);
     }
 

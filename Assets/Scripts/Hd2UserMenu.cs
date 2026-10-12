@@ -176,6 +176,20 @@ public class Hd2UserMenu : MonoBehaviour
             muzzle = pistol.muzzle;
         if (muzzle == null)
         {
+            var laser = hand.GetComponentInChildren<Hd2LaserPistol>();
+            if (laser != null && laser.muzzle != null)
+                muzzle = laser.muzzle;
+        }
+
+        if (muzzle == null)
+        {
+            var shocks = hand.GetComponentInChildren<Hd2Shocks>();
+            if (shocks != null && shocks.muzzle != null)
+                muzzle = shocks.muzzle;
+        }
+
+        if (muzzle == null)
+        {
             var smg = hand.GetComponentInChildren<Hd2Smg>();
             if (smg != null && smg.muzzle != null)
                 muzzle = smg.muzzle;
@@ -410,7 +424,28 @@ public class Hd2UserMenu : MonoBehaviour
             clicks.Add(new Click { rect = image.rectTransform, action = () => ChooseTheme(captured) });
         }
 
+        var colorLabel = MakeText(page, "Player color", 28, TextAnchor.MiddleLeft, Color.white);
+        Place(colorLabel.rectTransform, 0f, -440f, 700f, 40f);
+
+        AddColorChoice(page, "Red", new Color(0.82f, 0.1f, 0.08f, 1f), 0f);
+        AddColorChoice(page, "Blue", new Color(0.16f, 0.38f, 0.95f, 1f), 220f);
+
         lookPage.SetActive(false);
+    }
+
+    void AddColorChoice(RectTransform page, string label, Color color, float x)
+    {
+        var image = MakeImage(page, color);
+        Place(image.rectTransform, x, -488f, 200f, 72f);
+        Stretch(MakeText(image.rectTransform, label, 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
+        clicks.Add(new Click { rect = image.rectTransform, action = () => TintPlayer(color) });
+    }
+
+    void TintPlayer(Color color)
+    {
+        var avatar = GetComponent<Hd2Body>();
+        if (avatar != null)
+            avatar.SetArmorColor(color);
     }
 
     void ChooseTheme(int index)

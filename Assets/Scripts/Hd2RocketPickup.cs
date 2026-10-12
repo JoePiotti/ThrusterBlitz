@@ -29,6 +29,7 @@ public class Hd2RocketPickup : MonoBehaviour
     void OnEnable()
     {
         BuildVisuals();
+        Hd2PickupGlow.Ensure(transform, pickupColor);
         SetReady(true);
         if (!Application.isPlaying)
             return;
@@ -160,6 +161,8 @@ public class Hd2RocketPickup : MonoBehaviour
         DestroyAll<Hd2Pistol>(hand);
         DestroyAll<Hd2Smg>(hand);
         DestroyAll<Hd2RocketLauncher>(hand);
+        DestroyAll<Hd2Shocks>(hand);
+        DestroyAll<Hd2LaserPistol>(hand);
 
         var gun = Instantiate(rocketModel, hand);
         gun.name = "RocketLauncher";

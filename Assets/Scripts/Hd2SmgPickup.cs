@@ -33,6 +33,7 @@ public class Hd2SmgPickup : MonoBehaviour
     void OnEnable()
     {
         BuildVisuals();
+        Hd2PickupGlow.Ensure(transform, pickupColor);
         SetReady(true);
         if (!Application.isPlaying)
             return;
@@ -177,6 +178,20 @@ public class Hd2SmgPickup : MonoBehaviour
         {
             if (rockets[i] != null)
                 Destroy(rockets[i].gameObject);
+        }
+
+        var shocks = hand.GetComponentsInChildren<Hd2Shocks>(true);
+        for (int i = 0; i < shocks.Length; i++)
+        {
+            if (shocks[i] != null)
+                Destroy(shocks[i].gameObject);
+        }
+
+        var lasers = hand.GetComponentsInChildren<Hd2LaserPistol>(true);
+        for (int i = 0; i < lasers.Length; i++)
+        {
+            if (lasers[i] != null)
+                Destroy(lasers[i].gameObject);
         }
 
         var gun = Instantiate(equipped, hand);

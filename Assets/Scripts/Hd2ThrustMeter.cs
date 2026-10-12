@@ -41,11 +41,9 @@ public class Hd2ThrustMeter : MonoBehaviour
             restoreSource.clip = restoreClip;
             restoreSource.playOnAwake = false;
             restoreSource.loop = false;
-            restoreSource.spatialBlend = 1f;
+            restoreSource.volume = 1f;
+            restoreSource.spatialBlend = 0f;
             restoreSource.dopplerLevel = 0f;
-            restoreSource.minDistance = 2f;
-            restoreSource.maxDistance = 14f;
-            restoreSource.rolloffMode = AudioRolloffMode.Linear;
         }
 
         heardBars = FullBars(charges);
@@ -65,7 +63,13 @@ public class Hd2ThrustMeter : MonoBehaviour
 
     public bool TrySpend()
     {
-        return SpendUpTo(1f) >= 1f - 0.001f;
+        if (charges < 1f)
+            return false;
+
+        charges -= 1f;
+        Refresh();
+        NoteBars();
+        return true;
     }
 
     public float SpendUpTo(float amount)
@@ -183,7 +187,7 @@ public class Hd2ThrustMeter : MonoBehaviour
     {
         int full = FullBars(charges);
         if (heardBars >= 0 && full > heardBars && restoreSource != null && restoreClip != null)
-            restoreSource.PlayOneShot(restoreClip);
+            restoreSource.PlayOneShot(restoreClip, 2.5f);
         heardBars = full;
     }
 

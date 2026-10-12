@@ -21,6 +21,7 @@ public class Hd2Shot : MonoBehaviour
     public Color boltColor = new Color(0.45f, 0.9f, 1f, 1f);
     public float boltThickness = 0.07f;
     public float minBoltLength = 0.45f;
+    public float maxBoltLength = 2.4f;
 
     float age;
     static Material plasmaMaterial;
@@ -427,7 +428,7 @@ public class Hd2Shot : MonoBehaviour
     float BoltLength(float dt)
     {
         float travel = velocity.magnitude * Mathf.Max(dt, 0.008f);
-        return Mathf.Clamp(Mathf.Max(travel, minBoltLength), 0.45f, 2.4f);
+        return Mathf.Clamp(Mathf.Max(travel, minBoltLength), 0.45f, Mathf.Max(0.45f, maxBoltLength));
     }
 
     public void UsePlasma(Color color, float thickness)

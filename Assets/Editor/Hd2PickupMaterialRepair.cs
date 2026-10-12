@@ -16,7 +16,9 @@ public static class Hd2PickupMaterialRepair
         "Assets/Prefabs/Pickups/SmgPickup.prefab",
         "Assets/Prefabs/Pickups/RocketPickup.prefab",
         "Assets/Prefabs/Pickups/HealthPickup.prefab",
-        "Assets/Prefabs/Pickups/ThrustPickup.prefab"
+        "Assets/Prefabs/Pickups/ThrustPickup.prefab",
+        "Assets/Prefabs/Pickups/ShocksPickup.prefab",
+        "Assets/Prefabs/Pickups/LaserPickup.prefab"
     };
 
     static Hd2PickupMaterialRepair()
@@ -63,6 +65,12 @@ public static class Hd2PickupMaterialRepair
             var thrust = root.GetComponent<Hd2ThrustPickup>();
             if (thrust != null)
                 thrust.RepairSavedMaterials();
+            var shocks = root.GetComponent<Hd2ShocksPickup>();
+            if (shocks != null)
+                shocks.RepairSavedMaterials();
+            var laser = root.GetComponent<Hd2LaserPickup>();
+            if (laser != null)
+                laser.RepairSavedMaterials();
 
             string prefix = System.IO.Path.GetFileNameWithoutExtension(path);
             Persist(root, prefix);
@@ -116,6 +124,8 @@ public static class Hd2PickupMaterialRepair
         Revert<Hd2RocketPickup>();
         Revert<Hd2HealthPickup>();
         Revert<Hd2ThrustPickup>();
+        Revert<Hd2ShocksPickup>();
+        Revert<Hd2LaserPickup>();
     }
 
     static void Revert<T>() where T : Component
@@ -128,7 +138,11 @@ public static class Hd2PickupMaterialRepair
 
             var renderers = pickups[i].GetComponentsInChildren<Renderer>(true);
             for (int r = 0; r < renderers.Length; r++)
+            {
+                if (PrefabUtility.IsAddedGameObjectOverride(renderers[r].gameObject))
+                    continue;
                 PrefabUtility.RevertObjectOverride(renderers[r], InteractionMode.AutomatedAction);
+            }
         }
     }
 }

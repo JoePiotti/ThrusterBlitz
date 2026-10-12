@@ -417,7 +417,7 @@ MonoBehaviour:
   fallDeathSeconds: 5
   skinWidth: 0.05
   groundProbe: 0.3
-  stepHeight: 0.2
+  stepHeight: 0.4
 --- !u!114 &8804295218702041929
 MonoBehaviour:
   m_ObjectHideFlags: 0

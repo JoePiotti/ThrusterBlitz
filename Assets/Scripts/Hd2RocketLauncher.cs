@@ -27,7 +27,7 @@ public class Hd2RocketLauncher : MonoBehaviour
     public float accelerationGain = 30f;
     [Tooltip("Placeholder until a headset pass.")]
     public float maxSpeed = 60f;
-    public float minTurnRadiusMeters = 10f;
+    public float minTurnRadiusMeters = 6.67f;
     public float turnRadiusMeters = 20f;
     public float maxFlightSeconds = 6f;
     [Tooltip("How long a fresh rocket takes to slide from the base into the tube, after the reload delay.")]
@@ -66,6 +66,8 @@ public class Hd2RocketLauncher : MonoBehaviour
 
     AudioSource reloadSource;
     AudioClip reloadClip;
+    AudioSource launchSource;
+    AudioClip launchClip;
 
     static readonly System.Collections.Generic.List<XRDisplaySubsystem> displays =
         new System.Collections.Generic.List<XRDisplaySubsystem>();
@@ -84,15 +86,26 @@ public class Hd2RocketLauncher : MonoBehaviour
         PaintSight();
         BuildLaser();
         reloadClip = Resources.Load<AudioClip>("Audio/RocketReload");
-        if (reloadClip == null)
-            return;
+        launchClip = Resources.Load<AudioClip>("Audio/RocketLaunch");
+        if (reloadClip != null)
+        {
+            reloadSource = gameObject.AddComponent<AudioSource>();
+            reloadSource.playOnAwake = false;
+            reloadSource.loop = false;
+            reloadSource.spatialBlend = 1f;
+            reloadSource.minDistance = 0.4f;
+            reloadSource.maxDistance = 12f;
+        }
 
-        reloadSource = gameObject.AddComponent<AudioSource>();
-        reloadSource.playOnAwake = false;
-        reloadSource.loop = false;
-        reloadSource.spatialBlend = 1f;
-        reloadSource.minDistance = 0.4f;
-        reloadSource.maxDistance = 12f;
+        if (launchClip != null)
+        {
+            launchSource = gameObject.AddComponent<AudioSource>();
+            launchSource.playOnAwake = false;
+            launchSource.loop = false;
+            launchSource.spatialBlend = 1f;
+            launchSource.minDistance = 1f;
+            launchSource.maxDistance = 28f;
+        }
     }
 
     void Start()
@@ -216,10 +229,17 @@ public class Hd2RocketLauncher : MonoBehaviour
         rocket.outerRadiusMeters = outerRadiusMeters;
         rocket.outerDamage = outerDamage;
         rocket.Launch(direction);
+        PlayLaunch();
 
         rocketBone.localScale = Vector3.zero;
         BeginChamber(seated, seatedAt, direction, slide, size);
         Pulse(0.55f, 0.06f);
+    }
+
+    void PlayLaunch()
+    {
+        if (launchSource != null && launchClip != null)
+            launchSource.PlayOneShot(launchClip, 2f);
     }
 
     void BeginChamber(Quaternion seated, Vector3 seatedAt, Vector3 barrel, float slide, Vector3 size)
@@ -242,7 +262,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         chamberRocket.SetActive(false);
         AttachRocketMesh(chamberRocket.transform, Quaternion.identity, size);
         if (reloadSource != null && reloadClip != null)
-            reloadSource.PlayOneShot(reloadClip, 0.5f);
+            reloadSource.PlayOneShot(reloadClip, 0.25f);
     }
 
     void AdvanceChamber()
@@ -718,7 +738,7 @@ public class Hd2RocketLauncher : MonoBehaviour
             Destroy(collider);
         mark.transform.SetParent(transform, false);
         Vector3 parentScale = transform.lossyScale;
-        const float diameter = 0.03f;
+        const float diameter = 0.06f;
         mark.transform.localScale = new Vector3(
             diameter / Mathf.Max(0.0001f, parentScale.x),
             diameter / Mathf.Max(0.0001f, parentScale.y),

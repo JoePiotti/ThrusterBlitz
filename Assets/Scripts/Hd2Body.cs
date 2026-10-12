@@ -1011,6 +1011,37 @@ public class Hd2Body : MonoBehaviour
         bone.localScale = size;
     }
 
+    /// Temporary armor tint for the Look menu. Team assignment will replace this.
+    public void SetArmorColor(Color color)
+    {
+        if (body == null)
+            return;
+
+        var renderers = body.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null || renderer is ParticleSystemRenderer)
+                continue;
+            if (renderer.gameObject.name == "Head" || renderer.gameObject.name == "Neck")
+                continue;
+
+            Material[] materials = renderer.materials;
+            for (int m = 0; m < materials.Length; m++)
+            {
+                Material material = materials[m];
+                if (material == null || material.shader == null)
+                    continue;
+                if (material.shader.name == "HD2/AvatarHead")
+                    continue;
+                if (material.HasProperty("_BaseColor"))
+                    material.SetColor("_BaseColor", color);
+                if (material.HasProperty("_Color"))
+                    material.SetColor("_Color", color);
+            }
+        }
+    }
+
     void HideHeadFromInside()
     {
         Shader shader = Shader.Find("HD2/AvatarHead");
@@ -1275,7 +1306,7 @@ public class Hd2Body : MonoBehaviour
     void PlaceHandOnGun(Transform hand, Transform target)
     {
         Transform gun = GunInHand(target);
-        bool pistol = gun != null && gun.GetComponent<Hd2Pistol>() != null;
+        bool pistol = gun != null && (gun.GetComponent<Hd2Pistol>() != null || gun.GetComponent<Hd2Shocks>() != null || gun.GetComponent<Hd2LaserPistol>() != null);
         if (fingers.Count == 0)
         {
             if (pistol)
@@ -1316,7 +1347,7 @@ public class Hd2Body : MonoBehaviour
         if (gun == null)
             return target.position - target.forward * 0.08f;
 
-        if (gun.GetComponent<Hd2Pistol>() != null)
+        if (gun.GetComponent<Hd2Pistol>() != null || gun.GetComponent<Hd2Shocks>() != null || gun.GetComponent<Hd2LaserPistol>() != null)
             return PistolWrist(target, gun);
 
         if (gun.GetComponent<Hd2Smg>() != null)
@@ -1459,6 +1490,12 @@ public class Hd2Body : MonoBehaviour
         var pistol = controller.GetComponentInChildren<Hd2Pistol>(true);
         if (pistol != null)
             return pistol.transform;
+        var shocks = controller.GetComponentInChildren<Hd2Shocks>(true);
+        if (shocks != null)
+            return shocks.transform;
+        var laser = controller.GetComponentInChildren<Hd2LaserPistol>(true);
+        if (laser != null)
+            return laser.transform;
         var smg = controller.GetComponentInChildren<Hd2Smg>(true);
         if (smg != null)
             return smg.transform;

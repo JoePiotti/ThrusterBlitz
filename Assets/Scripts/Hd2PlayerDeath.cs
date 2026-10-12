@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// On death the visible body drops as a ragdoll. The camera stays at that
+/// On death the visible body drops as a ragdoll, and the guns leave the
+/// tracked hands and fall with the ragdoll's hands. The camera stays at that
 /// spot and can still look around, but room-scale walking and locomotion do not
 /// move it. After a few seconds the ragdoll is removed, the player respawns,
 /// and both hands are back on the starting pistols with full magazines.
@@ -198,6 +199,8 @@ public class Hd2PlayerDeath : MonoBehaviour
     {
         DestroyGuns<Hd2Smg>(hand);
         DestroyGuns<Hd2RocketLauncher>(hand);
+        DestroyGuns<Hd2Shocks>(hand);
+        DestroyGuns<Hd2LaserPistol>(hand);
         DestroyGuns<Hd2Pistol>(hand);
     }
 
@@ -237,6 +240,77 @@ public class Hd2PlayerDeath : MonoBehaviour
         HideLiveBody(body);
         ActivateRagdoll(ragdoll);
         IgnorePlayerColliders(ragdoll);
+        CarryGuns(ragdoll);
+    }
+
+    void CarryGuns(GameObject corpse)
+    {
+        CarryGun(Hand("RightHand"), FindNamed(corpse.transform, "Hand.R"));
+        CarryGun(Hand("LeftHand"), FindNamed(corpse.transform, "Hand.L"));
+    }
+
+    static void CarryGun(Transform controller, Transform ragdollHand)
+    {
+        Transform gun = EquippedGun(controller);
+        if (gun == null || ragdollHand == null)
+            return;
+
+        gun.SetParent(ragdollHand, true);
+        Silence(gun.gameObject);
+    }
+
+    static Transform EquippedGun(Transform hand)
+    {
+        if (hand == null)
+            return null;
+
+        var pistol = hand.GetComponentInChildren<Hd2Pistol>(true);
+        if (pistol != null)
+            return pistol.transform;
+        var shocks = hand.GetComponentInChildren<Hd2Shocks>(true);
+        if (shocks != null)
+            return shocks.transform;
+        var laser = hand.GetComponentInChildren<Hd2LaserPistol>(true);
+        if (laser != null)
+            return laser.transform;
+        var smg = hand.GetComponentInChildren<Hd2Smg>(true);
+        if (smg != null)
+            return smg.transform;
+        var rocket = hand.GetComponentInChildren<Hd2RocketLauncher>(true);
+        if (rocket != null)
+            return rocket.transform;
+        return null;
+    }
+
+    static void Silence(GameObject gun)
+    {
+        Behaviour[] behaviours = gun.GetComponentsInChildren<Behaviour>(true);
+        for (int i = 0; i < behaviours.Length; i++)
+            behaviours[i].enabled = false;
+
+        LineRenderer[] lines = gun.GetComponentsInChildren<LineRenderer>(true);
+        for (int i = 0; i < lines.Length; i++)
+            lines[i].enabled = false;
+
+        ParticleSystem[] particles = gun.GetComponentsInChildren<ParticleSystem>(true);
+        for (int i = 0; i < particles.Length; i++)
+            particles[i].Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        Collider[] colliders = gun.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; i++)
+            colliders[i].enabled = false;
+    }
+
+    static Transform FindNamed(Transform root, string boneName)
+    {
+        Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i].name == boneName)
+                return transforms[i];
+        }
+
+        return null;
     }
 
     void HideLiveBody(Transform body)

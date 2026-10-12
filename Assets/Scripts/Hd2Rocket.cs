@@ -20,7 +20,7 @@ public class Hd2Rocket : MonoBehaviour
     public float acceleration = 20f;
     public float accelerationGain = 30f;
     public float maxSpeed = 60f;
-    public float minTurnRadiusMeters = 10f;
+    public float minTurnRadiusMeters = 6.67f;
     public float turnRadiusMeters = 20f;
     public float maxFlightSeconds = 6f;
     public float innerRadiusMeters = 1.5f;
@@ -63,8 +63,9 @@ public class Hd2Rocket : MonoBehaviour
         direction.Normalize();
         velocity = direction * Mathf.Max(0.1f, launchSpeed);
         transform.rotation = Quaternion.LookRotation(direction);
-        PlayHiss();
     }
+
+    bool hissPlaying;
 
     void PlayHiss()
     {
@@ -126,9 +127,14 @@ public class Hd2Rocket : MonoBehaviour
 
         float dt = Time.deltaTime;
         age += dt;
+        if (!hissPlaying && age >= 0.5f)
+        {
+            hissPlaying = true;
+            PlayHiss();
+        }
         if (age >= Mathf.Max(0.2f, maxFlightSeconds))
         {
-            Explode(transform.position);
+            Explode(transform.position, false);
             return;
         }
 
@@ -137,7 +143,7 @@ public class Hd2Rocket : MonoBehaviour
         Vector3 next = transform.position + velocity * dt;
         if (HitAlong(transform.position, next, out Vector3 point))
         {
-            Explode(point);
+            Explode(point, true);
             return;
         }
 
@@ -235,7 +241,7 @@ public class Hd2Rocket : MonoBehaviour
         return traveled < 0.6f;
     }
 
-    void Explode(Vector3 point)
+    void Explode(Vector3 point, bool impact)
     {
         if (exploded)
             return;
@@ -279,13 +285,13 @@ public class Hd2Rocket : MonoBehaviour
 
         SpawnBurst(point, Color.white, 0.9f, 1.2f);
         SpawnBurst(point, new Color(1f, 0.92f, 0.25f), 0.55f, outerRadiusMeters * 2f);
-        PlayExplosion(point);
+        PlayExplosion(point, impact ? "Audio/RocketImpact" : "Audio/RocketAirExplosion");
         Destroy(gameObject);
     }
 
-    static void PlayExplosion(Vector3 point)
+    static void PlayExplosion(Vector3 point, string clipPath)
     {
-        AudioClip clip = Resources.Load<AudioClip>("Audio/RocketExplosion");
+        AudioClip clip = Resources.Load<AudioClip>(clipPath);
         if (clip == null)
             return;
 
