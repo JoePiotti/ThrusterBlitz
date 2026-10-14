@@ -201,6 +201,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         DestroyGuns<Hd2RocketLauncher>(hand);
         DestroyGuns<Hd2Shocks>(hand);
         DestroyGuns<Hd2LaserPistol>(hand);
+        DestroyGuns<Hd2Shotgun>(hand);
         DestroyGuns<Hd2Pistol>(hand);
     }
 
@@ -273,6 +274,9 @@ public class Hd2PlayerDeath : MonoBehaviour
         var laser = hand.GetComponentInChildren<Hd2LaserPistol>(true);
         if (laser != null)
             return laser.transform;
+        var shotgun = hand.GetComponentInChildren<Hd2Shotgun>(true);
+        if (shotgun != null)
+            return shotgun.transform;
         var smg = hand.GetComponentInChildren<Hd2Smg>(true);
         if (smg != null)
             return smg.transform;

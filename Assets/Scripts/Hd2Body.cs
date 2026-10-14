@@ -7,7 +7,8 @@ using UnityEngine.XR;
 /// The head follows the headset. The body yaw stays put until the head is more
 /// than bodyFollowAngle degrees off, then it turns to stay at that limit.
 /// Legs walk along the stick direction and stand sideways on a rail.
-/// Crouch keeps the standing body scale and bends the knees so the feet stay down.
+/// Standing height stays between 1.67 m and 1.83 m. Ducking keeps that scale,
+/// lowers the chest with the headset, and bends the knees so the feet stay down.
 /// </summary>
 [DefaultExecutionOrder(200)]
 public class Hd2Body : MonoBehaviour
@@ -248,7 +249,7 @@ public class Hd2Body : MonoBehaviour
         var skins = body.GetComponentsInChildren<SkinnedMeshRenderer>();
         for (int i = 0; i < skins.Length; i++)
             skins[i].updateWhenOffscreen = true;
-        if (CrouchAmount() > 0.001f)
+        if (CrouchAmount() > 0.001f || HeadDrop() > 0.08f)
             FitCrouchBody();
         else if (scaleWholeBody)
         {
@@ -342,7 +343,7 @@ public class Hd2Body : MonoBehaviour
         if (locomotion == null)
             return;
 
-        if (locomotion.CrouchAmount > 0.001f)
+        if (locomotion.CrouchAmount > 0.001f || HeadDrop() > 0.08f)
         {
             ClearHangStretch();
             gaitWeight = 0f;
@@ -605,7 +606,9 @@ public class Hd2Body : MonoBehaviour
         renderer.renderMode = ParticleSystemRenderMode.Stretch;
         renderer.lengthScale = 4f;
         renderer.velocityScale = 0.04f;
-        renderer.material = GrindSparkMaterial();
+        Material sparkMaterial = GrindSparkMaterial();
+        if (sparkMaterial != null)
+            renderer.material = sparkMaterial;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         return spark;
@@ -618,14 +621,7 @@ public class Hd2Body : MonoBehaviour
         if (grindSparkMaterial != null)
             return grindSparkMaterial;
 
-        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-        if (shader == null)
-            shader = Shader.Find("Particles/Standard Unlit");
-        grindSparkMaterial = new Material(shader);
-        if (grindSparkMaterial.HasProperty("_BaseColor"))
-            grindSparkMaterial.SetColor("_BaseColor", Color.white);
-        if (grindSparkMaterial.HasProperty("_Color"))
-            grindSparkMaterial.SetColor("_Color", Color.white);
+        grindSparkMaterial = Hd2Shot.ParticleMaterial();
         return grindSparkMaterial;
     }
 
@@ -795,6 +791,27 @@ public class Hd2Body : MonoBehaviour
         return locomotion != null ? locomotion.CrouchAmount : 0f;
     }
 
+    // How far the headset is below the player's own standing eye height.
+    float HeadDrop()
+    {
+        if (locomotion == null)
+            locomotion = GetComponent<Hd2Locomotion>();
+        if (locomotion == null || head == null)
+            return 0f;
+
+        float live = head.position.y - transform.position.y;
+        return Mathf.Max(0f, locomotion.StandingEye - live);
+    }
+
+    float StandingAvatarHeight()
+    {
+        if (locomotion == null)
+            locomotion = GetComponent<Hd2Locomotion>();
+        float live = head != null ? head.position.y - transform.position.y : 1.7f;
+        float stand = locomotion != null ? locomotion.StandingEye : live;
+        return Mathf.Clamp(stand, Hd2Locomotion.MinStandHeight, Hd2Locomotion.MaxStandHeight);
+    }
+
     // Standing scale, then drop the chest onto the lowered headset and fold the legs.
     void FitCrouchBody()
     {
@@ -813,13 +830,17 @@ public class Hd2Body : MonoBehaviour
         if (neck == null || head == null)
             return;
 
-        float scale = standingBodyScale > 0.05f ? standingBodyScale : 1f;
-        body.localScale = Vector3.one * scale;
+        ApplyStandingScale();
 
         Vector3 look = Vector3.ProjectOnPlane(head.forward, Vector3.up);
         Vector3 desired = head.position;
         if (look.sqrMagnitude > 0.0001f)
             desired -= look.normalized * bodyBackOffset;
+        float floorY = transform.position.y;
+        float live = head.position.y - floorY;
+        float standEye = locomotion != null ? locomotion.StandingEye : live;
+        float drop = Mathf.Max(0f, standEye - live);
+        desired.y = floorY + StandingAvatarHeight() - drop;
         body.position += desired - neck.position;
 
         if (thighL != null)
@@ -915,11 +936,7 @@ public class Hd2Body : MonoBehaviour
         if (neck == null || head == null)
             return;
 
-        body.localScale = Vector3.one;
-        float current = neck.position.y - body.position.y;
-        float target = head.position.y - body.position.y;
-        float scale = current > 0.05f ? Mathf.Clamp(target / current, 0.35f, 1.75f) : 1f;
-        body.localScale = Vector3.one * scale;
+        ApplyStandingScale();
 
         Vector3 look = Vector3.ProjectOnPlane(head.forward, Vector3.up);
         Vector3 desired = head.position;
@@ -928,6 +945,19 @@ public class Hd2Body : MonoBehaviour
         Vector3 shift = desired - neck.position;
         shift.y = 0f;
         body.position += shift;
+    }
+
+    void ApplyStandingScale()
+    {
+        if (neck == null || body == null)
+            return;
+
+        body.localScale = Vector3.one;
+        float current = neck.position.y - body.position.y;
+        float target = StandingAvatarHeight();
+        float scale = current > 0.05f ? Mathf.Clamp(target / current, 0.4f, 2f) : 1f;
+        body.localScale = Vector3.one * scale;
+        standingBodyScale = scale;
     }
 
     void FitLegsToHead()
@@ -1024,6 +1054,8 @@ public class Hd2Body : MonoBehaviour
             if (renderer == null || renderer is ParticleSystemRenderer)
                 continue;
             if (renderer.gameObject.name == "Head" || renderer.gameObject.name == "Neck")
+                continue;
+            if (renderer.gameObject.name.IndexOf("filler", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 continue;
 
             Material[] materials = renderer.materials;
@@ -1238,7 +1270,7 @@ public class Hd2Body : MonoBehaviour
     Vector3 GripPoint(Transform target)
     {
         Transform gun = GunInHand(target);
-        if (gun != null && gun.GetComponent<Hd2RocketLauncher>() != null)
+        if (gun != null && (gun.GetComponent<Hd2RocketLauncher>() != null || gun.GetComponent<Hd2Shotgun>() != null))
         {
             Transform rocketWrist = Find(gun, "Wrist");
             if (rocketWrist != null)
@@ -1353,7 +1385,7 @@ public class Hd2Body : MonoBehaviour
         if (gun.GetComponent<Hd2Smg>() != null)
             return SmgWrist(target, gun);
 
-        if (gun.GetComponent<Hd2RocketLauncher>() != null)
+        if (gun.GetComponent<Hd2RocketLauncher>() != null || gun.GetComponent<Hd2Shotgun>() != null)
         {
             Transform rocketWrist = Find(gun, "Wrist");
             if (rocketWrist != null)
@@ -1473,6 +1505,10 @@ public class Hd2Body : MonoBehaviour
 
     static Vector3 GunBarrel(Transform gun)
     {
+        Transform barrel = Find(gun, "Barrel");
+        if (barrel != null)
+            return barrel.forward;
+
         Transform muzzle = Find(gun, "Muzzle");
         if (muzzle == null)
             return gun.forward;
@@ -1496,6 +1532,9 @@ public class Hd2Body : MonoBehaviour
         var laser = controller.GetComponentInChildren<Hd2LaserPistol>(true);
         if (laser != null)
             return laser.transform;
+        var shotgun = controller.GetComponentInChildren<Hd2Shotgun>(true);
+        if (shotgun != null)
+            return shotgun.transform;
         var smg = controller.GetComponentInChildren<Hd2Smg>(true);
         if (smg != null)
             return smg.transform;

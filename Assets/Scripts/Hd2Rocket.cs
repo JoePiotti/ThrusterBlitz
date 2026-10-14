@@ -280,6 +280,7 @@ public class Hd2Rocket : MonoBehaviour
 
             if (owner != null)
                 health.LastAttacker = owner;
+            health.MarkHit(colliders[i].ClosestPoint(point));
             health.ApplyHit(amount, false);
         }
 

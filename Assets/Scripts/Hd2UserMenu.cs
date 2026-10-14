@@ -190,6 +190,13 @@ public class Hd2UserMenu : MonoBehaviour
 
         if (muzzle == null)
         {
+            var shotgun = hand.GetComponentInChildren<Hd2Shotgun>();
+            if (shotgun != null && shotgun.muzzle != null)
+                muzzle = shotgun.muzzle;
+        }
+
+        if (muzzle == null)
+        {
             var smg = hand.GetComponentInChildren<Hd2Smg>();
             if (smg != null && smg.muzzle != null)
                 muzzle = smg.muzzle;

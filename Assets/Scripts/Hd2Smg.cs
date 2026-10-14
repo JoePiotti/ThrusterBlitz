@@ -46,6 +46,7 @@ public class Hd2Smg : MonoBehaviour
     float reloadEndsAt;
     float climb;
     bool firing;
+    bool waitForTriggerRelease = true;
     Quaternion restLocalRotation;
     AudioSource shotSource;
     AudioClip shotClip;
@@ -151,6 +152,20 @@ public class Hd2Smg : MonoBehaviour
         if (!menuOpen && EditorFallback && editorFireAction != null)
             held = held || editorFireAction.IsPressed();
 
+        if (waitForTriggerRelease)
+        {
+            if (held)
+                held = false;
+            else
+                waitForTriggerRelease = false;
+        }
+
+        if (botHeld)
+        {
+            waitForTriggerRelease = false;
+            held = true;
+        }
+
         firing = held && !reloading && rounds > 0;
         if (firing)
             TryFire();
@@ -163,6 +178,8 @@ public class Hd2Smg : MonoBehaviour
         float wobble = firing ? Mathf.Sin(Time.time * 36f) * vibrationDegrees : 0f;
         transform.localRotation = restLocalRotation * Quaternion.Euler(climb, wobble, 0f);
     }
+
+    public bool botHeld;
 
     public void Reload()
     {
@@ -209,19 +226,11 @@ public class Hd2Smg : MonoBehaviour
     {
         Transform origin = muzzle != null ? muzzle : transform;
         Vector3 direction = origin.forward;
-        var shot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        shot.name = "SmgShot";
-        shot.transform.SetParent(null, true);
-        shot.transform.position = origin.position;
-        shot.transform.rotation = Quaternion.LookRotation(direction);
-        var collider = shot.GetComponent<Collider>();
-        if (collider != null)
-        {
-            collider.enabled = false;
-            Destroy(collider);
-        }
-
-        var projectile = shot.AddComponent<Hd2Shot>();
+        var projectile = Hd2Shot.Rent();
+        projectile.gameObject.name = "SmgShot";
+        projectile.transform.SetParent(null, true);
+        projectile.transform.position = origin.position;
+        projectile.transform.rotation = Quaternion.LookRotation(direction);
         projectile.velocity = direction * bulletSpeed;
         projectile.lifetime = shotLifetime;
         projectile.owner = transform.root;
@@ -239,16 +248,6 @@ public class Hd2Smg : MonoBehaviour
         if (barrel == null)
             return;
 
-        var flash = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        flash.name = "MuzzleFlash";
-        var collider = flash.GetComponent<Collider>();
-        if (collider != null)
-        {
-            collider.enabled = false;
-            Destroy(collider);
-        }
-
-        flash.transform.SetParent(barrel, false);
         Vector3 parentScale = barrel.lossyScale;
         float ScaleOf(float axis, float worldSize)
         {
@@ -256,24 +255,17 @@ public class Hd2Smg : MonoBehaviour
         }
 
         float side = hand == Hd2Pistol.Hand.Right ? -1f : 1f;
-        flash.transform.localPosition = new Vector3(
-            -side * ScaleOf(parentScale.x, 0.025f),
-            0f,
-            ScaleOf(parentScale.z, 0.06f));
-        flash.transform.localRotation = Quaternion.identity;
-        flash.transform.localScale = new Vector3(
-            ScaleOf(parentScale.x, 0.08f),
-            ScaleOf(parentScale.y, 0.08f),
-            ScaleOf(parentScale.z, 0.22f));
-        var glow = flash.AddComponent<Hd2Shot>();
-        glow.UsePlasma(shotColor, 0.08f);
-        glow.enabled = false;
-        flash.AddComponent<Hd2MuzzleFlash>();
+        Hd2MuzzleFlash.Show(
+            barrel,
+            new Vector3(-side * ScaleOf(parentScale.x, 0.025f), 0f, ScaleOf(parentScale.z, 0.06f)),
+            new Vector3(ScaleOf(parentScale.x, 0.08f), ScaleOf(parentScale.y, 0.08f), ScaleOf(parentScale.z, 0.22f)),
+            shotColor,
+            0.08f);
     }
 
     void Pulse(float amplitude, float duration)
     {
-        if (amplitude <= 0f || duration <= 0f)
+        if (amplitude <= 0f || duration <= 0f || GetComponentInParent<Hd2EnemyBot>() != null)
             return;
 
         var node = hand == Hd2Pistol.Hand.Left ? XRNode.LeftHand : XRNode.RightHand;

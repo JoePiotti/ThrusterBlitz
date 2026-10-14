@@ -62,6 +62,7 @@ public class Hd2Pistol : MonoBehaviour
     int rounds;
     float nextFireTime;
     float triggerPressedAt = -1f;
+    bool waitForTriggerRelease = true;
     bool chargeReadyPulsed;
     bool reloading;
     int reloadPulsesLeft;
@@ -210,6 +211,14 @@ public class Hd2Pistol : MonoBehaviour
             released = released || editorFireAction.WasReleasedThisFrame();
         }
 
+        if (waitForTriggerRelease)
+        {
+            pressed = false;
+            released = false;
+            if (!TriggerIsDown())
+                waitForTriggerRelease = false;
+        }
+
         if (pressed)
         {
             triggerPressedAt = Time.time;
@@ -237,6 +246,14 @@ public class Hd2Pistol : MonoBehaviour
             kick = Mathf.MoveTowards(kick, 0f, kickReturnSpeed * Time.deltaTime);
             transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
         }
+    }
+
+    public void BotTap()
+    {
+        waitForTriggerRelease = false;
+        StopCharge();
+        triggerPressedAt = -1f;
+        TryFire(false);
     }
 
     public void Reload()
@@ -442,19 +459,11 @@ public class Hd2Pistol : MonoBehaviour
         Vector3 direction = origin.forward;
         float radius = charged ? chargedRadius : shotRadius;
         float speed = shotSpeed * (charged ? chargedSpeedMultiplier : 1f);
-        var shot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        shot.name = charged ? "ChargedShot" : "Shot";
-        shot.transform.SetParent(null, true);
-        shot.transform.position = origin.position;
-        shot.transform.rotation = Quaternion.LookRotation(direction);
-        var collider = shot.GetComponent<Collider>();
-        if (collider != null)
-        {
-            collider.enabled = false;
-            Destroy(collider);
-        }
-
-        var projectile = shot.AddComponent<Hd2Shot>();
+        var projectile = Hd2Shot.Rent();
+        projectile.gameObject.name = charged ? "ChargedShot" : "Shot";
+        projectile.transform.SetParent(null, true);
+        projectile.transform.position = origin.position;
+        projectile.transform.rotation = Quaternion.LookRotation(direction);
         projectile.velocity = direction * speed;
         projectile.lifetime = shotLifetime;
         projectile.owner = transform.root;
@@ -472,37 +481,23 @@ public class Hd2Pistol : MonoBehaviour
         if (barrel == null)
             return;
 
-        var flash = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        flash.name = "MuzzleFlash";
-        var collider = flash.GetComponent<Collider>();
-        if (collider != null)
-        {
-            collider.enabled = false;
-            Destroy(collider);
-        }
-
-        flash.transform.SetParent(barrel, false);
         Vector3 parentScale = barrel.lossyScale;
         float ScaleOf(float axis, float worldSize)
         {
             return Mathf.Abs(axis) > 0.001f ? worldSize / axis : worldSize;
         }
 
-        flash.transform.localPosition = new Vector3(0f, 0f, ScaleOf(parentScale.z, 0.06f));
-        flash.transform.localRotation = Quaternion.identity;
-        flash.transform.localScale = new Vector3(
-            ScaleOf(parentScale.x, 0.1f),
-            ScaleOf(parentScale.y, 0.1f),
-            ScaleOf(parentScale.z, 0.28f));
-        var glow = flash.AddComponent<Hd2Shot>();
-        glow.UsePlasma(shotColor, 0.1f);
-        glow.enabled = false;
-        flash.AddComponent<Hd2MuzzleFlash>();
+        Hd2MuzzleFlash.Show(
+            barrel,
+            new Vector3(0f, 0f, ScaleOf(parentScale.z, 0.06f)),
+            new Vector3(ScaleOf(parentScale.x, 0.1f), ScaleOf(parentScale.y, 0.1f), ScaleOf(parentScale.z, 0.28f)),
+            shotColor,
+            0.1f);
     }
 
     void Pulse(float amplitude, float duration)
     {
-        if (amplitude <= 0f || duration <= 0f)
+        if (amplitude <= 0f || duration <= 0f || GetComponentInParent<Hd2EnemyBot>() != null)
             return;
 
         var node = hand == Hand.Left ? XRNode.LeftHand : XRNode.RightHand;
@@ -522,6 +517,17 @@ public class Hd2Pistol : MonoBehaviour
         if (controlMap == null)
             controlMap = GetComponentInParent<Hd2ControlMap>();
         return controlMap;
+    }
+
+    bool TriggerIsDown()
+    {
+        var fire = hand == Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight;
+        var map = ControlMap();
+        if (map != null && map.Held(fire))
+            return true;
+        if (EditorFallback && editorFireAction != null && editorFireAction.IsPressed())
+            return true;
+        return map == null && triggerAction != null && triggerAction.IsPressed();
     }
 
     bool ActionPressed(Hd2ControlMap.Action action, InputAction fallback)
@@ -573,21 +579,65 @@ public class Hd2Pistol : MonoBehaviour
 public class Hd2MuzzleFlash : MonoBehaviour
 {
     const float life = 0.05f;
+    static readonly System.Collections.Generic.List<Hd2MuzzleFlash> pool = new System.Collections.Generic.List<Hd2MuzzleFlash>();
     float age;
     Vector3 startScale;
+    bool inPool;
 
-    void Awake()
+    public static void Show(Transform parent, Vector3 localPosition, Vector3 localScale, Color color, float thickness)
     {
+        if (parent == null)
+            return;
+
+        Hd2MuzzleFlash flash;
+        int last = pool.Count - 1;
+        if (last >= 0)
+        {
+            flash = pool[last];
+            pool.RemoveAt(last);
+        }
+        else
+        {
+            var go = new GameObject("MuzzleFlash");
+            go.AddComponent<MeshFilter>().sharedMesh = Hd2Shot.BoltMesh();
+            var renderer = go.AddComponent<MeshRenderer>();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            go.AddComponent<Hd2Shot>().enabled = false;
+            flash = go.AddComponent<Hd2MuzzleFlash>();
+        }
+
+        flash.inPool = false;
+        flash.transform.SetParent(parent, false);
+        flash.transform.localPosition = localPosition;
+        flash.transform.localRotation = Quaternion.identity;
+        flash.transform.localScale = localScale;
+        flash.gameObject.SetActive(true);
+        var glow = flash.GetComponent<Hd2Shot>();
+        glow.enabled = false;
+        glow.UsePlasma(color, thickness);
+        flash.Restart();
+    }
+
+    void Restart()
+    {
+        age = 0f;
         startScale = transform.localScale;
     }
 
     void Update()
     {
+        if (inPool)
+            return;
+
         age += Time.deltaTime;
         float t = age / life;
         if (t >= 1f)
         {
-            Destroy(gameObject);
+            inPool = true;
+            gameObject.SetActive(false);
+            transform.SetParent(null, false);
+            pool.Add(this);
             return;
         }
 

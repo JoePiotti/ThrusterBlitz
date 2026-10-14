@@ -5,7 +5,7 @@ using UnityEngine;
 [InitializeOnLoad]
 public static class Hd2QuestPlayerSetup
 {
-    const string SessionKey = "HD2_QUEST_PLAYER_SETUP_DONE";
+    const string SessionKey = "HD2_QUEST_PLAYER_SETUP_DEATHMATCH";
 
     static Hd2QuestPlayerSetup()
     {
@@ -23,7 +23,13 @@ public static class Hd2QuestPlayerSetup
 
     public static void SetupQuestPlayer()
     {
-        PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.hd2.game");
+        PlayerSettings.productName = "TB";
+        PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.tb.game");
+        EditorBuildSettings.scenes = new[]
+        {
+            new EditorBuildSettingsScene("Assets/Scenes/Deathmatch.unity", true),
+            new EditorBuildSettingsScene("Assets/Scenes/Greybox.unity", false)
+        };
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel32;
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);

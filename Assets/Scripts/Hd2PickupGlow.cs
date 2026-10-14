@@ -35,7 +35,6 @@ public static class Hd2PickupGlow
         light.range = 4.5f;
         light.intensity = 40f;
         light.bounceIntensity = 0f;
-        light.renderMode = LightRenderMode.ForcePixel;
-        light.lightmapBakeType = LightmapBakeType.Realtime;
+        light.renderMode = LightRenderMode.Auto;
     }
 }

@@ -41,6 +41,7 @@ public class Hd2Shocks : MonoBehaviour
     int rounds;
     float nextFireTime;
     float triggerPressedAt = -1f;
+    bool waitForTriggerRelease = true;
     bool chargeReadyPulsed;
     bool reloading;
     float reloadEndsAt;
@@ -179,6 +180,14 @@ public class Hd2Shocks : MonoBehaviour
             released = released || editorFireAction.WasReleasedThisFrame();
         }
 
+        if (waitForTriggerRelease)
+        {
+            pressed = false;
+            released = false;
+            if (!TriggerIsDown(editor))
+                waitForTriggerRelease = false;
+        }
+
         if (pressed)
         {
             triggerPressedAt = Time.time;
@@ -229,6 +238,12 @@ public class Hd2Shocks : MonoBehaviour
         RefreshAmmo();
     }
 
+    public void BotTap()
+    {
+        waitForTriggerRelease = false;
+        TryFire(false);
+    }
+
     void TryFire(bool charged)
     {
         if (reloading || rounds <= 0 || Time.time < nextFireTime)
@@ -253,13 +268,10 @@ public class Hd2Shocks : MonoBehaviour
         Transform origin = muzzle != null ? muzzle : transform;
         Vector3 direction = origin.forward;
         PlayClip("Audio/PistolShot");
-        var shot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        shot.name = "ShockBolt";
-        shot.transform.position = origin.position;
-        shot.transform.rotation = Quaternion.LookRotation(direction);
-        StripCollider(shot);
-
-        var projectile = shot.AddComponent<Hd2Shot>();
+        var projectile = Hd2Shot.Rent();
+        projectile.gameObject.name = "ShockBolt";
+        projectile.transform.position = origin.position;
+        projectile.transform.rotation = Quaternion.LookRotation(direction);
         projectile.velocity = direction * boltSpeed;
         projectile.lifetime = 1.6f;
         projectile.owner = transform.root;
@@ -301,22 +313,18 @@ public class Hd2Shocks : MonoBehaviour
         if (barrel == null)
             return;
 
-        var flash = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        flash.name = "MuzzleFlash";
-        StripCollider(flash);
-        flash.transform.SetParent(barrel, false);
         Vector3 scale = barrel.lossyScale;
         float Axis(float value, float world)
         {
             return Mathf.Abs(value) > 0.001f ? world / value : world;
         }
 
-        flash.transform.localPosition = new Vector3(0f, 0f, Axis(scale.z, 0.06f));
-        flash.transform.localScale = new Vector3(Axis(scale.x, 0.08f), Axis(scale.y, 0.08f), Axis(scale.z, 0.22f));
-        var glow = flash.AddComponent<Hd2Shot>();
-        glow.UsePlasma(boltColor, 0.08f);
-        glow.enabled = false;
-        flash.AddComponent<Hd2MuzzleFlash>();
+        Hd2MuzzleFlash.Show(
+            barrel,
+            new Vector3(0f, 0f, Axis(scale.z, 0.06f)),
+            new Vector3(Axis(scale.x, 0.08f), Axis(scale.y, 0.08f), Axis(scale.z, 0.22f)),
+            boltColor,
+            0.08f);
     }
 
     void PlayCharge()
@@ -380,6 +388,9 @@ public class Hd2Shocks : MonoBehaviour
 
     void Pulse(float amplitude, float duration)
     {
+        if (GetComponentInParent<Hd2EnemyBot>() != null)
+            return;
+
         var node = hand == Hd2Pistol.Hand.Left ? XRNode.LeftHand : XRNode.RightHand;
         var devices = new List<UnityEngine.XR.InputDevice>();
         InputDevices.GetDevicesAtXRNode(node, devices);
@@ -397,6 +408,17 @@ public class Hd2Shocks : MonoBehaviour
         if (map == null)
             map = GetComponentInParent<Hd2ControlMap>();
         return map;
+    }
+
+    bool TriggerIsDown(bool editor)
+    {
+        var fire = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight;
+        Hd2ControlMap controls = Map();
+        if (controls != null && controls.Held(fire))
+            return true;
+        if (editor && editorFireAction != null && editorFireAction.IsPressed())
+            return true;
+        return controls == null && triggerAction != null && triggerAction.IsPressed();
     }
 
     bool Pressed(Hd2ControlMap.Action action, InputAction fallback)
@@ -471,13 +493,18 @@ public class Hd2ShockOrb : MonoBehaviour
         if (renderer == null)
             return;
 
-        Shader shader = Shader.Find("HD2/PlasmaBolt");
-        if (shader == null)
-            shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (shader == null)
-            return;
-
-        var material = new Material(shader);
+        Material material = Resources.Load<Material>("PlasmaBolt");
+        if (material != null)
+            material = new Material(material);
+        else
+        {
+            Shader shader = Shader.Find("HD2/PlasmaBolt");
+            if (shader == null)
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null)
+                return;
+            material = new Material(shader);
+        }
         if (material.HasProperty("_Color"))
             material.SetColor("_Color", color);
         if (material.HasProperty("_Core"))
@@ -567,6 +594,7 @@ public class Hd2ShockOrb : MonoBehaviour
 
             if (owner != null)
                 health.LastAttacker = owner;
+            health.MarkHit(colliders[i].ClosestPoint(point));
             health.ApplyHit(amount, false);
         }
 

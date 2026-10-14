@@ -50,6 +50,7 @@ public class Hd2RocketLauncher : MonoBehaviour
     InputAction editorFire;
     float editorPull;
     bool firedThisPull;
+    bool waitForTriggerRelease = true;
     float nextShotTime;
     LineRenderer laser;
     Transform dot;
@@ -157,6 +158,20 @@ public class Hd2RocketLauncher : MonoBehaviour
     {
         bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
         float pull = menuOpen ? 0f : ReadPull();
+        if (botPull)
+        {
+            botPull = false;
+            waitForTriggerRelease = false;
+            pull = 1f;
+        }
+        if (waitForTriggerRelease)
+        {
+            if (pull >= laserTriggerThreshold)
+                pull = 0f;
+            else
+                waitForTriggerRelease = false;
+        }
+
         bool aiming = pull >= laserTriggerThreshold;
         bool full = pull >= Mathf.Max(laserTriggerThreshold + 0.05f, fireTriggerThreshold);
         if (pull < laserTriggerThreshold)
@@ -192,6 +207,13 @@ public class Hd2RocketLauncher : MonoBehaviour
         if (triggerAxis == null)
             return 0f;
         return Mathf.Clamp01(triggerAxis.ReadValue<float>());
+    }
+
+    public bool botPull;
+
+    public void BotTap()
+    {
+        botPull = true;
     }
 
     void Fire(Vector3 origin, Vector3 direction, Vector3 point)
@@ -399,7 +421,9 @@ public class Hd2RocketLauncher : MonoBehaviour
         color.color = gradient;
 
         var renderer = vent.GetComponent<ParticleSystemRenderer>();
-        renderer.material = ThrustMaterial();
+        Material thrust = ThrustMaterial();
+        if (thrust != null)
+            renderer.material = thrust;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         particles.Play();
@@ -461,7 +485,9 @@ public class Hd2RocketLauncher : MonoBehaviour
         color.color = gradient;
 
         var renderer = smokeObject.GetComponent<ParticleSystemRenderer>();
-        renderer.material = ThrustMaterial();
+        Material smoke = ThrustMaterial();
+        if (smoke != null)
+            renderer.material = smoke;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         particles.Play();
@@ -474,12 +500,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         if (thrustMaterial != null)
             return thrustMaterial;
 
-        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-        if (shader == null)
-            shader = Shader.Find("Particles/Standard Unlit");
-        thrustMaterial = new Material(shader);
-        if (thrustMaterial.HasProperty("_BaseColor"))
-            thrustMaterial.SetColor("_BaseColor", Color.white);
+        thrustMaterial = Hd2Shot.ParticleMaterial();
         return thrustMaterial;
     }
 
@@ -787,7 +808,7 @@ public class Hd2RocketLauncher : MonoBehaviour
 
     void Pulse(float amplitude, float duration)
     {
-        if (amplitude <= 0f || duration <= 0f)
+        if (amplitude <= 0f || duration <= 0f || GetComponentInParent<Hd2EnemyBot>() != null)
             return;
 
         var node = hand == Hd2Pistol.Hand.Left ? XRNode.LeftHand : XRNode.RightHand;

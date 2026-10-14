@@ -18,7 +18,8 @@ public static class Hd2PickupMaterialRepair
         "Assets/Prefabs/Pickups/HealthPickup.prefab",
         "Assets/Prefabs/Pickups/ThrustPickup.prefab",
         "Assets/Prefabs/Pickups/ShocksPickup.prefab",
-        "Assets/Prefabs/Pickups/LaserPickup.prefab"
+        "Assets/Prefabs/Pickups/LaserPickup.prefab",
+        "Assets/Prefabs/Pickups/ShotgunPickup.prefab"
     };
 
     static Hd2PickupMaterialRepair()
@@ -71,6 +72,9 @@ public static class Hd2PickupMaterialRepair
             var laser = root.GetComponent<Hd2LaserPickup>();
             if (laser != null)
                 laser.RepairSavedMaterials();
+            var shotgun = root.GetComponent<Hd2ShotgunPickup>();
+            if (shotgun != null)
+                shotgun.RepairSavedMaterials();
 
             string prefix = System.IO.Path.GetFileNameWithoutExtension(path);
             Persist(root, prefix);
@@ -126,6 +130,7 @@ public static class Hd2PickupMaterialRepair
         Revert<Hd2ThrustPickup>();
         Revert<Hd2ShocksPickup>();
         Revert<Hd2LaserPickup>();
+        Revert<Hd2ShotgunPickup>();
     }
 
     static void Revert<T>() where T : Component

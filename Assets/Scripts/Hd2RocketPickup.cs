@@ -139,6 +139,14 @@ public class Hd2RocketPickup : MonoBehaviour
         action = null;
     }
 
+    public bool BotTake(Transform hand)
+    {
+        if (!ready || hand == null)
+            return false;
+        TryCollect(hand);
+        return !ready;
+    }
+
     void TryCollect(Transform hand)
     {
         if (!Equip(hand))
@@ -163,6 +171,7 @@ public class Hd2RocketPickup : MonoBehaviour
         DestroyAll<Hd2RocketLauncher>(hand);
         DestroyAll<Hd2Shocks>(hand);
         DestroyAll<Hd2LaserPistol>(hand);
+        DestroyAll<Hd2Shotgun>(hand);
 
         var gun = Instantiate(rocketModel, hand);
         gun.name = "RocketLauncher";

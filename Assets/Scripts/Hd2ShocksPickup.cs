@@ -131,6 +131,14 @@ public class Hd2ShocksPickup : MonoBehaviour
         return action != null && action.IsPressed();
     }
 
+    public bool BotTake(Transform hand)
+    {
+        if (!ready || hand == null)
+            return false;
+        TryCollect(hand);
+        return !ready;
+    }
+
     void TryCollect(Transform hand)
     {
         if (!Equip(hand))
@@ -158,6 +166,7 @@ public class Hd2ShocksPickup : MonoBehaviour
         DestroyGuns<Hd2RocketLauncher>(hand);
         DestroyGuns<Hd2Shocks>(hand);
         DestroyGuns<Hd2LaserPistol>(hand);
+        DestroyGuns<Hd2Shotgun>(hand);
 
         var gun = Instantiate(model, hand);
         gun.name = "Shocks";

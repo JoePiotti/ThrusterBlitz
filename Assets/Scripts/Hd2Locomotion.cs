@@ -33,12 +33,15 @@ using UnityEngine.XR;
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
 ///   or until the next thrust starts. Walking onto a rail steps up onto it or over it.
 ///   Grip is not grind.
-/// - Jump: hold B. Smoke vents from the two backpack nozzles and the player rises,
-///   up to 1.5 meters, for as long as the button is held, thrust remains, and 1.5 seconds
-///   have not passed. Thrust is spent at 1 bar per second. Releasing B, running out of
-///   thrust, or reaching the cap ends the rise. Touching the ground clears the jump
-///   so it can be used again. It is not required to start one, including while falling
-///   or grinding. A second jump in the air does not start.
+/// - Jump: hold B. Smoke vents from the two backpack nozzles. While the button is
+///   held, thrust remains, and 0.3 seconds have not passed, vertical speed accelerates
+///   upward at 3 times gravity. That change is added to the current vertical speed, so
+///   a jump while falling slows the drop before it climbs. Thrust is spent at 1 bar per
+///   second of burn. Releasing B, running out of thrust, or reaching 0.3 seconds ends
+///   the burn, and gravity then acts on whatever vertical speed is left. Touching the
+///   ground clears the jump so it can be used again. It can start in the air, while
+///   falling, or while grinding. Grinding ends and the rail's horizontal speed is
+///   dropped. A second jump in the air does not start.
 ///   Walk, sprint, and a blitz still work in the air and on a rail. There is no double jump.
 /// - Crouch: right stick click. The view and the capsule ease down to two thirds of
 ///   standing eye height, and the robot squats with them. Walk speed is halved.
@@ -103,10 +106,10 @@ public class Hd2Locomotion : MonoBehaviour
     public float grindSpeed = 8f;
 
     [Header("Jump")]
-    [Tooltip("Highest the B-button jump lifts the feet, in meters.")]
-    public float jumpHeight = 1.5f;
-    [Tooltip("Longest the jump can rise, in seconds. Thrust is spent at jumpThrustPerSecond for this whole rise.")]
-    public float jumpMaxTime = 1.5f;
+    [Tooltip("Upward acceleration while the jump burn is held, in multiples of gravity.")]
+    public float jumpAccelGs = 3f;
+    [Tooltip("Longest the jump burn can run, in seconds. Thrust is spent at jumpThrustPerSecond for this whole burn.")]
+    public float jumpMaxTime = 0.3f;
     [Tooltip("Thrust bars spent per second while rising.")]
     public float jumpThrustPerSecond = 1f;
 
@@ -252,15 +255,20 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
     public bool IsThrusting => thrusting;
+    public const float MinStandHeight = 1.67f;
+    public const float MaxStandHeight = 1.83f;
+
     bool crouched;
     float crouchBlend;
     float standingEye = 1.7f;
+    bool stanceReady;
     Transform crouchRig;
     const float CrouchHeightScale = 2f / 3f;
     public bool IsAirborne => jumpBoosting || jumpSpent;
 
     public bool IsCrouching => crouched;
     public float CrouchAmount => crouchBlend;
+    public float StandingEye => standingEye;
 
     public bool IsSprinting
     {
@@ -658,10 +666,8 @@ public class Hd2Locomotion : MonoBehaviour
 
         PlanarVelocity = PlanarStick() * CurrentSpeed();
         MoveHorizontal(PlanarVelocity * dt);
-        if (jumpBoosting)
-            TickJump(dt);
-        else
-            ApplyGravity(dt);
+        float burn = jumpBoosting ? BurnJump(dt) : 0f;
+        ApplyGravity(dt, burn);
         PopOutOfWalls();
         NoteLanding();
         UpdateGrindAudio();
@@ -1620,7 +1626,9 @@ public class Hd2Locomotion : MonoBehaviour
         color.color = gradient;
 
         var renderer = trail.GetComponent<ParticleSystemRenderer>();
-        renderer.material = BlitzTrailMaterial();
+        Material trailMaterial = BlitzTrailMaterial();
+        if (trailMaterial != null)
+            renderer.material = trailMaterial;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
     }
@@ -1632,12 +1640,7 @@ public class Hd2Locomotion : MonoBehaviour
         if (blitzTrailMaterial != null)
             return blitzTrailMaterial;
 
-        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-        if (shader == null)
-            shader = Shader.Find("Particles/Standard Unlit");
-        blitzTrailMaterial = new Material(shader);
-        if (blitzTrailMaterial.HasProperty("_BaseColor"))
-            blitzTrailMaterial.SetColor("_BaseColor", Color.white);
+        blitzTrailMaterial = Hd2Shot.ParticleMaterial();
         return blitzTrailMaterial;
     }
 
@@ -2010,7 +2013,6 @@ public class Hd2Locomotion : MonoBehaviour
         grindRail = null;
         jumpOriginY = transform.position.y;
         jumpTime = 0f;
-        verticalVelocity = 0f;
         fallTime = 0f;
         SetJumpExhaust(true);
         if (jumpThrustSource != null)
@@ -2022,42 +2024,30 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
 
-    void TickJump(float dt)
+    float BurnJump(float dt)
     {
         var meter = GetComponent<Hd2ThrustMeter>();
-        bool held = JumpHeld();
-        float risen = transform.position.y - jumpOriginY;
-        float timeLeft = Mathf.Max(0.05f, jumpMaxTime) - jumpTime;
-        if (!held || timeLeft <= 0f || risen >= jumpHeight - 0.001f || meter == null || meter.Charges <= 0.001f)
+        if (!JumpHeld() || jumpTime >= jumpMaxTime || meter == null || meter.Charges <= 0.001f)
         {
             EndJumpBoost();
-            return;
+            return 0f;
         }
 
-        float speed = jumpHeight / Mathf.Max(0.05f, jumpMaxTime);
-        float want = Mathf.Min(speed * Mathf.Min(dt, timeLeft), jumpHeight - risen);
-        CapsuleEnds(out Vector3 bottom, out Vector3 top);
-        if (CastBody(bottom, top, bodyRadius * 0.9f, Vector3.up, want + skinWidth, out RaycastHit ceiling))
-            want = Mathf.Max(0f, ceiling.distance - skinWidth);
-        if (want <= 0.0001f)
+        float timeLeft = Mathf.Max(0f, jumpMaxTime) - jumpTime;
+        float burn = Mathf.Min(dt, timeLeft);
+        float rate = Mathf.Max(0.01f, jumpThrustPerSecond);
+        float spent = meter.SpendUpTo(burn * rate);
+        burn = spent / rate;
+        if (burn <= 0.0001f)
         {
             EndJumpBoost();
-            return;
+            return 0f;
         }
 
-        float cost = want / speed * Mathf.Max(0.01f, jumpThrustPerSecond);
-        float spent = meter.SpendUpTo(cost);
-        float rise = spent / Mathf.Max(0.01f, jumpThrustPerSecond) * speed;
-        if (rise <= 0.0001f)
-        {
+        jumpTime += burn;
+        if (jumpTime >= jumpMaxTime - 0.0001f || meter.Charges <= 0.001f)
             EndJumpBoost();
-            return;
-        }
-
-        transform.position += Vector3.up * rise;
-        jumpTime += rise / speed;
-        verticalVelocity = 0f;
-        fallTime = 0f;
+        return burn;
     }
 
     void EndJumpBoost()
@@ -2067,7 +2057,6 @@ public class Hd2Locomotion : MonoBehaviour
             return;
 
         jumpBoosting = false;
-        verticalVelocity = 0f;
         SetJumpExhaust(false);
         if (wasBoosting && jumpThrustSource != null && jumpThrustSource.isPlaying)
             jumpThrustFade = JumpThrustFadeTime;
@@ -2279,7 +2268,9 @@ public class Hd2Locomotion : MonoBehaviour
         color.color = gradient;
 
         var renderer = vent.GetComponent<ParticleSystemRenderer>();
-        renderer.material = JumpExhaustMaterial();
+        Material exhaustMaterial = JumpExhaustMaterial();
+        if (exhaustMaterial != null)
+            renderer.material = exhaustMaterial;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         return particles;
@@ -2292,19 +2283,25 @@ public class Hd2Locomotion : MonoBehaviour
         if (jumpExhaustMaterial != null)
             return jumpExhaustMaterial;
 
-        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-        if (shader == null)
-            shader = Shader.Find("Particles/Standard Unlit");
-        jumpExhaustMaterial = new Material(shader);
-        if (jumpExhaustMaterial.HasProperty("_BaseColor"))
-            jumpExhaustMaterial.SetColor("_BaseColor", Color.white);
+        jumpExhaustMaterial = Hd2Shot.ParticleMaterial();
         return jumpExhaustMaterial;
     }
 
-    void ApplyGravity(float dt)
+    void ApplyGravity(float dt, float burn = 0f)
     {
+        burn = Mathf.Clamp(burn, 0f, dt);
+        float coast = dt - burn;
+        if (burn > 0f)
+            verticalVelocity += gravity * Mathf.Max(0f, jumpAccelGs) * burn;
+        if (coast > 0f)
+        {
+            verticalVelocity -= gravity * coast;
+            if (verticalVelocity < -terminalVelocity)
+                verticalVelocity = -terminalVelocity;
+        }
+
         bool fallingBack = jumpSpent && transform.position.y > jumpOriginY + 0.02f;
-        if (!fallingBack && verticalVelocity <= 0f && TryGround(out float groundY))
+        if (burn <= 0f && !fallingBack && verticalVelocity <= 0f && TryGround(out float groundY))
         {
             verticalVelocity = 0f;
             fallTime = 0f;
@@ -2313,10 +2310,6 @@ public class Hd2Locomotion : MonoBehaviour
             transform.position = grounded;
             return;
         }
-
-        verticalVelocity -= gravity * dt;
-        if (verticalVelocity < -terminalVelocity)
-            verticalVelocity = -terminalVelocity;
 
         float dy = verticalVelocity * dt;
         float distance = Mathf.Abs(dy);
@@ -2335,7 +2328,7 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         transform.position += Vector3.up * dy;
-        if (dy < 0f)
+        if (dy < 0f && burn <= 0f)
             CountFall(dt);
     }
 
@@ -2354,7 +2347,10 @@ public class Hd2Locomotion : MonoBehaviour
         fallTime = 0f;
         var health = GetComponent<Hd2Health>();
         if (health != null && !health.IsDead)
+        {
+            health.MarkHit(transform.position + Vector3.up * 1.1f);
             health.ApplyHit(health.Health, false);
+        }
     }
 
     static readonly Collider[] waterHits = new Collider[8];
@@ -2366,6 +2362,7 @@ public class Hd2Locomotion : MonoBehaviour
             return;
 
         Hd2Water.Splash(surface, true);
+        health.MarkHit(surface + Vector3.up * 0.4f);
         health.ApplyHit(health.Health, false);
     }
 
@@ -2419,12 +2416,22 @@ public class Hd2Locomotion : MonoBehaviour
         EnsureCrouchRig();
         float eye = EyeAboveRig();
         if (eye > 0.75f)
-            standingEye = Mathf.Lerp(standingEye, eye, 1f - Mathf.Exp(-8f * dt));
+        {
+            if (!stanceReady)
+            {
+                standingEye = eye;
+                stanceReady = true;
+            }
+            else if (eye >= standingEye - 0.06f)
+                standingEye = Mathf.Lerp(standingEye, eye, 1f - Mathf.Exp(-8f * dt));
+        }
 
         crouchBlend = Mathf.MoveTowards(crouchBlend, crouched ? 1f : 0f, dt / 0.16f);
-        float stand = Mathf.Clamp(standingEye, 1.5f, 2f);
-        bodyHeight = stand * Mathf.Lerp(1f, CrouchHeightScale, crouchBlend);
         PlaceCrouchRig();
+        float stand = Mathf.Clamp(standingEye, MinStandHeight, MaxStandHeight);
+        float live = head != null ? head.position.y - transform.position.y : stand;
+        float drop = Mathf.Max(0f, standingEye - live);
+        bodyHeight = Mathf.Clamp(stand - drop, 0.8f, stand);
     }
 
     void PlaceCrouchRig()
@@ -2470,7 +2477,7 @@ public class Hd2Locomotion : MonoBehaviour
     bool RoomToStand()
     {
         float radius = Mathf.Max(0.05f, bodyRadius);
-        float stand = Mathf.Clamp(standingEye, 1.5f, 2f);
+        float stand = Mathf.Clamp(standingEye, MinStandHeight, MaxStandHeight);
         float low = stand * CrouchHeightScale;
         float extra = stand - low;
         if (extra <= 0.02f)
@@ -2814,7 +2821,8 @@ public class Hd2Locomotion : MonoBehaviour
         if (thrustGhost != null)
             return wireMaterial != null;
 
-        Shader shader = Shader.Find("HD2/WireAvatar");
+        Material sourceMaterial = Resources.Load<Material>("WireAvatar");
+        Shader shader = sourceMaterial != null ? sourceMaterial.shader : Shader.Find("HD2/WireAvatar");
         bool hasSkin = source.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
         bool hasMesh = source.GetComponentInChildren<MeshRenderer>(true) != null;
         if (shader == null || (!hasSkin && !hasMesh))
@@ -2825,14 +2833,23 @@ public class Hd2Locomotion : MonoBehaviour
         thrustGhost.hideFlags = HideFlags.DontSave;
         thrustGhost.transform.SetParent(null, true);
 
+        var cones = thrustGhost.GetComponentsInChildren<Hd2VisionCone>(true);
+        for (int i = 0; i < cones.Length; i++)
+        {
+            if (cones[i] != null)
+                Destroy(cones[i].gameObject);
+        }
         var colliders = thrustGhost.GetComponentsInChildren<Collider>(true);
         for (int i = 0; i < colliders.Length; i++)
             Destroy(colliders[i]);
+        var bodies = thrustGhost.GetComponentsInChildren<Rigidbody>(true);
+        for (int i = 0; i < bodies.Length; i++)
+            Destroy(bodies[i]);
         var animators = thrustGhost.GetComponentsInChildren<Animator>(true);
         for (int i = 0; i < animators.Length; i++)
             animators[i].enabled = false;
 
-        wireMaterial = new Material(shader);
+        wireMaterial = sourceMaterial != null ? new Material(sourceMaterial) : new Material(shader);
         wireMaterial.hideFlags = HideFlags.DontSave;
 
         var skins = thrustGhost.GetComponentsInChildren<SkinnedMeshRenderer>(true);

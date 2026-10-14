@@ -34,7 +34,8 @@ public class Hd2ThrustMeter : MonoBehaviour
         charges = Mathf.Clamp(startingCharges, 0, maxCharges);
         filledMaterial = MakeMaterial(filled);
         emptyMaterial = MakeMaterial(empty);
-        restoreClip = Resources.Load<AudioClip>("Audio/BlitzRestore");
+        if (GetComponent<Hd2Locomotion>() != null)
+            restoreClip = Resources.Load<AudioClip>("Audio/BlitzRestore");
         if (restoreClip != null)
         {
             restoreSource = gameObject.AddComponent<AudioSource>();

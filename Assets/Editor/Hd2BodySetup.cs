@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -14,6 +15,313 @@ public class Hd2BodyImporter : AssetPostprocessor
         importer.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
         importer.importAnimation = false;
         importer.optimizeBones = false;
+    }
+
+    void OnPostprocessModel(GameObject root)
+    {
+        if (assetPath != Hd2BodySetup.RobotPath)
+            return;
+
+        var skins = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < skins.Length; i++)
+        {
+            if (skins[i] == null || skins[i].sharedMesh == null || skins[i].name == "Jetpack")
+                continue;
+            if (skins[i].sharedMesh.vertexCount < 1000)
+                continue;
+            CapSegmentHoles(skins[i]);
+        }
+    }
+
+    // The robot was cut into shells. Shoulders, arms, and legs are open at those cuts.
+    static void CapSegmentHoles(SkinnedMeshRenderer skin)
+    {
+        Mesh mesh = skin.sharedMesh;
+        Vector3[] vertices = mesh.vertices;
+        int subCount = mesh.subMeshCount;
+        var tris = new List<int>[subCount];
+        var faceDir = new HashSet<long>();
+        var edgeSub = new Dictionary<long, int>();
+        var edgeCount = new Dictionary<long, int>();
+        for (int s = 0; s < subCount; s++)
+        {
+            int[] indices = mesh.GetTriangles(s);
+            tris[s] = new List<int>(indices);
+            for (int t = 0; t + 2 < indices.Length; t += 3)
+            {
+                int a = indices[t];
+                int b = indices[t + 1];
+                int c = indices[t + 2];
+                NoteEdge(faceDir, edgeSub, edgeCount, a, b, s);
+                NoteEdge(faceDir, edgeSub, edgeCount, b, c, s);
+                NoteEdge(faceDir, edgeSub, edgeCount, c, a, s);
+            }
+        }
+
+        var neighbors = new Dictionary<int, List<int>>();
+        foreach (var pair in edgeCount)
+        {
+            if (pair.Value != 1)
+                continue;
+            int a = (int)(pair.Key >> 32);
+            int b = (int)pair.Key;
+            AddNeighbor(neighbors, a, b);
+            AddNeighbor(neighbors, b, a);
+        }
+
+        var seen = new HashSet<int>();
+        var loops = new List<int[]>();
+        foreach (int start in neighbors.Keys)
+        {
+            if (!seen.Add(start))
+                continue;
+            var loop = new List<int> { start };
+            int prev = -1;
+            int cur = start;
+            bool closed = false;
+            while (neighbors.TryGetValue(cur, out List<int> nexts))
+            {
+                int nxt = -1;
+                for (int i = 0; i < nexts.Count; i++)
+                {
+                    if (nexts[i] != prev && !seen.Contains(nexts[i]))
+                    {
+                        nxt = nexts[i];
+                        break;
+                    }
+                }
+
+                if (nxt < 0)
+                {
+                    closed = nexts.Contains(start) && loop.Count >= 3;
+                    break;
+                }
+
+                loop.Add(nxt);
+                seen.Add(nxt);
+                prev = cur;
+                cur = nxt;
+            }
+
+            if (closed)
+                loops.Add(loop.ToArray());
+        }
+
+        Vector3[] world = new Vector3[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+            world[i] = skin.transform.TransformPoint(vertices[i]);
+
+        var centers = new Vector3[loops.Count];
+        var radii = new float[loops.Count];
+        for (int i = 0; i < loops.Count; i++)
+        {
+            Vector3 center = Vector3.zero;
+            int[] loop = loops[i];
+            for (int v = 0; v < loop.Length; v++)
+                center += world[loop[v]];
+            center /= loop.Length;
+            float radius = 0f;
+            for (int v = 0; v < loop.Length; v++)
+                radius += (world[loop[v]] - center).magnitude;
+            centers[i] = center;
+            radii[i] = radius / loop.Length;
+        }
+
+        Transform neck = FindBone(skin, "Neck");
+        float neckY = neck != null ? neck.position.y : float.PositiveInfinity;
+        int capped = 0;
+        for (int i = 0; i < loops.Count; i++)
+        {
+            if (!IsSegmentHole(skin, loops[i], centers[i], radii[i], centers, radii, neckY))
+                continue;
+
+            int[] loop = OrientHole(loops[i], faceDir);
+            int sub = MajoritySubmesh(loop, edgeSub);
+            if (sub < 0)
+                continue;
+
+            for (int t = 1; t + 1 < loop.Length; t++)
+            {
+                tris[sub].Add(loop[0]);
+                tris[sub].Add(loop[t]);
+                tris[sub].Add(loop[t + 1]);
+            }
+
+            capped++;
+        }
+
+        Debug.Log("Capped " + capped + " of " + loops.Count + " open loops on " + skin.name);
+        if (capped == 0)
+            return;
+
+        for (int s = 0; s < subCount; s++)
+            mesh.SetTriangles(tris[s], s);
+        mesh.RecalculateBounds();
+    }
+
+    static void NoteEdge(HashSet<long> faceDir, Dictionary<long, int> edgeSub, Dictionary<long, int> edgeCount, int a, int b, int sub)
+    {
+        faceDir.Add(((long)a << 32) | (uint)b);
+        long undirected = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+        edgeSub[undirected] = sub;
+        edgeCount.TryGetValue(undirected, out int count);
+        edgeCount[undirected] = count + 1;
+    }
+
+    static void AddNeighbor(Dictionary<int, List<int>> neighbors, int a, int b)
+    {
+        if (!neighbors.TryGetValue(a, out List<int> list))
+        {
+            list = new List<int>(2);
+            neighbors.Add(a, list);
+        }
+
+        list.Add(b);
+    }
+
+    static int[] OrientHole(int[] loop, HashSet<long> faceDir)
+    {
+        int withFace = 0;
+        int againstFace = 0;
+        for (int i = 0; i < loop.Length; i++)
+        {
+            int a = loop[i];
+            int b = loop[(i + 1) % loop.Length];
+            if (faceDir.Contains(((long)a << 32) | (uint)b))
+                withFace++;
+            if (faceDir.Contains(((long)b << 32) | (uint)a))
+                againstFace++;
+        }
+
+        if (withFace <= againstFace)
+            return loop;
+
+        var reversed = new int[loop.Length];
+        for (int i = 0; i < loop.Length; i++)
+            reversed[i] = loop[loop.Length - 1 - i];
+        return reversed;
+    }
+
+    static int MajoritySubmesh(int[] loop, Dictionary<long, int> edgeSub)
+    {
+        var votes = new Dictionary<int, int>();
+        int best = -1;
+        int bestCount = 0;
+        for (int i = 0; i < loop.Length; i++)
+        {
+            int a = loop[i];
+            int b = loop[(i + 1) % loop.Length];
+            long key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+            if (!edgeSub.TryGetValue(key, out int sub))
+                continue;
+            votes.TryGetValue(sub, out int count);
+            count++;
+            votes[sub] = count;
+            if (count > bestCount)
+            {
+                bestCount = count;
+                best = sub;
+            }
+        }
+
+        return best;
+    }
+
+    static bool IsSegmentHole(SkinnedMeshRenderer skin, int[] loop, Vector3 center, float radius, Vector3[] centers, float[] radii, float neckY)
+    {
+        if (loop.Length < 10 || radius < 0.04f)
+            return false;
+        if (center.y > neckY - 0.02f)
+            return false;
+
+        string bone = NearestBone(skin, center, out float boneDistance);
+        bool limb = IsLimbBone(bone);
+        bool nearJoint = NearJoint(skin, center, 0.2f);
+        bool paired = HasFacingPair(center, radius, centers, radii);
+        if (!limb && !nearJoint)
+            return false;
+        if (radius >= 0.05f && loop.Length >= 14)
+            return true;
+        if (paired && radius >= 0.04f)
+            return true;
+        if (nearJoint && radius >= 0.07f)
+            return true;
+        return boneDistance < 0.04f && radius >= 0.045f;
+    }
+
+    static bool HasFacingPair(Vector3 center, float radius, Vector3[] centers, float[] radii)
+    {
+        for (int i = 0; i < centers.Length; i++)
+        {
+            float gap = (centers[i] - center).magnitude;
+            if (gap < 0.004f || gap > 0.055f)
+                continue;
+            if (Mathf.Abs(radii[i] - radius) < Mathf.Max(0.03f, radius * 0.45f))
+                return true;
+        }
+
+        return false;
+    }
+
+    static bool NearJoint(SkinnedMeshRenderer skin, Vector3 center, float reach)
+    {
+        var bones = skin.bones;
+        if (bones == null)
+            return false;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            if (bones[i] == null)
+                continue;
+            string name = bones[i].name;
+            if (name != "Arm.L" && name != "Arm.R" && name != "Thigh.L" && name != "Thigh.R")
+                continue;
+            if ((bones[i].position - center).sqrMagnitude <= reach * reach)
+                return true;
+        }
+
+        return false;
+    }
+
+    static string NearestBone(SkinnedMeshRenderer skin, Vector3 center, out float distance)
+    {
+        distance = float.MaxValue;
+        string best = "";
+        var bones = skin.bones;
+        if (bones == null)
+            return best;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            if (bones[i] == null)
+                continue;
+            float d = (bones[i].position - center).magnitude;
+            if (d < distance)
+            {
+                distance = d;
+                best = bones[i].name;
+            }
+        }
+
+        return best;
+    }
+
+    static bool IsLimbBone(string name)
+    {
+        return name.StartsWith("Arm") || name.StartsWith("Thigh") || name.StartsWith("Shin")
+            || name.StartsWith("Hand") || name.StartsWith("Foot");
+    }
+
+    static Transform FindBone(SkinnedMeshRenderer skin, string name)
+    {
+        var bones = skin.bones;
+        if (bones == null)
+            return null;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            if (bones[i] != null && bones[i].name == name)
+                return bones[i];
+        }
+
+        return null;
     }
 
     static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)

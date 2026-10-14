@@ -143,6 +143,14 @@ public class Hd2SmgPickup : MonoBehaviour
         action = null;
     }
 
+    public bool BotTake(Transform hand)
+    {
+        if (!ready || hand == null)
+            return false;
+        TryCollect(hand);
+        return !ready;
+    }
+
     void TryCollect(Transform hand)
     {
         if (!Equip(hand))
@@ -192,6 +200,13 @@ public class Hd2SmgPickup : MonoBehaviour
         {
             if (lasers[i] != null)
                 Destroy(lasers[i].gameObject);
+        }
+
+        var shotguns = hand.GetComponentsInChildren<Hd2Shotgun>(true);
+        for (int i = 0; i < shotguns.Length; i++)
+        {
+            if (shotguns[i] != null)
+                Destroy(shotguns[i].gameObject);
         }
 
         var gun = Instantiate(equipped, hand);

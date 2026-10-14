@@ -75,7 +75,9 @@ public class Hd2Water : MonoBehaviour
         shape.radius = mist ? 0.12f * scale : 0.05f * scale;
 
         var renderer = particles.GetComponent<ParticleSystemRenderer>();
-        renderer.material = DropletMaterial();
+        Material droplets = DropletMaterial();
+        if (droplets != null)
+            renderer.material = droplets;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
     }
@@ -104,12 +106,7 @@ public class Hd2Water : MonoBehaviour
         if (dropletMaterial != null)
             return dropletMaterial;
 
-        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-        if (shader == null)
-            shader = Shader.Find("Particles/Standard Unlit");
-        dropletMaterial = new Material(shader);
-        if (dropletMaterial.HasProperty("_BaseColor"))
-            dropletMaterial.SetColor("_BaseColor", Color.white);
+        dropletMaterial = Hd2Shot.ParticleMaterial();
         return dropletMaterial;
     }
 }

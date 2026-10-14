@@ -40,6 +40,8 @@ public class Hd2LaserPistol : MonoBehaviour
     static readonly Color BeamColor = new Color(0.3f, 1f, 0.35f, 1f);
 
     Phase phase = Phase.Ready;
+    bool waitForTriggerRelease = true;
+    public bool botHeld;
     float pointStartedAt;
     float phaseEndsAt;
     float kick;
@@ -217,7 +219,18 @@ public class Hd2LaserPistol : MonoBehaviour
     {
         bool menuOpen = Map() != null && Map().MenuOpen;
         float pull = menuOpen ? 0f : ReadPull();
+        if (botHeld)
+            pull = 1f;
         bool full = pull >= fullTrigger;
+        if (botHeld)
+            waitForTriggerRelease = false;
+        else if (waitForTriggerRelease)
+        {
+            if (pull >= 0.2f)
+                full = false;
+            else
+                waitForTriggerRelease = false;
+        }
 
         if (phase == Phase.Pointing)
         {
@@ -275,7 +288,8 @@ public class Hd2LaserPistol : MonoBehaviour
         Vector3 direction = MuzzleForward();
         Vector3 end = origin + direction * 80f;
         Hd2Health target = null;
-        if (Trace(origin, direction, out RaycastHit hit))
+        RaycastHit hit = default;
+        if (Trace(origin, direction, out hit))
         {
             end = hit.point;
             if (hit.collider != null)
@@ -291,6 +305,7 @@ public class Hd2LaserPistol : MonoBehaviour
         {
             if (attacker != null)
                 target.LastAttacker = attacker.transform;
+            target.MarkHit(hit.point);
             target.ApplyHit(damage, false);
         }
 
@@ -421,7 +436,7 @@ public class Hd2LaserPistol : MonoBehaviour
 
     void Pulse(float amplitude, float duration)
     {
-        if (amplitude <= 0f || duration <= 0f)
+        if (amplitude <= 0f || duration <= 0f || GetComponentInParent<Hd2EnemyBot>() != null)
             return;
 
         var node = hand == Hd2Pistol.Hand.Left ? XRNode.LeftHand : XRNode.RightHand;

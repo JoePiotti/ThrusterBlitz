@@ -71,6 +71,7 @@ public class Hd2ThrustPickup : MonoBehaviour
         meter.SetMaxCharges(maximum, true);
         ready = false;
         cooldownLeft = cooldown;
+        Hd2PickupChime.Play();
         if (sphere != null)
             sphere.gameObject.SetActive(false);
         if (ring != null)

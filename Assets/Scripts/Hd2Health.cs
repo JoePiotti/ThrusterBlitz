@@ -76,6 +76,12 @@ public class Hd2Health : MonoBehaviour
     }
 
     public Transform LastAttacker { get; set; }
+    public Vector3 LastHitPoint { get; private set; }
+
+    public void MarkHit(Vector3 point)
+    {
+        LastHitPoint = point;
+    }
 
     public void Respawn()
     {
