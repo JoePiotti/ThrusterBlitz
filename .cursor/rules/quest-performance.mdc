@@ -1,0 +1,47 @@
+---
+description: Quest frame-budget limits for HD2 runtime work
+alwaysApply: true
+---
+
+# Quest performance
+
+HD2 runs on Quest 2, Quest 3, and Quest 3S. Design a full match for Quest 2. Editor frame time is not evidence. A rendering, physics, or per-frame change needs a Development build capture on a headset before calling it safe. Lock CPU and GPU clocks when comparing captures.
+
+## Budget
+
+Hold 72 Hz (13.9 ms) during a match. Use 90 Hz (11.1 ms) or 120 Hz (8.3 ms) only when that same scene already holds 72 on Quest 2 with headroom. Steady play stays on sustained CPU and GPU level 4. Level 5 and CPU boost are for loads and transitions, not gunfire or movement.
+
+Quest 2 busy scene: about 80–200 draw calls, under 1M triangles, under 50 SetPass calls. Quest 3 and 3S have more room. Stay inside the Quest 2 band.
+
+If a capture misses frame rate, name the bottleneck before editing. Disable the XR camera: little change means CPU-bound, a big drop means GPU-bound. If GPU-bound, drop render scale near 0. No change means cut draws and triangles. A drop means cut shaders, overdraw, and resolution. Fix that one cost, then capture again.
+
+## Rendering
+
+Keep URP Forward. Keep HDR, opaque-texture copies, depth-texture copies, and depth priming off. Keep single-pass multiview. Do not add deferred rendering, SSAO, post-processing, motion blur, full-screen fog, extra cameras, or grab passes.
+
+`Assets/Settings/URP-HD2.asset` is the balance: MSAA 2, render scale 0.8, one main-light shadow cascade, shadow distance 8, no additional-light shadows, SRP Batcher on. Do not raise MSAA, render scale, shadow distance, cascade count, or realtime shadows without a headset capture that still holds 72 Hz. Do not enable the GPU Resident Drawer.
+
+On Meta Quest OpenXR settings, keep Optimize Buffer Discards on. Prefer Symmetric Projection and Multiview Render Regions (All Passes) when touching that feature. Do not turn those off.
+
+Share materials and mark unmoving level geometry static. Atlas repeated textures. Use ASTC, mipmaps, and trilinear filtering. Keep textures at 2K or below. Bake level lighting and use light probes on moving characters. No realtime GI.
+
+Transparent and alpha-tested surfaces overdraw. Keep particles small, few, and non-overlapping. Use mobile or unlit shaders. No geometry shaders.
+
+Leave fixed foveated rendering dynamic. It helps fill-bound scenes. Do not enable Application SpaceWarp unless a headset capture of dash and turning still looks acceptable.
+
+## CPU
+
+No managed allocations in `Update`, `LateUpdate`, or `FixedUpdate`. Pool projectiles, impacts, and audio sources. Cache transforms and components. No `Find` and no allocating physics queries per frame.
+
+Physics defaults: sleep threshold at or above 0.005, contact offset at or above 0.01, solver iterations at or below 6. A collider on a moving object needs a rigidbody on itself or a parent.
+
+Keep simultaneous `AudioSource`s under 16. Do not load a scene while the player is in a match.
+
+```csharp
+// BAD: allocates and searches every shot
+if (trigger) Instantiate(impactPrefab, hit.point, Quaternion.identity);
+var gun = GameObject.Find("Gun");
+
+// GOOD: cache the muzzle, and reuse a pooled impact
+impactPool.Get().Play(hit.point);
+```

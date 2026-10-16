@@ -17,6 +17,7 @@ Spiritual successor to Hyper Dash. Quest-only. Solo vertical slice. Do not copy 
 ## How to work
 
 - Prefer Unity + latest Meta XR SDK / OpenXR. Keep the project simple and Quest-friendly.
+- Stay inside the Quest performance rule. Feel work still has to hold 72 Hz on Quest 2.
 - Prioritize feel and iteration speed over architecture purity early on.
 - Suggest small, testable steps. Do not build systems for features that are not needed yet.
 - Ask when design intent is ambiguous.

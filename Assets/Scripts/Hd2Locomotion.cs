@@ -98,9 +98,9 @@ public class Hd2Locomotion : MonoBehaviour
     [Tooltip("Initial speed of the aim arc, meters per second.")]
     public float arcSpeed = 16f;
     [Tooltip("Downward acceleration of the aim arc. The arc stops at the first solid hit.")]
-    public float arcGravity = 34f;
-    [Tooltip("Offset of the thrust arc from the gun aim. -65 lifts the arc slightly above the barrel.")]
-    public float arcLaunchAngle = -65f;
+    public float arcGravity = 37.1f;
+    [Tooltip("Offset of the thrust arc from the gun aim. -64.5 lifts the arc slightly above the barrel.")]
+    public float arcLaunchAngle = -64.5f;
 
     [Header("Grind")]
     public float grindSpeed = 8f;
@@ -263,6 +263,7 @@ public class Hd2Locomotion : MonoBehaviour
     float standingEye = 1.7f;
     bool stanceReady;
     Transform crouchRig;
+    Transform roomRig;
     const float CrouchHeightScale = 2f / 3f;
     public bool IsAirborne => jumpBoosting || jumpSpent;
 
@@ -295,6 +296,8 @@ public class Hd2Locomotion : MonoBehaviour
             rightHand = transform.Find("RightHand");
 
         CreatePreview();
+        if (GetComponent<Hd2Hud>() == null)
+            gameObject.AddComponent<Hd2Hud>();
         CreateGrindLoop();
         CreateWalkLoop();
         CreateLandSound();
@@ -603,6 +606,7 @@ public class Hd2Locomotion : MonoBehaviour
         if (!EditorFallback && Mathf.Abs(snap) > 0.01f)
             YawAroundHead(snap);
         PlaceCrouchRig();
+        AlignRoom();
 
         if (thrusting)
         {
@@ -930,7 +934,7 @@ public class Hd2Locomotion : MonoBehaviour
 
             if (Mathf.Abs(arcLaunchAngle) > 0.01f)
             {
-                // -65 on this axis lifts the arc slightly above where the gun is aiming.
+                // -64.5 on this axis lifts the arc slightly above where the gun is aiming.
                 direction = Quaternion.AngleAxis(-arcLaunchAngle, aim.right) * direction;
                 if (direction.sqrMagnitude < 0.0001f)
                     direction = aim.forward;
@@ -2445,6 +2449,69 @@ public class Hd2Locomotion : MonoBehaviour
         crouchRig.localScale = Vector3.one;
     }
 
+    // The headset walks around the tracking origin. Pull the root under the
+    // headset so the capsule, water, and avatar stay with the player.
+    // Camera local pose is never written, and CameraOffset local Y stays 0.
+    // While grinding, room steps are stored and the view stays on the rail.
+    // Leaving the rail keeps that pose, so the next step starts from the rail.
+    void AlignRoom()
+    {
+        EnsureRoomRig();
+        if (head == null || roomRig == null)
+            return;
+
+        Vector3 delta = head.position - transform.position;
+        delta.y = 0f;
+        if (delta.sqrMagnitude < 0.00000004f)
+            return;
+
+        if (grinding)
+        {
+            roomRig.position -= delta;
+            return;
+        }
+
+        if (thrusting)
+        {
+            transform.position += delta;
+            roomRig.position -= delta;
+            return;
+        }
+
+        Vector3 before = transform.position;
+        MoveHorizontal(delta);
+        Vector3 moved = transform.position - before;
+        moved.y = 0f;
+        if (moved.sqrMagnitude < 0.00000004f)
+            return;
+
+        roomRig.position -= moved;
+    }
+
+    void EnsureRoomRig()
+    {
+        if (roomRig != null || crouchRig == null)
+            return;
+
+        var rigObject = new GameObject("RoomRig");
+        roomRig = rigObject.transform;
+        roomRig.SetParent(crouchRig, false);
+        roomRig.localPosition = Vector3.zero;
+        roomRig.localRotation = Quaternion.identity;
+        roomRig.localScale = Vector3.one;
+
+        var children = new List<Transform>(crouchRig.childCount);
+        for (int i = 0; i < crouchRig.childCount; i++)
+        {
+            Transform child = crouchRig.GetChild(i);
+            if (child != roomRig)
+                children.Add(child);
+        }
+
+        for (int i = 0; i < children.Count; i++)
+            children[i].SetParent(roomRig, true);
+    }
+
     float EyeAboveRig()
     {
         if (head == null)
@@ -2472,6 +2539,7 @@ public class Hd2Locomotion : MonoBehaviour
             leftHand.SetParent(crouchRig, true);
         if (rightHand != null && rightHand.parent == transform)
             rightHand.SetParent(crouchRig, true);
+        EnsureRoomRig();
     }
 
     bool RoomToStand()

@@ -59,7 +59,7 @@ public static class Hd2PistolSetup
 
             var locomotion = root.GetComponent<Hd2Locomotion>();
             if (locomotion != null)
-                locomotion.arcLaunchAngle = -65f;
+                locomotion.arcLaunchAngle = -64.5f;
 
             var guns = root.GetComponentsInChildren<Hd2Pistol>(true);
             for (int i = 0; i < guns.Length; i++)

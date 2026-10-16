@@ -23,7 +23,7 @@ public class Hd2Pistol : MonoBehaviour
 
     [Header("Magazine")]
     public int magazineSize = 16;
-    public float shotsPerSecond = 8f;
+    public float shotsPerSecond = 16f;
     public float reloadDuration = 1f;
 
     [Header("Shot")]

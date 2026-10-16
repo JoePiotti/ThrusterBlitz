@@ -493,8 +493,8 @@ MonoBehaviour:
   thrustMaxDistance: 13
   thrustHopHeight: 0.5
   arcSpeed: 16
-  arcGravity: 34
-  arcLaunchAngle: -65
+  arcGravity: 37.1
+  arcLaunchAngle: -64.5
   grindSpeed: 8
   jumpAccelGs: 3
   jumpMaxTime: 0.3
@@ -1568,7 +1568,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Hd2Pistol
   hand: 0
   magazineSize: 16
-  shotsPerSecond: 8
+  shotsPerSecond: 16
   reloadDuration: 1
   shotSpeed: 100
   shotLifetime: 2
@@ -1718,7 +1718,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Hd2Pistol
   hand: 1
   magazineSize: 16
-  shotsPerSecond: 8
+  shotsPerSecond: 16
   reloadDuration: 1
   shotSpeed: 100
   shotLifetime: 2
