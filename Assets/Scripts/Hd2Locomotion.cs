@@ -11,7 +11,7 @@ using UnityEngine.XR;
 /// Quest controls:
 /// - Left stick: walk, head-yaw relative (stick up = head forward on the floor plane).
 /// - Right stick left/right: snap turn around the headset. One snap per deflection; the stick
-///   must return near center before the next snap. Holding the stick does not spin.
+///   must return near center and stay there briefly before the next snap. Holding the stick does not spin.
 /// - Sprint: left stick click held, and only while there is move input. Stick magnitude does not sprint.
 /// - Thrust: hold left primary (X) or right primary (A). An arc is drawn from that hand. If the
 ///   arc ends in the air or on a wall, a straight line drops to the surface below and the marker
@@ -133,6 +133,7 @@ public class Hd2Locomotion : MonoBehaviour
     const int ArcPointCapacity = 64;
     const float SnapEngage = 0.6f;
     const float SnapRearm = 0.3f;
+    const float SnapRearmDelay = 0.1f;
 
     static readonly List<XRDisplaySubsystem> displays = new List<XRDisplaySubsystem>();
 
@@ -147,6 +148,7 @@ public class Hd2Locomotion : MonoBehaviour
     float verticalVelocity;
     float fallTime;
     bool snapArmed = true;
+    float snapCenterHeld;
     float editorYaw;
     float editorPitch = -18f;
     bool editorTiltApplied;
@@ -303,6 +305,13 @@ public class Hd2Locomotion : MonoBehaviour
         CreateLandSound();
         CreateBlitzSound();
         CreateJumpThrust();
+    }
+
+    void Start()
+    {
+        if (FindFirstObjectByType<Hd2Deathmatch>() != null)
+            return;
+        Hd2TeleportArrive.Play(transform.position);
     }
 
     void CreateGrindLoop()
@@ -589,6 +598,9 @@ public class Hd2Locomotion : MonoBehaviour
 
         if (MovementLocked)
         {
+            aimSource = AimSource.None;
+            aimValid = false;
+            HidePreview();
             if (EditorFallback)
                 EditorLook();
             PlaceCrouchRig();
@@ -1562,10 +1574,10 @@ public class Hd2Locomotion : MonoBehaviour
             return;
 
         var main = blitzTrail.main;
-        Color spark = Color.Lerp(teamColor, Color.white, 0.62f);
-        spark.a = 1f;
         Color edge = teamColor;
-        edge.a = 0.9f;
+        edge.a = 0.95f;
+        Color spark = Color.Lerp(teamColor, Color.white, 0.18f);
+        spark.a = 1f;
         main.startColor = new ParticleSystem.MinMaxGradient(spark, edge);
         blitzTrail.Play();
     }
@@ -1593,25 +1605,27 @@ public class Hd2Locomotion : MonoBehaviour
         main.playOnAwake = false;
         main.loop = true;
         main.duration = 1f;
-        main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.7f);
-        main.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.7f);
-        main.startSize = new ParticleSystem.MinMaxCurve(0.012f, 0.028f);
-        main.gravityModifier = 0.05f;
-        main.maxParticles = 96;
+        // World-space particles stay on the path for about four to five seconds.
+        main.startLifetime = new ParticleSystem.MinMaxCurve(4.2f, 5f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.04f, 0.16f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.1f);
+        main.gravityModifier = 0f;
+        main.maxParticles = 240;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
 
         var emission = blitzTrail.emission;
-        emission.rateOverTime = 70f;
+        emission.rateOverTime = 150f;
 
         var shape = blitzTrail.shape;
         shape.shapeType = ParticleSystemShapeType.Sphere;
-        shape.radius = 0.12f;
+        shape.radius = 0.22f;
 
         var size = blitzTrail.sizeOverLifetime;
         size.enabled = true;
         size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
             new Keyframe(0f, 1f),
-            new Keyframe(1f, 0.15f)));
+            new Keyframe(0.75f, 0.85f),
+            new Keyframe(1f, 0.2f)));
 
         var color = blitzTrail.colorOverLifetime;
         color.enabled = true;
@@ -1625,6 +1639,7 @@ public class Hd2Locomotion : MonoBehaviour
             new[]
             {
                 new GradientAlphaKey(0.9f, 0f),
+                new GradientAlphaKey(0.75f, 0.78f),
                 new GradientAlphaKey(0f, 1f)
             });
         color.color = gradient;
@@ -1632,7 +1647,7 @@ public class Hd2Locomotion : MonoBehaviour
         var renderer = trail.GetComponent<ParticleSystemRenderer>();
         Material trailMaterial = BlitzTrailMaterial();
         if (trailMaterial != null)
-            renderer.material = trailMaterial;
+            renderer.sharedMaterial = trailMaterial;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
     }
@@ -1712,8 +1727,22 @@ public class Hd2Locomotion : MonoBehaviour
         if (turnAction != null)
             x = turnAction.ReadValue<Vector2>().x;
 
+        // A one-frame dropout below SnapRearm while the stick is held must not rearm.
+        // The stick has to stay near center for SnapRearmDelay before the next snap.
+        // One sample cannot finish that dwell, even if the frame itself is long.
         if (Mathf.Abs(x) < SnapRearm)
-            snapArmed = true;
+        {
+            if (!snapArmed)
+            {
+                snapCenterHeld += Mathf.Min(Time.deltaTime, SnapRearmDelay * 0.5f);
+                if (snapCenterHeld >= SnapRearmDelay)
+                    snapArmed = true;
+            }
+        }
+        else
+        {
+            snapCenterHeld = 0f;
+        }
 
         if (!snapArmed)
             return 0f;
@@ -1728,6 +1757,7 @@ public class Hd2Locomotion : MonoBehaviour
             return 0f;
 
         snapArmed = false;
+        snapCenterHeld = 0f;
         return direction * Mathf.Abs(snapAngle);
     }
 
@@ -2900,6 +2930,7 @@ public class Hd2Locomotion : MonoBehaviour
         thrustGhost.name = "ThrustAvatarGhost";
         thrustGhost.hideFlags = HideFlags.DontSave;
         thrustGhost.transform.SetParent(null, true);
+        Hd2RobotCleanup.StripImportedDevices(thrustGhost);
 
         var cones = thrustGhost.GetComponentsInChildren<Hd2VisionCone>(true);
         for (int i = 0; i < cones.Length; i++)

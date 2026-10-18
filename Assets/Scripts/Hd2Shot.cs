@@ -32,11 +32,14 @@ public class Hd2Shot : MonoBehaviour
     float traveled;
     Vector3 rangeOrigin;
     bool hasRangeOrigin;
+    Vector3 firedFrom;
+    bool hasFiredFrom;
     static Material plasmaMaterial;
     MaterialPropertyBlock plasmaBlock;
     Vector3 previous;
     bool hasPrevious;
     bool inPool;
+    bool nearMissPlayed;
     static Mesh boltMesh;
     static readonly System.Collections.Generic.List<Hd2Shot> shotPool = new System.Collections.Generic.List<Hd2Shot>();
     static readonly RaycastHit[] hitBuffer = new RaycastHit[24];
@@ -144,7 +147,9 @@ public class Hd2Shot : MonoBehaviour
         shot.age = 0f;
         shot.traveled = 0f;
         shot.hasRangeOrigin = false;
+        shot.hasFiredFrom = false;
         shot.hasPrevious = false;
+        shot.nearMissPlayed = false;
         shot.maxTravel = 0f;
         shot.rangeFalloffStart = 0f;
         shot.rangeFalloffMultiplier = 1f;
@@ -175,6 +180,8 @@ public class Hd2Shot : MonoBehaviour
 
     public void BeginAt(Vector3 origin)
     {
+        firedFrom = origin;
+        hasFiredFrom = true;
         rangeOrigin = origin;
         hasRangeOrigin = true;
         traveled = 0f;
@@ -186,6 +193,8 @@ public class Hd2Shot : MonoBehaviour
     public void ReleaseFromMuzzle(Vector3 origin, Vector3 direction)
     {
         const float gap = 1f;
+        firedFrom = origin;
+        hasFiredFrom = true;
         if (direction.sqrMagnitude < 0.0001f)
             return;
 
@@ -214,7 +223,16 @@ public class Hd2Shot : MonoBehaviour
 
     bool TryResolveHit(Vector3 origin, Vector3 direction, float distance, float dt)
     {
-        if (!ClosestHit(origin, direction, distance, out RaycastHit hit))
+        bool found = ClosestHit(origin, direction, distance, out RaycastHit hit);
+        if (!nearMissPlayed)
+        {
+            Vector3 end = found ? hit.point : origin + direction * distance;
+            bool struckPlayer = found && Hd2NearMiss.HitsPlayer(hit.collider);
+            if (Hd2NearMiss.TryPass(origin, end, owner, struckPlayer))
+                nearMissPlayed = true;
+        }
+
+        if (!found)
             return false;
 
         if (TryHitBody(hit))
@@ -286,8 +304,10 @@ public class Hd2Shot : MonoBehaviour
     static readonly System.Collections.Generic.List<GameObject> scoreMarks = new System.Collections.Generic.List<GameObject>();
     static readonly System.Collections.Generic.List<GameObject> sparkPool = new System.Collections.Generic.List<GameObject>();
     static readonly System.Collections.Generic.List<GameObject> gravelPool = new System.Collections.Generic.List<GameObject>();
+    static readonly System.Collections.Generic.List<GameObject> sparkLive = new System.Collections.Generic.List<GameObject>();
+    static readonly System.Collections.Generic.List<GameObject> gravelLive = new System.Collections.Generic.List<GameObject>();
     const int MaxScoreMarks = 24;
-    const int MaxBursts = 8;
+    const int MaxBursts = 12;
 
     static void ScoreMark(Vector3 point, Vector3 normal)
     {
@@ -316,11 +336,14 @@ public class Hd2Shot : MonoBehaviour
         }
 
         scoreMarks.Add(mark);
+        var renderer = mark.GetComponent<MeshRenderer>();
+        if (renderer != null)
+            renderer.sharedMaterial = material;
         Vector3 up = Mathf.Abs(normal.y) > 0.85f ? Vector3.forward : Vector3.up;
         Quaternion face = Quaternion.LookRotation(normal, up);
         face = Quaternion.AngleAxis(Random.Range(0f, 360f), normal) * face;
-        mark.transform.SetPositionAndRotation(point + normal * 0.02f, face);
-        mark.transform.localScale = Vector3.one * 0.11f;
+        mark.transform.SetPositionAndRotation(point + normal * 0.05f, face);
+        mark.transform.localScale = Vector3.one * 0.16f;
         mark.SetActive(true);
     }
 
@@ -330,7 +353,16 @@ public class Hd2Shot : MonoBehaviour
             return quadMesh;
 
         var temp = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        quadMesh = temp.GetComponent<MeshFilter>().sharedMesh;
+        Mesh source = temp.GetComponent<MeshFilter>().sharedMesh;
+        quadMesh = new Mesh { name = "ShotScoreQuad" };
+        if (source != null)
+        {
+            quadMesh.vertices = source.vertices;
+            quadMesh.uv = source.uv;
+            quadMesh.normals = source.normals;
+            quadMesh.triangles = source.triangles;
+        }
+
         if (Application.isPlaying)
             Destroy(temp);
         else
@@ -340,6 +372,10 @@ public class Hd2Shot : MonoBehaviour
 
     static Material ScoreMarkMaterial()
     {
+        if (scoreMarkMaterial != null)
+            return scoreMarkMaterial;
+
+        scoreMarkMaterial = Resources.Load<Material>("ShotScoreMark");
         if (scoreMarkMaterial != null)
             return scoreMarkMaterial;
 
@@ -361,41 +397,79 @@ public class Hd2Shot : MonoBehaviour
     {
         if (normal.sqrMagnitude < 0.0001f)
             normal = Vector3.up;
-        PlayBurst(BorrowBurst(sparkPool, ref sparkMade, SparkTemplate), point + normal * 0.015f, normal);
+        PlayBurst(BorrowBurst(sparkPool, sparkLive, ref sparkMade, SparkTemplate), point + normal * 0.015f, normal);
     }
 
     static void GravelBurst(Vector3 point, Vector3 normal)
     {
         if (normal.sqrMagnitude < 0.0001f)
             normal = Vector3.up;
-        PlayBurst(BorrowBurst(gravelPool, ref gravelMade, GravelTemplate), point + normal * 0.02f, normal);
+        PlayBurst(BorrowBurst(gravelPool, gravelLive, ref gravelMade, GravelTemplate), point + normal * 0.02f, normal);
     }
 
     static void PlayBurst(GameObject burst, Vector3 point, Vector3 normal)
     {
         if (burst == null)
             return;
+
+        burst.SetActive(false);
         burst.transform.SetPositionAndRotation(point, Quaternion.LookRotation(normal));
         burst.SetActive(true);
-        var particles = burst.GetComponent<ParticleSystem>();
-        if (particles == null)
-            return;
-        particles.Clear(true);
-        particles.Play(true);
-    }
-
-    static GameObject BorrowBurst(System.Collections.Generic.List<GameObject> pool, ref int made, System.Func<GameObject> template)
-    {
-        int last = pool.Count - 1;
-        if (last >= 0)
+        ParticleSystem[] systems = burst.GetComponentsInChildren<ParticleSystem>(true);
+        for (int i = 0; i < systems.Length; i++)
         {
-            GameObject idle = pool[last];
-            pool.RemoveAt(last);
-            return idle;
+            ParticleSystem particles = systems[i];
+            if (particles == null)
+                continue;
+
+            int count = 8;
+            var emission = particles.emission;
+            if (emission.burstCount > 0)
+            {
+                count = Mathf.Max(1, emission.GetBurst(0).minCount);
+                emission.SetBursts(System.Array.Empty<ParticleSystem.Burst>());
+            }
+
+            particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            particles.Play(true);
+            particles.Emit(count);
         }
 
-        if (made >= MaxBursts)
-            return null;
+        var life = burst.GetComponent<Hd2Burst>();
+        System.Collections.Generic.List<GameObject> live = life != null && life.gravel ? gravelLive : sparkLive;
+        live.Remove(burst);
+        live.Add(burst);
+    }
+
+    static GameObject BorrowBurst(
+        System.Collections.Generic.List<GameObject> pool,
+        System.Collections.Generic.List<GameObject> live,
+        ref int made,
+        System.Func<GameObject> template)
+    {
+        while (pool.Count > 0)
+        {
+            int last = pool.Count - 1;
+            GameObject idle = pool[last];
+            pool.RemoveAt(last);
+            if (idle != null)
+                return idle;
+        }
+
+        if (made < MaxBursts)
+        {
+            made++;
+            return Object.Instantiate(template());
+        }
+
+        for (int i = 0; i < live.Count; i++)
+        {
+            GameObject oldest = live[i];
+            if (oldest == null)
+                continue;
+            live.RemoveAt(i);
+            return oldest;
+        }
 
         made++;
         return Object.Instantiate(template());
@@ -625,13 +699,17 @@ public class Hd2Shot : MonoBehaviour
 
         if (owner != null)
             health.LastAttacker = owner;
+        Vector3 from = hasFiredFrom ? firedFrom : hit.point;
+        if ((from - hit.point).sqrMagnitude < 0.04f && velocity.sqrMagnitude > 0.01f)
+            from = hit.point - velocity.normalized * 8f;
+        health.MarkKillLine(from, hit.point);
         float dealt = damage;
         if (IsHeadshot(hit))
             dealt *= headMultiplier;
         if (rangeFalloffStart > 0f && hasRangeOrigin && Vector3.Distance(rangeOrigin, hit.point) > rangeFalloffStart)
             dealt *= rangeFalloffMultiplier;
         health.MarkHit(hit.point);
-        health.ApplyHit(dealt, false);
+        health.ApplyHit(dealt, false, true);
         if (owner != null && owner.GetComponent<Hd2Locomotion>() != null
             && health.GetComponent<Hd2EnemyBot>() != null)
             PlayHitThunk();
@@ -724,9 +802,15 @@ public class Hd2Shot : MonoBehaviour
         if (burst == null)
             return;
         if (gravel)
+        {
+            gravelLive.Remove(burst);
             gravelPool.Add(burst);
+        }
         else
+        {
+            sparkLive.Remove(burst);
             sparkPool.Add(burst);
+        }
     }
 }
 

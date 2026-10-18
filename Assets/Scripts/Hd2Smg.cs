@@ -39,6 +39,18 @@ public class Hd2Smg : MonoBehaviour
 
     public Transform muzzle;
 
+    public void BindMuzzle(Transform muzzlePoint)
+    {
+        muzzle = muzzlePoint;
+        if (ammoLabel != null)
+        {
+            Destroy(ammoLabel.gameObject);
+            ammoLabel = null;
+        }
+
+        EnsureAmmoScreen();
+    }
+
     int rounds;
     int climbedRounds;
     float nextFireTime;
@@ -51,6 +63,7 @@ public class Hd2Smg : MonoBehaviour
     AudioSource shotSource;
     AudioClip shotClip;
     AudioClip reloadClip;
+    TextMesh ammoLabel;
 
     InputAction triggerAction;
     InputAction reloadAction;
@@ -76,15 +89,17 @@ public class Hd2Smg : MonoBehaviour
 
         shotClip = Resources.Load<AudioClip>("Audio/SmgShot");
         reloadClip = Resources.Load<AudioClip>("Audio/SmgReload");
-        if (shotClip == null && reloadClip == null)
-            return;
+        if (shotClip != null || reloadClip != null)
+        {
+            shotSource = gameObject.AddComponent<AudioSource>();
+            shotSource.playOnAwake = false;
+            shotSource.loop = false;
+            shotSource.spatialBlend = 1f;
+            shotSource.minDistance = 0.4f;
+            shotSource.maxDistance = 12f;
+        }
 
-        shotSource = gameObject.AddComponent<AudioSource>();
-        shotSource.playOnAwake = false;
-        shotSource.loop = false;
-        shotSource.spatialBlend = 1f;
-        shotSource.minDistance = 0.4f;
-        shotSource.maxDistance = 12f;
+        EnsureAmmoScreen();
     }
 
     void OnEnable()
@@ -191,6 +206,7 @@ public class Hd2Smg : MonoBehaviour
         firing = false;
         if (shotSource != null && reloadClip != null)
             shotSource.PlayOneShot(reloadClip);
+        RefreshAmmo();
     }
 
     void FinishReload()
@@ -199,6 +215,7 @@ public class Hd2Smg : MonoBehaviour
         reloading = false;
         climbedRounds = 0;
         climb = 0f;
+        RefreshAmmo();
     }
 
     void TryFire()
@@ -207,6 +224,7 @@ public class Hd2Smg : MonoBehaviour
             return;
 
         rounds--;
+        RefreshAmmo();
         nextFireTime = Time.time + 1f / Mathf.Max(0.01f, shotsPerSecond);
         if (climbedRounds < recoilClimbRounds)
         {
@@ -261,6 +279,126 @@ public class Hd2Smg : MonoBehaviour
             new Vector3(ScaleOf(parentScale.x, 0.08f), ScaleOf(parentScale.y, 0.08f), ScaleOf(parentScale.z, 0.22f)),
             shotColor,
             0.08f);
+    }
+
+    void EnsureAmmoScreen()
+    {
+        if (ammoLabel == null)
+        {
+            Transform existing = transform.Find("AmmoReadout");
+            if (existing != null)
+                ammoLabel = existing.GetComponent<TextMesh>() ?? existing.GetComponentInChildren<TextMesh>(true);
+        }
+
+        if (ammoLabel != null)
+        {
+            ApplyAmmoFont();
+            RefreshAmmo();
+            return;
+        }
+
+        Vector3 back = Vector3.back;
+        if (muzzle != null)
+        {
+            Vector3 toMuzzle = transform.InverseTransformPoint(muzzle.position);
+            if (toMuzzle.sqrMagnitude > 0.0004f)
+                back = -toMuzzle.normalized;
+        }
+
+        var samples = new Vector3[32];
+        int sampleCount = 0;
+        var filters = GetComponentsInChildren<MeshFilter>();
+        for (int f = 0; f < filters.Length && sampleCount < samples.Length; f++)
+        {
+            Mesh mesh = filters[f].sharedMesh;
+            if (mesh == null)
+                continue;
+
+            Bounds box = mesh.bounds;
+            Vector3 center = box.center;
+            Vector3 extents = box.extents;
+            for (int i = 0; i < 8 && sampleCount < samples.Length; i++)
+            {
+                Vector3 corner = center + new Vector3(
+                    (i & 1) == 0 ? -extents.x : extents.x,
+                    (i & 2) == 0 ? -extents.y : extents.y,
+                    (i & 4) == 0 ? -extents.z : extents.z);
+                samples[sampleCount++] = transform.InverseTransformPoint(filters[f].transform.TransformPoint(corner));
+            }
+        }
+
+        Vector3 pos = back * 0.12f;
+        if (sampleCount > 0)
+        {
+            float furthest = float.NegativeInfinity;
+            for (int i = 0; i < sampleCount; i++)
+                furthest = Mathf.Max(furthest, Vector3.Dot(samples[i], back));
+
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                if (Vector3.Dot(samples[i], back) < furthest - 0.012f)
+                    continue;
+                sum += samples[i];
+                count++;
+            }
+
+            pos = sum / Mathf.Max(1, count);
+            Vector3 up = Vector3.ProjectOnPlane(Vector3.up, back);
+            if (up.sqrMagnitude > 0.0001f)
+                pos += up.normalized * 0.121f;
+        }
+
+        pos -= back * 0.042f;
+
+        var root = new GameObject("AmmoReadout");
+        root.transform.SetParent(transform, false);
+        root.transform.localPosition = pos;
+        root.transform.localRotation = Quaternion.LookRotation(-back, Vector3.up);
+        ammoLabel = root.AddComponent<TextMesh>();
+        ApplyAmmoFont();
+        ammoLabel.fontSize = 32;
+        ammoLabel.characterSize = 0.005f;
+        ammoLabel.anchor = TextAnchor.MiddleCenter;
+        ammoLabel.alignment = TextAlignment.Center;
+        ammoLabel.color = new Color(0.3f, 0.75f, 1f, 1f);
+        var textRenderer = ammoLabel.GetComponent<MeshRenderer>();
+        textRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        textRenderer.receiveShadows = false;
+        RefreshAmmo();
+    }
+
+    void ApplyAmmoFont()
+    {
+        if (ammoLabel == null)
+            return;
+
+        if (ammoLabel.GetComponent<MeshFilter>() == null)
+            ammoLabel.gameObject.AddComponent<MeshFilter>();
+
+        ammoLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        ammoLabel.color = new Color(0.3f, 0.75f, 1f, 1f);
+        var renderer = ammoLabel.GetComponent<MeshRenderer>();
+        if (renderer != null)
+        {
+            renderer.enabled = true;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            if (ammoLabel.font != null)
+                renderer.sharedMaterial = ammoLabel.font.material;
+        }
+
+        string text = ammoLabel.text;
+        ammoLabel.text = string.IsNullOrEmpty(text) ? magazineSize.ToString() : text;
+    }
+
+    void RefreshAmmo()
+    {
+        if (ammoLabel == null)
+            return;
+
+        ammoLabel.text = reloading ? "R" : rounds.ToString();
     }
 
     void Pulse(float amplitude, float duration)

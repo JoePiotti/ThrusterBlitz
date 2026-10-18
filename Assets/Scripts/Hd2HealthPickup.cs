@@ -21,7 +21,14 @@ public class Hd2HealthPickup : MonoBehaviour
     void OnEnable()
     {
         BuildVisuals();
-        Hd2PickupGlow.Ensure(transform, pickupColor);
+        Transform glow = transform.Find("Glow");
+        if (glow != null)
+        {
+            Light lamp = glow.GetComponent<Light>();
+            if (lamp != null)
+                lamp.enabled = false;
+        }
+
         SetReady(true);
     }
 
@@ -112,7 +119,7 @@ public class Hd2HealthPickup : MonoBehaviour
         iconObject.name = "Icon";
         iconObject.transform.SetParent(sphere, false);
         iconObject.transform.localPosition = Vector3.zero;
-        iconObject.transform.localScale = Vector3.one * 0.62f;
+        iconObject.transform.localScale = Vector3.one * 0.36f;
         RemoveCollider(iconObject);
         var iconMaterial = new Material(Shader.Find("HD2/RepairIcon"));
         if (icon != null)

@@ -129,6 +129,7 @@ public class Hd2Body : MonoBehaviour
             var animators = body.GetComponentsInChildren<Animator>(true);
             for (int i = 0; i < animators.Length; i++)
                 animators[i].enabled = false;
+            Hd2RobotCleanup.StripImportedDevices(body.gameObject);
         }
 
         leftTrigger = FingerAxis("LeftHand", "trigger");

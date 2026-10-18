@@ -5,8 +5,8 @@ using UnityEngine.UI;
 /// <summary>
 /// Player-only readout, low and to the left of the view. More rows can be added later.
 /// Health is a green percent. Below 10 health that number turns red and blinks.
-/// Blitz is the charge to a tenth, such as 2.3. The microphone is green while open and gray while closed.
-/// Icons match the pickups. No labels.
+/// Blitz is the charge to a tenth, such as 2.3. The microphone is green while open and gray while closed,
+/// with an On or Off label beside the icon.
 /// </summary>
 public class Hd2Hud : MonoBehaviour
 {
@@ -24,8 +24,15 @@ public class Hd2Hud : MonoBehaviour
     Hd2ControlMap controls;
     Camera ownerCamera;
     Canvas canvas;
-    Text healthText;
-    Text blitzText;
+    Transform view;
+    TextMesh healthReadout;
+    TextMesh blitzReadout;
+    TextMesh micReadout;
+    TextMesh banner;
+    string killText;
+    string deathText;
+    float killUntil;
+    float deathUntil;
     Material micMaterial;
     bool shownMic;
     bool micReady;
@@ -65,11 +72,32 @@ public class Hd2Hud : MonoBehaviour
         RefreshHealth();
         RefreshBlitz();
         RefreshMic();
+        RefreshBanner();
+    }
+
+    public void ShowKill(string enemyName)
+    {
+        if (string.IsNullOrEmpty(enemyName))
+            return;
+
+        killText = "You killed " + enemyName;
+        killUntil = Time.unscaledTime + 3.5f;
+        RefreshBanner();
+    }
+
+    public void ShowDeath(string killerName)
+    {
+        if (string.IsNullOrEmpty(killerName))
+            return;
+
+        deathText = "You were killed by " + killerName;
+        deathUntil = Time.unscaledTime + 3.5f;
+        RefreshBanner();
     }
 
     void RefreshHealth()
     {
-        if (health == null || healthText == null)
+        if (health == null || healthReadout == null)
             return;
 
         float current = health.Health;
@@ -78,7 +106,7 @@ public class Hd2Hud : MonoBehaviour
         if (percent != shownPercent)
         {
             shownPercent = percent;
-            healthText.text = percents[percent];
+            healthReadout.text = percents[percent];
         }
 
         bool critical = current < CriticalHealth;
@@ -89,16 +117,16 @@ public class Hd2Hud : MonoBehaviour
         shownCritical = critical;
         blinkOn = on;
         if (!critical)
-            healthText.color = healthGreen;
+            healthReadout.color = healthGreen;
         else if (on)
-            healthText.color = healthRed;
+            healthReadout.color = healthRed;
         else
-            healthText.color = new Color(healthRed.r, healthRed.g, healthRed.b, 0f);
+            healthReadout.color = new Color(healthRed.r, healthRed.g, healthRed.b, 0f);
     }
 
     void RefreshBlitz()
     {
-        if (meter == null || blitzText == null)
+        if (meter == null || blitzReadout == null)
             return;
 
         int tenth = Mathf.Clamp(Mathf.RoundToInt(meter.Charges * 10f), 0, 99);
@@ -106,12 +134,12 @@ public class Hd2Hud : MonoBehaviour
             return;
 
         shownTenth = tenth;
-        blitzText.text = tenths[tenth];
+        blitzReadout.text = tenths[tenth];
     }
 
     void RefreshMic()
     {
-        if (micMaterial == null || controls == null)
+        if (controls == null)
             return;
 
         bool open = controls.MicOpen;
@@ -120,7 +148,14 @@ public class Hd2Hud : MonoBehaviour
 
         micReady = true;
         shownMic = open;
-        micMaterial.color = open ? micGreen : micGray;
+        Color tint = open ? micGreen : micGray;
+        if (micMaterial != null)
+            micMaterial.color = tint;
+        if (micReadout != null)
+        {
+            micReadout.text = open ? "On" : "Off";
+            micReadout.color = tint;
+        }
     }
 
     static string[] BuildPercents()
@@ -139,10 +174,30 @@ public class Hd2Hud : MonoBehaviour
         return values;
     }
 
+    void RefreshBanner()
+    {
+        bool kill = !string.IsNullOrEmpty(killText) && Time.unscaledTime < killUntil;
+        bool death = !string.IsNullOrEmpty(deathText) && Time.unscaledTime < deathUntil;
+        if (!kill && !death)
+        {
+            if (banner != null)
+                banner.gameObject.SetActive(false);
+            return;
+        }
+
+        if (banner == null)
+            banner = MakeReadout(view != null ? view : transform, new Vector3(0.36f, -0.2f, 0.9f), Color.white, TextAnchor.MiddleRight);
+        banner.gameObject.SetActive(true);
+        if (kill && death)
+            banner.text = killText + "\n" + deathText;
+        else
+            banner.text = kill ? killText : deathText;
+    }
+
     void Build()
     {
         ownerCamera = GetComponentInChildren<Camera>();
-        Transform view = ownerCamera != null ? ownerCamera.transform : transform;
+        view = ownerCamera != null ? ownerCamera.transform : transform;
 
         var root = new GameObject("Hud");
         root.transform.SetParent(view, false);
@@ -160,9 +215,46 @@ public class Hd2Hud : MonoBehaviour
         rect.pivot = new Vector2(0f, 1f);
         rect.sizeDelta = new Vector2(260f, 192f);
 
-        healthText = AddRow(rect, "Health", Resources.Load<Material>("HealthHudIcon"), 0f, healthGreen);
-        blitzText = AddRow(rect, "Blitz", Resources.Load<Material>("BlitzHudIcon"), -64f, blitzColor);
+        AddIcon(rect, "Health", Resources.Load<Material>("HealthHudIcon"), 0f);
+        AddIcon(rect, "Blitz", Resources.Load<Material>("BlitzHudIcon"), -64f);
         AddMic(rect, -128f);
+        healthReadout = MakeReadout(view, new Vector3(-0.35f, -0.206f, 0.9f), healthGreen, TextAnchor.MiddleLeft);
+        blitzReadout = MakeReadout(view, new Vector3(-0.35f, -0.27f, 0.9f), blitzColor, TextAnchor.MiddleLeft);
+        micReadout = MakeReadout(view, new Vector3(-0.35f, -0.334f, 0.9f), micGray, TextAnchor.MiddleLeft);
+        healthReadout.text = percents[100];
+        blitzReadout.text = tenths[0];
+        micReadout.text = "Off";
+        banner = MakeReadout(view, new Vector3(0.36f, -0.2f, 0.9f), Color.white, TextAnchor.MiddleRight);
+        banner.gameObject.SetActive(false);
+    }
+
+    static TextMesh MakeReadout(Transform parent, Vector3 local, Color color, TextAnchor anchor)
+    {
+        bool bannerStyle = anchor != TextAnchor.MiddleLeft;
+        var readout = new GameObject(bannerStyle ? "Banner" : "Value");
+        readout.transform.SetParent(parent, false);
+        readout.transform.localPosition = local;
+        readout.transform.localRotation = Quaternion.identity;
+        readout.transform.localScale = Vector3.one;
+        var text = readout.AddComponent<TextMesh>();
+        if (readout.GetComponent<MeshFilter>() == null)
+            readout.AddComponent<MeshFilter>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = bannerStyle ? 72 : 96;
+        text.characterSize = bannerStyle ? 0.006f : 0.0023f;
+        text.anchor = anchor;
+        text.alignment = anchor == TextAnchor.MiddleLeft ? TextAlignment.Left : TextAlignment.Right;
+        text.color = color;
+        var renderer = text.GetComponent<MeshRenderer>();
+        if (renderer != null)
+        {
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            if (text.font != null)
+                renderer.sharedMaterial = text.font.material;
+        }
+
+        return text;
     }
 
     void AddMic(RectTransform parent, float y)
@@ -187,7 +279,7 @@ public class Hd2Hud : MonoBehaviour
         micMaterial.color = micGray;
     }
 
-    static Text AddRow(RectTransform parent, string rowName, Material iconMaterial, float y, Color color)
+    static void AddIcon(RectTransform parent, string rowName, Material iconMaterial, float y)
     {
         var iconObject = new GameObject(rowName + "Icon");
         var iconRect = iconObject.AddComponent<RectTransform>();
@@ -204,26 +296,6 @@ public class Hd2Hud : MonoBehaviour
             image.texture = iconMaterial.mainTexture;
             image.material = iconMaterial;
         }
-
-        var textObject = new GameObject(rowName);
-        var textRect = textObject.AddComponent<RectTransform>();
-        textRect.SetParent(parent, false);
-        textRect.anchorMin = textRect.anchorMax = new Vector2(0f, 1f);
-        textRect.pivot = new Vector2(0f, 1f);
-        textRect.anchoredPosition = new Vector2(60f, y);
-        textRect.sizeDelta = new Vector2(180f, 52f);
-        var text = textObject.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 36;
-        text.alignment = TextAnchor.MiddleLeft;
-        text.color = color;
-        text.raycastTarget = false;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
-        var shadow = textObject.AddComponent<Shadow>();
-        shadow.effectColor = new Color(0f, 0f, 0f, 0.85f);
-        shadow.effectDistance = new Vector2(1.5f, -1.5f);
-        return text;
     }
 
     void CullToOwner(ScriptableRenderContext context, Camera camera)

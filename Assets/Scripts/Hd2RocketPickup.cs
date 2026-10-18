@@ -2,24 +2,24 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Orange pad with the rocket launcher inside the sphere. A hand inside the sphere
+/// Cream pad with the rocket icon inside the sphere. A hand inside the sphere
 /// swaps that hand's gun for the launcher only while that hand's grip is held.
 /// Either hand can take it. A hand that already holds one does nothing.
 /// </summary>
 [ExecuteAlways]
 public class Hd2RocketPickup : MonoBehaviour
 {
+    public Texture2D icon;
     public GameObject rocketModel;
     public float cooldown = 10f;
 
-    static readonly Color pickupColor = new Color(0.95f, 0.42f, 0.1f, 1f);
+    static readonly Color pickupColor = new Color(0.98f, 0.961f, 0.847f, 1f);
     static readonly Vector3 equippedPosition = new Vector3(0f, 0.01f, 0.05f);
     static readonly Vector3 equippedEuler = new Vector3(0f, 90f, 90f);
     const float equippedScale = 0.27f;
-    const float displayFit = 0.42f;
 
     Transform sphere;
-    Transform mini;
+    Transform iconQuad;
     LineRenderer ring;
     bool ready = true;
     float cooldownLeft;
@@ -54,15 +54,11 @@ public class Hd2RocketPickup : MonoBehaviour
 
     void Update()
     {
-        if (mini == null && rocketModel != null && sphere != null)
-            BuildMini();
-
         var view = Camera.main;
+        if (iconQuad != null && view != null)
+            iconQuad.rotation = Quaternion.LookRotation(iconQuad.position - view.transform.position);
         if (ring != null && view != null)
             ring.transform.rotation = Quaternion.LookRotation(ring.transform.position - view.transform.position);
-
-        if (mini != null && ready)
-            mini.Rotate(0f, 40f * Time.deltaTime, 0f, Space.World);
 
         if (!ready)
         {
@@ -308,6 +304,18 @@ public class Hd2RocketPickup : MonoBehaviour
         EnsureMaterial(transform.Find("Pad"), pickupColor, false);
         EnsureMaterial(transform.Find("Sphere"), new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
         EnsureLine(transform.Find("Ring"));
+        Transform iconTransform = transform.Find("Sphere/Icon");
+        if (iconTransform == null)
+            return;
+
+        var renderer = iconTransform.GetComponent<Renderer>();
+        if (renderer != null && (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null))
+        {
+            var iconMaterial = new Material(Shader.Find("HD2/PickupIcon"));
+            if (icon != null)
+                iconMaterial.mainTexture = icon;
+            renderer.sharedMaterial = iconMaterial;
+        }
     }
 
     static void EnsureMaterial(Transform target, Color color, bool transparent)
@@ -345,17 +353,17 @@ public class Hd2RocketPickup : MonoBehaviour
         if (transform.Find("Pad") != null)
         {
             sphere = transform.Find("Sphere");
-            mini = transform.Find("Sphere/Mini");
+            iconQuad = transform.Find("Sphere/Icon");
             ring = transform.Find("Ring") != null ? transform.Find("Ring").GetComponent<LineRenderer>() : null;
-            if (mini != null)
-                HideGrip(mini);
+            if (iconQuad == null)
+                BuildIcon();
             return;
         }
 
         var pad = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         pad.name = "Pad";
         pad.transform.SetParent(transform, false);
-        pad.transform.localPosition = new Vector3(0f, 0.03f, 0f);
+        pad.transform.localPosition = new Vector3(0f, 0.015f, 0f);
         pad.transform.localScale = new Vector3(0.7f, 0.03f, 0.7f);
         RemoveCollider(pad);
         Paint(pad, pickupColor, false);
@@ -363,15 +371,16 @@ public class Hd2RocketPickup : MonoBehaviour
         var ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         ball.name = "Sphere";
         ball.transform.SetParent(transform, false);
-        ball.transform.localPosition = new Vector3(0f, 1.05f, 0f);
-        ball.transform.localScale = Vector3.one * 0.42f;
+        ball.transform.localPosition = new Vector3(0f, 1.3f, 0f);
+        ball.transform.localScale = Vector3.one * 0.7f;
         RemoveCollider(ball);
         Paint(ball, new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
         sphere = ball.transform;
 
         var ringObject = new GameObject("Ring");
         ringObject.transform.SetParent(transform, false);
-        ringObject.transform.localPosition = new Vector3(0f, 1.05f, 0f);
+        ringObject.transform.localPosition = new Vector3(0f, 1.3f, 0f);
+        ringObject.transform.localScale = Vector3.one * 0.7f;
         ring = ringObject.AddComponent<LineRenderer>();
         ring.useWorldSpace = false;
         ring.loop = false;
@@ -382,74 +391,25 @@ public class Hd2RocketPickup : MonoBehaviour
         ring.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         ring.enabled = false;
 
-        BuildMini();
+        BuildIcon();
     }
 
-    void BuildMini()
+    void BuildIcon()
     {
-        if (rocketModel == null || sphere == null || sphere.Find("Mini") != null)
+        if (sphere == null || sphere.Find("Icon") != null)
             return;
 
-        var display = Instantiate(rocketModel, sphere);
-        display.name = "Mini";
-        display.transform.localPosition = Vector3.zero;
-        display.transform.localRotation = Quaternion.Euler(-20f, 30f, 0f);
-        display.transform.localScale = Vector3.one;
-        StripColliders(display);
-        PrepareDisplay(display);
-        mini = display.transform;
-    }
-
-    static void PrepareDisplay(GameObject display)
-    {
-        HideGrip(display.transform);
-        FitDisplay(display);
-    }
-
-    static void HideGrip(Transform display)
-    {
-        Transform[] all = display.GetComponentsInChildren<Transform>(true);
-        for (int i = 0; i < all.Length; i++)
-        {
-            if (all[i] == display)
-                continue;
-            if (all[i].name == "Hand" || all[i].name == "hand" || all[i].name == "HandSkin")
-                all[i].gameObject.SetActive(false);
-        }
-    }
-
-    static void FitDisplay(GameObject display)
-    {
-        Renderer[] renderers = display.GetComponentsInChildren<Renderer>(true);
-        bool any = false;
-        Bounds bounds = new Bounds(display.transform.position, Vector3.zero);
-        for (int i = 0; i < renderers.Length; i++)
-        {
-            if (renderers[i] == null || !renderers[i].enabled || !renderers[i].gameObject.activeInHierarchy)
-                continue;
-            if (!any)
-            {
-                bounds = renderers[i].bounds;
-                any = true;
-            }
-            else
-                bounds.Encapsulate(renderers[i].bounds);
-        }
-
-        if (!any)
-            return;
-
-        float size = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
-        if (size < 0.001f)
-            return;
-
-        float parent = display.transform.parent != null ? display.transform.parent.lossyScale.x : 1f;
-        float world = size;
-        float want = displayFit * Mathf.Max(0.01f, parent);
-        // bounds are already in world space, so scale the local size toward the sphere.
-        display.transform.localScale = Vector3.one * (want / world);
-        Vector3 shift = display.transform.position - bounds.center;
-        display.transform.position += shift * (want / world);
+        var iconObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        iconObject.name = "Icon";
+        iconObject.transform.SetParent(sphere, false);
+        iconObject.transform.localPosition = Vector3.zero;
+        iconObject.transform.localScale = Vector3.one * 0.48f;
+        RemoveCollider(iconObject);
+        var iconMaterial = new Material(Shader.Find("HD2/PickupIcon"));
+        if (icon != null)
+            iconMaterial.mainTexture = icon;
+        iconObject.GetComponent<Renderer>().sharedMaterial = iconMaterial;
+        iconQuad = iconObject.transform;
     }
 
     void SetRing(float amount)

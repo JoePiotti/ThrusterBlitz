@@ -21,7 +21,7 @@ Shader "HD2/ShotScoreMark"
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
             Cull Off
-            Offset -1, -1
+            Offset -2, -2
 
             HLSLPROGRAM
             #pragma vertex vert
@@ -64,12 +64,16 @@ Shader "HD2/ShotScoreMark"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 tex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
-                float2 centered = input.uv * 2.0 - 1.0;
-                float inside = 1.0 - smoothstep(0.72, 0.92, length(centered));
+                float radius = length(input.uv * 2.0 - 1.0);
+                // Dark center reads on light walls. Bright ring reads on dark walls.
+                float core = 1.0 - smoothstep(0.78, 0.86, radius);
+                float ring = smoothstep(0.80, 0.86, radius) * (1.0 - smoothstep(0.90, 0.98, radius));
                 half glow = max(tex.r, max(tex.g, tex.b));
-                glow = smoothstep(0.12h, 0.4h, glow);
-                half3 rgb = lerp(half3(0.015h, 0.015h, 0.015h), half3(1, 1, 1), glow) * _Color.rgb;
-                half alpha = max(inside * 0.92h, glow);
+                half bright = (half)ring * saturate(glow + 0.35h);
+                half3 rgb = half3(0.02h, 0.02h, 0.02h) * core;
+                rgb = max(rgb, half3(1.0h, 0.96h, 0.82h) * bright);
+                rgb *= _Color.rgb;
+                half alpha = saturate(max(core * 0.96h, bright));
                 return half4(rgb, alpha);
             }
             ENDHLSL

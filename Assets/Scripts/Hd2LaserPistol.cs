@@ -299,6 +299,7 @@ public class Hd2LaserPistol : MonoBehaviour
         if (pointer != null)
             pointer.enabled = false;
         PlaceShot(origin, end);
+        Hd2NearMiss.TryPass(origin, end, transform.root, target != null && Hd2NearMiss.HitsPlayer(target));
 
         Hd2Health attacker = GetComponentInParent<Hd2Health>();
         if (target != null && target != attacker)
@@ -306,7 +307,7 @@ public class Hd2LaserPistol : MonoBehaviour
             if (attacker != null)
                 target.LastAttacker = attacker.transform;
             target.MarkHit(hit.point);
-            target.ApplyHit(damage, false);
+            target.ApplyHit(damage, false, true);
         }
 
         if (voice != null && fireClip != null)

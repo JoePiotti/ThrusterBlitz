@@ -48,6 +48,9 @@ public class Hd2PracticeBot : MonoBehaviour
             body = instance.transform;
         }
 
+        if (body != null)
+            Hd2RobotCleanup.StripImportedDevices(body.gameObject);
+
         if (body == null)
             return;
 

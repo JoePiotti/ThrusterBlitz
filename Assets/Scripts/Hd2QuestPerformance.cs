@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.XR;
 
 /// <summary>
-/// Quest runs at 72 Hz with fixed foveation. Vsync stays off so the
+/// Quest runs at 72 Hz with foveation off. Vsync stays off so the
 /// headset runtime paces frames. Skinning stays at four bones.
 /// </summary>
 static class Hd2QuestPerformance
@@ -22,6 +22,6 @@ static class Hd2QuestPerformance
         var displays = new List<XRDisplaySubsystem>();
         SubsystemManager.GetSubsystems(displays);
         for (int i = 0; i < displays.Count; i++)
-            displays[i].foveatedRenderingLevel = 1f;
+            displays[i].foveatedRenderingLevel = 0f;
     }
 }

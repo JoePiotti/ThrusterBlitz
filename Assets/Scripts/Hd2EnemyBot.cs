@@ -4,7 +4,8 @@ using UnityEngine;
 
 /// <summary>
 /// Deathmatch bot. Wanders until it sees an enemy or takes a hit, then shoots the body
-/// while sprinting, strafing, or blitzing. Uses the same speeds, blitz, and guns as the player.
+/// while sprinting, strafing, or blitzing. Walk, blitz, and guns match the player.
+/// Combat sidesteps are a little slower than a player sprint.
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public class Hd2EnemyBot : MonoBehaviour
@@ -12,17 +13,19 @@ public class Hd2EnemyBot : MonoBehaviour
     public GameObject robotPrefab;
     public GameObject pistolModel;
     public Color bodyColor = Color.white;
+    public string displayName = "bot";
     public bool useBodyColor;
 
     const float WalkSpeed = 2.5f;
-    const float SprintSpeed = 5.5f;
+    const float SidestepSpeed = 4.6f;
     const float BlitzSpeed = 30f;
     const float BlitzRange = 13f;
     const float BlitzHop = 0.5f;
     const float GrindSpeed = 8f;
     const float SeeRange = 20f;
     const float SeeHalfAngle = 15f;
-    const float AimJitter = 5f;
+    const float AimError = 2.4f;
+    const float NoticeDelay = 0.25f;
     const float DropCombatRange = 30f;
     const float RagdollSeconds = 5f;
 
@@ -90,6 +93,10 @@ public class Hd2EnemyBot : MonoBehaviour
     Transform upperR;
     Transform foreR;
     Transform handR;
+    float tipReachL = 0.06f;
+    float tipReachR = 0.06f;
+    Vector3 tipLocalL = new Vector3(0f, 0.06f, 0f);
+    Vector3 tipLocalR = new Vector3(0f, 0.06f, 0f);
     Transform thighL;
     Transform thighR;
     Transform shinL;
@@ -104,6 +111,7 @@ public class Hd2EnemyBot : MonoBehaviour
     Quaternion restFootR;
     float gait;
     float gaitWeight;
+    float attackAt;
     bool ragdolling;
     float killMarkUntil;
     Transform killMark;
@@ -149,6 +157,7 @@ public class Hd2EnemyBot : MonoBehaviour
             robot.transform.localPosition = Vector3.zero;
             robot.transform.localRotation = Quaternion.identity;
             robot.transform.localScale = Vector3.one;
+            Hd2RobotCleanup.StripImportedDevices(robot);
             var animators = robot.GetComponentsInChildren<Animator>(true);
             for (int i = 0; i < animators.Length; i++)
                 animators[i].enabled = false;
@@ -160,6 +169,7 @@ public class Hd2EnemyBot : MonoBehaviour
             SeatHands();
             if (useBodyColor)
                 TintRenderers(robot.transform, bodyColor);
+            AddFillers(robot.transform);
         }
 
         Hd2VisionCone.Register(transform);
@@ -235,8 +245,8 @@ public class Hd2EnemyBot : MonoBehaviour
         if (current.Health < lastHealth)
         {
             Transform attacker = current.LastAttacker;
-            if (attacker != null && attacker.root != transform)
-                Engage(attacker.root);
+            if (attacker != null)
+                Engage(attacker);
         }
 
         if (current.Health <= 0f)
@@ -284,7 +294,8 @@ public class Hd2EnemyBot : MonoBehaviour
             EnterWander();
 
         bool finishingRail = grinding || (traveling && travelRail != null);
-        if (Time.time >= modeUntil && !finishingRail)
+        bool waitingToAttack = mode == Mode.Combat && Time.time < attackAt;
+        if (Time.time >= modeUntil && !finishingRail && !waitingToAttack)
             PickSubmode();
 
         if (mode == Mode.Wander)
@@ -324,13 +335,34 @@ public class Hd2EnemyBot : MonoBehaviour
 
     void Engage(Transform enemy)
     {
-        if (enemy == null || enemy.root == transform)
+        Transform body = FighterBody(enemy);
+        if (body == null || body == transform)
             return;
-        bool fresh = mode != Mode.Combat || target != enemy.root;
-        target = enemy.root;
+        bool fresh = mode != Mode.Combat || target != body;
+        target = body;
         mode = Mode.Combat;
-        if (fresh)
-            PickSubmode();
+        if (!fresh)
+            return;
+
+        attackAt = Time.time + NoticeDelay;
+        modeUntil = attackAt;
+        moveDir = Vector3.zero;
+    }
+
+    static Transform FighterBody(Transform enemy)
+    {
+        if (enemy == null)
+            return null;
+
+        Hd2EnemyBot bot = enemy.GetComponentInParent<Hd2EnemyBot>();
+        if (bot != null)
+            return bot.transform;
+
+        Hd2Locomotion player = enemy.GetComponentInParent<Hd2Locomotion>();
+        if (player != null)
+            return player.transform;
+
+        return enemy;
     }
 
     bool TargetAlive()
@@ -441,6 +473,13 @@ public class Hd2EnemyBot : MonoBehaviour
         if (target == null)
             return;
 
+        if (Time.time < attackAt)
+        {
+            moveDir = Vector3.zero;
+            Shoot(false);
+            return;
+        }
+
         Vector3 to = Flat(target.position - transform.position);
         if (!traveling && to.sqrMagnitude > 0.0001f)
             Face(to);
@@ -537,7 +576,11 @@ public class Hd2EnemyBot : MonoBehaviour
         Vector3 aim = point;
         Vector3 fromBody = point - transform.position;
         if (shake && fromBody.sqrMagnitude > 0.01f)
-            aim = transform.position + Quaternion.Euler(Random.Range(-AimJitter, AimJitter), Random.Range(-AimJitter, AimJitter), 0f) * fromBody;
+        {
+            float yaw = Mathf.Sin(Time.time * 0.55f) * AimError;
+            float pitch = Mathf.Sin(Time.time * 0.37f + 1.7f) * AimError * 0.65f;
+            aim = transform.position + Quaternion.Euler(pitch, yaw, 0f) * fromBody;
+        }
 
         AimHand(rightHand, upperR, foreR, handR, aim, 0.12f);
         AimHand(leftHand, upperL, foreL, handL, aim, -0.12f);
@@ -548,23 +591,52 @@ public class Hd2EnemyBot : MonoBehaviour
         Transform gun = GunOn(hand);
         if (gun == null)
         {
+            if (hand != null)
+            {
+                hand.localPosition = Vector3.zero;
+                hand.localRotation = Quaternion.identity;
+            }
+
             HangArm(upper, fore, bone);
             return;
         }
 
+        bool pistol = IsPistolGrip(gun);
+        Transform muzzle = FindNamed(gun, "Muzzle");
+        if (muzzle == null)
+            muzzle = FindNamed(gun, "Barrel");
+        Vector3 from = muzzle != null ? muzzle.position : gun.position;
+        Vector3 dir = aim - from;
+        if (dir.sqrMagnitude < 0.01f)
+            dir = transform.forward;
+        dir.Normalize();
+
         if (upper != null && fore != null)
         {
             Vector3 shoulder = upper.position;
-            Vector3 reach = aim + transform.right * side - shoulder;
+            float extra = pistol ? (bone == handR ? tipReachR : tipReachL) : 0f;
+            Vector3 wrist = aim + transform.right * side - dir * extra;
+            Vector3 reach = wrist - shoulder;
             if (reach.sqrMagnitude > 0.01f)
                 PoseArm(upper, fore, bone, shoulder + reach.normalized * Mathf.Min(reach.magnitude, 0.62f));
         }
 
+        if (pistol)
+            StraightenHand(fore, bone);
+
         if (hand == null)
             return;
-        Transform muzzle = FindNamed(gun, "Muzzle");
-        Vector3 from = muzzle != null ? muzzle.position : gun.position;
-        Vector3 dir = aim - from;
+
+        if (pistol && bone != null)
+        {
+            hand.localPosition = bone == handR ? tipLocalR : tipLocalL;
+            hand.localRotation = Quaternion.identity;
+        }
+        else
+            hand.localPosition = Vector3.zero;
+
+        from = muzzle != null ? muzzle.position : gun.position;
+        dir = aim - from;
         if (dir.sqrMagnitude < 0.01f)
             return;
         dir.Normalize();
@@ -572,6 +644,53 @@ public class Hd2EnemyBot : MonoBehaviour
         if (barrel.sqrMagnitude < 0.0001f || Vector3.Dot(barrel, dir) > 0.9995f)
             return;
         hand.rotation = Quaternion.FromToRotation(barrel, dir) * hand.rotation;
+    }
+
+    static bool IsPistolGrip(Transform gun)
+    {
+        return gun.GetComponent<Hd2Pistol>() != null
+            || gun.GetComponent<Hd2Shocks>() != null
+            || gun.GetComponent<Hd2LaserPistol>() != null;
+    }
+
+    static void StraightenHand(Transform fore, Transform bone)
+    {
+        if (fore == null || bone == null)
+            return;
+
+        Transform tip = null;
+        for (int i = 0; i < bone.childCount; i++)
+        {
+            Transform child = bone.GetChild(i);
+            if (child.name.IndexOf("Tip", System.StringComparison.Ordinal) >= 0)
+                tip = child;
+        }
+
+        Vector3 along = bone.position - fore.position;
+        if (along.sqrMagnitude < 0.0001f)
+            return;
+        Vector3 tipDir = tip != null ? tip.position - bone.position : along;
+        if (tipDir.sqrMagnitude < 0.0001f)
+            return;
+        bone.rotation = Quaternion.FromToRotation(tipDir, along) * bone.rotation;
+    }
+
+    static void RememberHandTip(Transform bone, ref float reach, ref Vector3 local)
+    {
+        reach = 0.06f;
+        local = new Vector3(0f, 0.06f, 0f);
+        if (bone == null)
+            return;
+
+        for (int i = 0; i < bone.childCount; i++)
+        {
+            Transform child = bone.GetChild(i);
+            if (child.name.IndexOf("Tip", System.StringComparison.Ordinal) < 0)
+                continue;
+            local = child.localPosition;
+            reach = Mathf.Max(0.02f, local.magnitude);
+            return;
+        }
     }
 
     static Transform GunOn(Transform hand)
@@ -872,7 +991,11 @@ public class Hd2EnemyBot : MonoBehaviour
         if (body == null || !body.enabled)
             return;
 
-        float speed = mode == Mode.Combat && combat == CombatKind.Sprint ? SprintSpeed : WalkSpeed;
+        float speed = WalkSpeed;
+        if (mode == Mode.Combat && combat == CombatKind.Sprint)
+            speed = SidestepSpeed;
+        else if (mode == Mode.Combat && combat == CombatKind.Strafe)
+            speed = WalkSpeed * 0.85f;
         if (moveDir.sqrMagnitude > 0.0001f && WaterAlong(moveDir, 0.9f))
             moveDir = Vector3.zero;
         Vector3 step = moveDir * speed;
@@ -1175,6 +1298,8 @@ public class Hd2EnemyBot : MonoBehaviour
         upperR = FindBone(robot, "Arm.R", "UpperArm_R");
         foreR = FindBone(robot, "Arm.R.002", "Forearm_R");
         handR = FindBone(robot, "Hand.R", "Hand_R");
+        RememberHandTip(handL, ref tipReachL, ref tipLocalL);
+        RememberHandTip(handR, ref tipReachR, ref tipLocalR);
         thighL = FindBone(robot, "Thigh.L", "Thigh_L");
         shinL = FindBone(robot, "Shin.L", "Shin_L");
         footL = FindBone(robot, "Foot.L", "Foot_L");
@@ -1323,6 +1448,92 @@ public class Hd2EnemyBot : MonoBehaviour
         health.ApplyHit(health.Health, false);
     }
 
+    static Mesh fillerSphere;
+    static Mesh fillerCapsule;
+    static Material fillerBlack;
+
+    void AddFillers(Transform robot)
+    {
+        Transform chest = FindBone(robot, "Chest", "Chest");
+        Transform neck = FindBone(robot, "Neck", "Neck");
+        Material black = FillerBlack(robot);
+        AddFiller(chest, PrimitiveType.Sphere, ref fillerSphere, "Shoulder Left Filler",
+            new Vector3(-0.167f, 0.119f, -0.016f), Vector3.one * 0.11f, Quaternion.identity, black);
+        AddFiller(chest, PrimitiveType.Sphere, ref fillerSphere, "Shoulder Right Filler",
+            new Vector3(0.14f, 0.119f, -0.032f), Vector3.one * 0.11f, Quaternion.identity, black);
+        AddFiller(neck, PrimitiveType.Capsule, ref fillerCapsule, "neck filler",
+            new Vector3(0f, 0.019f, -0.031f), new Vector3(0.1f, 0.08f, 0.1f), Quaternion.Euler(7.94f, 0f, 0f), black);
+    }
+
+    static Material FillerBlack(Transform robot)
+    {
+        if (fillerBlack != null)
+            return fillerBlack;
+
+        Renderer source = robot.GetComponentInChildren<Renderer>();
+        if (source == null || source.sharedMaterial == null)
+            return null;
+
+        fillerBlack = new Material(source.sharedMaterial);
+        if (fillerBlack.HasProperty("_BaseColor"))
+            fillerBlack.SetColor("_BaseColor", Color.black);
+        if (fillerBlack.HasProperty("_Color"))
+            fillerBlack.SetColor("_Color", Color.black);
+        if (fillerBlack.HasProperty("_EmissionColor"))
+            fillerBlack.SetColor("_EmissionColor", Color.black);
+        return fillerBlack;
+    }
+
+    static void AddFiller(
+        Transform parent,
+        PrimitiveType kind,
+        ref Mesh cached,
+        string fillerName,
+        Vector3 localPosition,
+        Vector3 localScale,
+        Quaternion localRotation,
+        Material material)
+    {
+        if (parent == null || material == null)
+            return;
+
+        if (cached == null)
+        {
+            var temp = GameObject.CreatePrimitive(kind);
+            MeshFilter source = temp.GetComponent<MeshFilter>();
+            if (source != null)
+                cached = source.sharedMesh;
+            if (Application.isPlaying)
+                Destroy(temp);
+            else
+                DestroyImmediate(temp);
+        }
+
+        if (cached == null)
+            return;
+
+        var filler = new GameObject(fillerName);
+        filler.transform.SetParent(parent, false);
+        filler.transform.localPosition = localPosition;
+        filler.transform.localRotation = localRotation;
+        filler.transform.localScale = localScale;
+        filler.AddComponent<MeshFilter>().sharedMesh = cached;
+        var renderer = filler.AddComponent<MeshRenderer>();
+        renderer.sharedMaterial = material;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+    }
+
+    void SilenceBodyAudio()
+    {
+        AudioSource[] sources = GetComponentsInChildren<AudioSource>(true);
+        for (int i = 0; i < sources.Length; i++)
+        {
+            if (sources[i] != null && sources[i].isPlaying)
+                sources[i].Stop();
+        }
+    }
+
     static Transform FindBone(Transform root, string dotted, string underscored)
     {
         Transform found = FindNamed(root, dotted);
@@ -1371,6 +1582,8 @@ public class Hd2EnemyBot : MonoBehaviour
             Renderer renderer = renderers[i];
             if (renderer == null || renderer is ParticleSystemRenderer)
                 continue;
+            if (renderer.gameObject.name.IndexOf("filler", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                continue;
             Material[] materials = renderer.materials;
             for (int m = 0; m < materials.Length; m++)
             {
@@ -1403,6 +1616,7 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         ragdolling = true;
         ReleaseGuns();
+        SilenceBodyAudio();
         ShowKillMark(killer, hitPoint);
         CachePose();
         SilenceGunColliders();

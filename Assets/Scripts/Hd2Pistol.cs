@@ -35,7 +35,7 @@ public class Hd2Pistol : MonoBehaviour
 
     [Header("Charged shot")]
     public float chargeHoldTime = 1f;
-    public float chargedRadius = 0.06f;
+    public float chargedRadius = 0.09f;
     public float chargedSpeedMultiplier = 0.7f;
     public int chargedAmmoCost = 3;
     public int chargedBounces = 6;
@@ -64,6 +64,8 @@ public class Hd2Pistol : MonoBehaviour
     float triggerPressedAt = -1f;
     bool waitForTriggerRelease = true;
     bool chargeReadyPulsed;
+    bool chargeRumbling;
+    float nextChargeHapticAt;
     bool reloading;
     int reloadPulsesLeft;
     float nextReloadPulseAt;
@@ -172,6 +174,7 @@ public class Hd2Pistol : MonoBehaviour
 
     void OnDisable()
     {
+        StopChargeRumble();
         StopCharge();
         Dispose(ref triggerAction);
         Dispose(ref reloadAction);
@@ -223,15 +226,27 @@ public class Hd2Pistol : MonoBehaviour
         {
             triggerPressedAt = Time.time;
             chargeReadyPulsed = false;
+            nextChargeHapticAt = 0f;
             PlayCharge();
         }
 
+        bool charging = triggerPressedAt >= 0f && !chargeReadyPulsed && !reloading && rounds > 0
+            && Time.time - triggerPressedAt < chargeHoldTime;
+        if (charging)
+        {
+            if (Time.time >= nextChargeHapticAt)
+            {
+                chargeRumbling = true;
+                Pulse(chargeReadyHapticAmplitude, 0.05f);
+                nextChargeHapticAt = Time.time + 0.05f;
+            }
+        }
+        else if (chargeRumbling)
+            StopChargeRumble();
+
         if (!chargeReadyPulsed && triggerPressedAt >= 0f && !reloading && rounds > 0
             && Time.time - triggerPressedAt >= chargeHoldTime)
-        {
             chargeReadyPulsed = true;
-            Pulse(chargeReadyHapticAmplitude, chargeReadyHapticDuration);
-        }
 
         if (released)
         {
@@ -495,9 +510,24 @@ public class Hd2Pistol : MonoBehaviour
             0.1f);
     }
 
+    void StopChargeRumble()
+    {
+        if (!chargeRumbling)
+            return;
+        chargeRumbling = false;
+        SendImpulse(0f, 0.02f);
+    }
+
     void Pulse(float amplitude, float duration)
     {
         if (amplitude <= 0f || duration <= 0f || GetComponentInParent<Hd2EnemyBot>() != null)
+            return;
+        SendImpulse(amplitude, duration);
+    }
+
+    void SendImpulse(float amplitude, float duration)
+    {
+        if (GetComponentInParent<Hd2EnemyBot>() != null)
             return;
 
         var node = hand == Hand.Left ? XRNode.LeftHand : XRNode.RightHand;

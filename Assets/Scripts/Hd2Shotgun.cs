@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.XR;
 
 /// <summary>
-/// One-handed sawed-off. Each trigger pull fires one barrel as six pellets.
+/// One-handed sawed-off. Each trigger pull fires one barrel as eight pellets.
 /// Two shots, then a reload. A pellet stops at maxRangeMeters.
 /// Close pellets deal closeBodyDamage, or closeHeadDamage on a head.
 /// Past closeRangeMeters the damage is multiplied by farDamageMultiplier.
@@ -14,7 +14,7 @@ public class Hd2Shotgun : MonoBehaviour
     public Hd2Pistol.Hand hand = Hd2Pistol.Hand.Right;
 
     public int rounds = 2;
-    public int pelletsPerShot = 6;
+    public int pelletsPerShot = 8;
     public float closeRangeMeters = 3f;
     public float closeBodyDamage = 8f;
     public float closeHeadDamage = 12f;
@@ -30,8 +30,38 @@ public class Hd2Shotgun : MonoBehaviour
 
     public Transform muzzle;
 
+    public const int PatternCount = 8;
+    const int PatternPellets = 8;
+
+    /// <summary>
+    /// Raised with the pattern index byte when this gun fires. That byte is the shotgun fire message.
+    /// Receivers call ApplyPattern with the same byte. The patterns below are baked offsets, identical on every client.
+    /// </summary>
+    public static event System.Action<Hd2Shotgun, byte> PatternFired;
+
+    // Unit-disk offsets, eight pellets per pattern. Scaled by the spread cone when the shot is simulated.
+    static readonly Vector2[] Patterns =
+    {
+        new Vector2(0.08f, 0.14f), new Vector2(-0.22f, 0.31f), new Vector2(0.41f, -0.11f), new Vector2(-0.06f, -0.37f),
+        new Vector2(0.33f, 0.26f), new Vector2(-0.46f, -0.09f), new Vector2(0.17f, -0.51f), new Vector2(-0.28f, 0.43f),
+        new Vector2(-0.11f, 0.07f), new Vector2(0.29f, 0.18f), new Vector2(-0.38f, -0.24f), new Vector2(0.14f, -0.44f),
+        new Vector2(0.52f, 0.06f), new Vector2(-0.19f, 0.48f), new Vector2(0.07f, 0.33f), new Vector2(-0.41f, -0.36f),
+        new Vector2(0.21f, -0.08f), new Vector2(-0.33f, 0.12f), new Vector2(0.05f, 0.46f), new Vector2(0.44f, 0.29f),
+        new Vector2(-0.15f, -0.49f), new Vector2(0.36f, -0.38f), new Vector2(-0.52f, 0.22f), new Vector2(0.12f, 0.19f),
+        new Vector2(-0.04f, -0.16f), new Vector2(0.27f, -0.29f), new Vector2(-0.43f, 0.08f), new Vector2(0.16f, 0.51f),
+        new Vector2(-0.31f, -0.41f), new Vector2(0.48f, -0.14f), new Vector2(-0.09f, 0.36f), new Vector2(0.23f, 0.09f),
+        new Vector2(0.35f, 0.13f), new Vector2(-0.26f, -0.18f), new Vector2(0.02f, -0.42f), new Vector2(-0.49f, 0.27f),
+        new Vector2(0.18f, 0.39f), new Vector2(-0.07f, 0.22f), new Vector2(0.41f, -0.33f), new Vector2(-0.37f, -0.46f),
+        new Vector2(-0.18f, 0.44f), new Vector2(0.46f, 0.17f), new Vector2(-0.29f, -0.07f), new Vector2(0.09f, -0.28f),
+        new Vector2(0.31f, -0.47f), new Vector2(-0.44f, -0.31f), new Vector2(0.13f, 0.11f), new Vector2(-0.02f, 0.53f),
+        new Vector2(0.24f, 0.34f), new Vector2(-0.36f, 0.19f), new Vector2(0.51f, -0.21f), new Vector2(-0.14f, -0.33f),
+        new Vector2(0.06f, -0.12f), new Vector2(-0.47f, 0.38f), new Vector2(0.19f, 0.27f), new Vector2(0.33f, -0.05f),
+        new Vector2(-0.21f, -0.52f), new Vector2(0.39f, 0.41f), new Vector2(-0.08f, 0.16f), new Vector2(0.15f, -0.36f),
+        new Vector2(0.11f, 0.48f), new Vector2(-0.39f, -0.14f), new Vector2(0.28f, 0.04f), new Vector2(-0.16f, 0.29f)
+    };
+
     int loaded;
-    int nextBarrel;
+    int patternCursor;
     bool reloading;
     float reloadEndsAt;
     bool waitForTriggerRelease = true;
@@ -148,22 +178,11 @@ public class Hd2Shotgun : MonoBehaviour
             return;
 
         Transform origin = muzzle != null ? muzzle : transform;
-        Vector3 forward = origin.forward;
-        if (forward.sqrMagnitude < 0.0001f)
-            forward = -transform.up;
-        forward.Normalize();
 
-        Vector3 side = Vector3.Cross(forward, Vector3.up);
-        if (side.sqrMagnitude < 0.0001f)
-            side = transform.right;
-        side.Normalize();
-        float barrel = nextBarrel == 0 ? -1f : 1f;
-        nextBarrel = 1 - nextBarrel;
-        Vector3 from = origin.position + side * (0.018f * barrel);
-
-        int count = Mathf.Max(1, pelletsPerShot);
-        for (int i = 0; i < count; i++)
-            SpawnPellet(from, Spread(forward));
+        byte pattern = (byte)patternCursor;
+        patternCursor = (patternCursor + 1) % PatternCount;
+        PatternFired?.Invoke(this, pattern);
+        ApplyPattern(pattern);
 
         SpawnFlash(origin);
         if (voice != null && shotClip != null)
@@ -175,16 +194,35 @@ public class Hd2Shotgun : MonoBehaviour
             Reload();
     }
 
-    Vector3 Spread(Vector3 forward)
+    /// <summary>
+    /// Spawns this gun's pellets for a pattern index. The index is the only value a fire message needs.
+    /// </summary>
+    public void ApplyPattern(byte patternIndex)
     {
-        float radius = Mathf.Tan(Mathf.Max(0f, spreadAngle) * 0.5f * Mathf.Deg2Rad);
-        Vector2 disk = Random.insideUnitCircle * radius;
+        Transform origin = muzzle != null ? muzzle : transform;
+        Vector3 forward = origin.forward;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = -transform.up;
+        forward.Normalize();
+
         Vector3 right = Vector3.Cross(forward, Vector3.up);
         if (right.sqrMagnitude < 0.0001f)
-            right = Vector3.right;
+            right = transform.right;
         right.Normalize();
         Vector3 up = Vector3.Cross(right, forward).normalized;
-        return (forward + right * disk.x + up * disk.y).normalized;
+        float barrel = (patternIndex & 1) == 0 ? -1f : 1f;
+        Vector3 from = origin.position + right * (0.018f * barrel);
+
+        int pattern = patternIndex % PatternCount;
+        float radius = Mathf.Tan(Mathf.Max(0f, spreadAngle) * 0.5f * Mathf.Deg2Rad);
+        int count = Mathf.Clamp(pelletsPerShot, 1, PatternPellets);
+        int start = pattern * PatternPellets;
+        for (int i = 0; i < count; i++)
+        {
+            Vector2 disk = Patterns[start + i] * radius;
+            Vector3 direction = (forward + right * disk.x + up * disk.y).normalized;
+            SpawnPellet(from, direction);
+        }
     }
 
     void SpawnPellet(Vector3 from, Vector3 direction)

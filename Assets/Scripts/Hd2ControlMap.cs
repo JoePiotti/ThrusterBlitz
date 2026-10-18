@@ -53,7 +53,7 @@ public class Hd2ControlMap : MonoBehaviour
     readonly bool[] pressed = new bool[ButtonCount];
     readonly bool[] released = new bool[ButtonCount];
     readonly bool[] held = new bool[ButtonCount];
-    MicMode micMode = MicMode.PushToTalk;
+    MicMode micMode = MicMode.Toggle;
     bool micOn;
 
     public event System.Action Changed;
@@ -153,6 +153,7 @@ public class Hd2ControlMap : MonoBehaviour
         bound[(int)Button.LeftTrigger] = Action.FireLeft;
         bound[(int)Button.LeftGrip] = Action.ReloadLeft;
         bound[(int)Button.LeftX] = Action.LeftPointer;
+        bound[(int)Button.LeftY] = Action.Microphone;
         bound[(int)Button.RightTrigger] = Action.FireRight;
         bound[(int)Button.RightGrip] = Action.ReloadRight;
         bound[(int)Button.RightA] = Action.RightPointer;

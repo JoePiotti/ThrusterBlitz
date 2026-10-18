@@ -428,6 +428,59 @@ public class Hd2RocketLauncher : MonoBehaviour
         renderer.receiveShadows = false;
         particles.Play();
         AddSmoke(vent.transform);
+        AddStreak(vent.transform, TeamColor());
+    }
+
+    Color TeamColor()
+    {
+        var player = GetComponentInParent<Hd2Locomotion>();
+        if (player != null)
+            return player.teamColor;
+
+        var bot = GetComponentInParent<Hd2EnemyBot>();
+        if (bot != null)
+            return bot.bodyColor;
+
+        return Color.white;
+    }
+
+    void AddStreak(Transform vent, Color team)
+    {
+        var streakObject = new GameObject("Streak");
+        streakObject.transform.SetParent(vent, false);
+
+        var streak = streakObject.AddComponent<TrailRenderer>();
+        streak.time = 4f;
+        streak.minVertexDistance = 0.15f;
+        streak.widthMultiplier = 0.055f;
+        streak.numCornerVertices = 1;
+        streak.numCapVertices = 0;
+        streak.alignment = LineAlignment.View;
+        streak.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        streak.receiveShadows = false;
+        streak.generateLightingData = false;
+        Material ribbon = ThrustMaterial();
+        if (ribbon != null)
+            streak.sharedMaterial = ribbon;
+
+        team.a = 1f;
+        var fade = new Gradient();
+        fade.SetKeys(
+            new[]
+            {
+                new GradientColorKey(team, 0f),
+                new GradientColorKey(team, 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(0.95f, 0f),
+                new GradientAlphaKey(0.35f, 0.45f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        streak.colorGradient = fade;
+        streak.widthCurve = new AnimationCurve(
+            new Keyframe(0f, 1f),
+            new Keyframe(1f, 0.2f));
     }
 
     void AddSmoke(Transform vent)
@@ -445,7 +498,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         main.duration = 1f;
         main.startLifetime = new ParticleSystem.MinMaxCurve(0.9f, 1.1f);
         main.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.4f);
-        main.startSize = new ParticleSystem.MinMaxCurve(0.02f, 0.05f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.11f, 0.26f);
         main.startColor = new ParticleSystem.MinMaxGradient(
             new Color(0.78f, 0.78f, 0.78f, 0.45f),
             new Color(0.9f, 0.9f, 0.9f, 0.55f));
@@ -464,8 +517,9 @@ public class Hd2RocketLauncher : MonoBehaviour
         var size = particles.sizeOverLifetime;
         size.enabled = true;
         size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
-            new Keyframe(0f, 0.5f),
-            new Keyframe(1f, 1.8f)));
+            new Keyframe(0f, 0.65f),
+            new Keyframe(0.35f, 1.6f),
+            new Keyframe(1f, 2.6f)));
 
         var color = particles.colorOverLifetime;
         color.enabled = true;
@@ -478,22 +532,26 @@ public class Hd2RocketLauncher : MonoBehaviour
             },
             new[]
             {
-                new GradientAlphaKey(0.4f, 0f),
-                new GradientAlphaKey(0.15f, 0.5f),
+                new GradientAlphaKey(0.22f, 0f),
+                new GradientAlphaKey(0.28f, 0.25f),
+                new GradientAlphaKey(0.1f, 0.6f),
                 new GradientAlphaKey(0f, 1f)
             });
         color.color = gradient;
 
         var renderer = smokeObject.GetComponent<ParticleSystemRenderer>();
-        Material smoke = ThrustMaterial();
+        renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        renderer.enableGPUInstancing = false;
+        Material smoke = SmokeMaterial();
         if (smoke != null)
-            renderer.material = smoke;
+            renderer.sharedMaterial = smoke;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         particles.Play();
     }
 
     static Material thrustMaterial;
+    static Material smokeMaterial;
 
     static Material ThrustMaterial()
     {
@@ -502,6 +560,23 @@ public class Hd2RocketLauncher : MonoBehaviour
 
         thrustMaterial = Hd2Shot.ParticleMaterial();
         return thrustMaterial;
+    }
+
+    static Material SmokeMaterial()
+    {
+        if (smokeMaterial != null)
+            return smokeMaterial;
+
+        smokeMaterial = Resources.Load<Material>("SoftSmoke");
+        if (smokeMaterial != null)
+            return smokeMaterial;
+
+        Shader shader = Shader.Find("HD2/SoftSmoke");
+        if (shader == null)
+            return null;
+        smokeMaterial = new Material(shader);
+        smokeMaterial.SetColor("_Color", Color.white);
+        return smokeMaterial;
     }
 
     void CacheRocketMesh()

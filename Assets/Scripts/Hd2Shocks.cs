@@ -18,9 +18,9 @@ public class Hd2Shocks : MonoBehaviour
 
     public float boltSpeed = 140f;
     public float boltDamage = 20f;
-    public float boltThickness = 0.03f;
-    public float boltLength = 3.6f;
-    public float boltMaxLength = 5.5f;
+    public float boltThickness = 0.042f;
+    public float boltLength = 4.6f;
+    public float boltMaxLength = 7f;
     public Color boltColor = new Color(1f, 0.16f, 0.08f, 1f);
 
     public float chargeHoldTime = 1.25f;
@@ -43,6 +43,8 @@ public class Hd2Shocks : MonoBehaviour
     float triggerPressedAt = -1f;
     bool waitForTriggerRelease = true;
     bool chargeReadyPulsed;
+    bool chargeRumbling;
+    float nextChargeHapticAt;
     bool reloading;
     float reloadEndsAt;
     float kick;
@@ -148,6 +150,7 @@ public class Hd2Shocks : MonoBehaviour
 
     void OnDisable()
     {
+        StopChargeRumble();
         StopCharge();
         Dispose(ref triggerAction);
         Dispose(ref reloadAction);
@@ -192,15 +195,27 @@ public class Hd2Shocks : MonoBehaviour
         {
             triggerPressedAt = Time.time;
             chargeReadyPulsed = false;
+            nextChargeHapticAt = 0f;
             PlayCharge();
         }
 
+        bool charging = triggerPressedAt >= 0f && !chargeReadyPulsed && !reloading && rounds > 0
+            && Time.time - triggerPressedAt < chargeHoldTime;
+        if (charging)
+        {
+            if (Time.time >= nextChargeHapticAt)
+            {
+                chargeRumbling = true;
+                Pulse(0.5f, 0.05f);
+                nextChargeHapticAt = Time.time + 0.05f;
+            }
+        }
+        else if (chargeRumbling)
+            StopChargeRumble();
+
         if (!chargeReadyPulsed && triggerPressedAt >= 0f && !reloading && rounds > 0
             && Time.time - triggerPressedAt >= chargeHoldTime)
-        {
             chargeReadyPulsed = true;
-            Pulse(0.5f, 0.16f);
-        }
 
         if (released)
         {
@@ -386,18 +401,27 @@ public class Hd2Shocks : MonoBehaviour
             ammoLabel.text = reloading ? "R" : rounds.ToString();
     }
 
+    static readonly List<UnityEngine.XR.InputDevice> hapticDevices = new List<UnityEngine.XR.InputDevice>();
+
+    void StopChargeRumble()
+    {
+        if (!chargeRumbling)
+            return;
+        chargeRumbling = false;
+        Pulse(0f, 0.02f);
+    }
+
     void Pulse(float amplitude, float duration)
     {
         if (GetComponentInParent<Hd2EnemyBot>() != null)
             return;
 
         var node = hand == Hd2Pistol.Hand.Left ? XRNode.LeftHand : XRNode.RightHand;
-        var devices = new List<UnityEngine.XR.InputDevice>();
-        InputDevices.GetDevicesAtXRNode(node, devices);
-        for (int i = 0; i < devices.Count; i++)
+        InputDevices.GetDevicesAtXRNode(node, hapticDevices);
+        for (int i = 0; i < hapticDevices.Count; i++)
         {
-            if (devices[i].TryGetHapticCapabilities(out HapticCapabilities caps) && caps.supportsImpulse)
-                devices[i].SendHapticImpulse(0, Mathf.Clamp01(amplitude), duration);
+            if (hapticDevices[i].TryGetHapticCapabilities(out HapticCapabilities caps) && caps.supportsImpulse)
+                hapticDevices[i].SendHapticImpulse(0, Mathf.Clamp01(amplitude), duration);
         }
     }
 
@@ -486,6 +510,7 @@ public class Hd2ShockOrb : MonoBehaviour
     float age;
     float traveled;
     bool exploded;
+    bool nearMissPlayed;
 
     public void Paint()
     {
@@ -524,11 +549,17 @@ public class Hd2ShockOrb : MonoBehaviour
         if (distance > 0.0001f)
         {
             Vector3 origin = transform.position;
+            Vector3 end = origin + step;
             if (Hit(origin, step / distance, distance, out RaycastHit hit))
             {
+                if (!nearMissPlayed && Hd2NearMiss.TryPass(origin, hit.point, owner, Hd2NearMiss.HitsPlayer(hit.collider)))
+                    nearMissPlayed = true;
                 Burst(hit.point);
                 return;
             }
+
+            if (!nearMissPlayed && Hd2NearMiss.TryPass(origin, end, owner, false))
+                nearMissPlayed = true;
         }
 
         transform.position += step;
@@ -595,32 +626,10 @@ public class Hd2ShockOrb : MonoBehaviour
             if (owner != null)
                 health.LastAttacker = owner;
             health.MarkHit(colliders[i].ClosestPoint(point));
-            health.ApplyHit(amount, false);
+            health.ApplyHit(amount, false, true);
         }
 
-        var burst = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        burst.name = "ShockBurst";
-        var collider = burst.GetComponent<Collider>();
-        if (collider != null)
-            Destroy(collider);
-        burst.transform.position = point;
-        burst.transform.localScale = Vector3.one * 0.2f;
-        var renderer = burst.GetComponent<Renderer>();
-        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (renderer != null && shader != null)
-        {
-            var material = new Material(shader);
-            Color tint = color;
-            tint.a = 0.55f;
-            material.SetColor("_BaseColor", tint);
-            material.color = tint;
-            renderer.sharedMaterial = material;
-        }
-
-        var fade = burst.AddComponent<Hd2RocketBurst>();
-        fade.diameter = outerRadius * 2f;
-        fade.color = color;
-        fade.alpha = 0.55f;
+        Hd2Explosion.Shock(point, color);
 
         AudioClip clip = Resources.Load<AudioClip>("Audio/RocketExplosion");
         if (clip != null)

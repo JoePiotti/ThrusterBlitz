@@ -49,7 +49,7 @@ public class Hd2Health : MonoBehaviour
         return true;
     }
 
-    public void ApplyHit(float amount, bool headshot)
+    public void ApplyHit(float amount, bool headshot, bool playerShot = false)
     {
         if (amount <= 0f || health <= 0f)
             return;
@@ -58,6 +58,8 @@ public class Hd2Health : MonoBehaviour
             amount *= 3f;
 
         health = Mathf.Max(0f, health - amount);
+        if (playerShot)
+            PlayPlayerHit();
         Changed?.Invoke(this);
         if (health <= 0f)
         {
@@ -77,10 +79,19 @@ public class Hd2Health : MonoBehaviour
 
     public Transform LastAttacker { get; set; }
     public Vector3 LastHitPoint { get; private set; }
+    public Vector3 LastShotOrigin { get; private set; }
+    public float KillLineTime { get; private set; }
 
     public void MarkHit(Vector3 point)
     {
         LastHitPoint = point;
+    }
+
+    public void MarkKillLine(Vector3 origin, Vector3 point)
+    {
+        LastShotOrigin = origin;
+        LastHitPoint = point;
+        KillLineTime = Time.time;
     }
 
     public void Respawn()
@@ -110,5 +121,34 @@ public class Hd2Health : MonoBehaviour
         }
 
         transform.SetPositionAndRotation(pos, rot);
+        if (GetComponent<Hd2Locomotion>() != null)
+            Hd2TeleportArrive.Play(pos);
+    }
+
+    static AudioClip playerHitClip;
+    static AudioSource playerHitSource;
+
+    void PlayPlayerHit()
+    {
+        if (GetComponent<Hd2Locomotion>() == null)
+            return;
+
+        if (playerHitClip == null)
+            playerHitClip = Resources.Load<AudioClip>("Audio/PlayerHit");
+        if (playerHitClip == null)
+            return;
+
+        if (playerHitSource == null)
+        {
+            var speaker = new GameObject("PlayerHit");
+            speaker.hideFlags = HideFlags.HideAndDontSave;
+            Object.DontDestroyOnLoad(speaker);
+            playerHitSource = speaker.AddComponent<AudioSource>();
+            playerHitSource.playOnAwake = false;
+            playerHitSource.spatialBlend = 0f;
+            playerHitSource.dopplerLevel = 0f;
+        }
+
+        playerHitSource.PlayOneShot(playerHitClip);
     }
 }

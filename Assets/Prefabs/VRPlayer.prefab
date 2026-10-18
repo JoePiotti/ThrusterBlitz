@@ -1576,7 +1576,7 @@ MonoBehaviour:
   normalDamage: 10
   shotColor: {r: 0.55, g: 0.88, b: 1, a: 1}
   chargeHoldTime: 1
-  chargedRadius: 0.06
+  chargedRadius: 0.09
   chargedSpeedMultiplier: 0.7
   chargedAmmoCost: 3
   chargedBounces: 6
@@ -1726,7 +1726,7 @@ MonoBehaviour:
   normalDamage: 10
   shotColor: {r: 0.55, g: 0.88, b: 1, a: 1}
   chargeHoldTime: 1
-  chargedRadius: 0.06
+  chargedRadius: 0.09
   chargedSpeedMultiplier: 0.7
   chargedAmmoCost: 3
   chargedBounces: 6

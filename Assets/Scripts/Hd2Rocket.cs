@@ -35,6 +35,7 @@ public class Hd2Rocket : MonoBehaviour
     float wanderTimer;
     Vector3 wanderDir = Vector3.forward;
     bool exploded;
+    bool nearMissPlayed;
 
     static readonly List<Hd2Rocket> active = new List<Hd2Rocket>();
     static readonly RaycastHit[] hits = new RaycastHit[24];
@@ -140,12 +141,18 @@ public class Hd2Rocket : MonoBehaviour
 
         NoteDeath();
         Steer(dt);
-        Vector3 next = transform.position + velocity * dt;
-        if (HitAlong(transform.position, next, out Vector3 point))
+        Vector3 from = transform.position;
+        Vector3 next = from + velocity * dt;
+        if (HitAlong(from, next, out Vector3 point, out bool struckPlayer))
         {
+            if (!nearMissPlayed && Hd2NearMiss.TryPass(from, point, owner, struckPlayer))
+                nearMissPlayed = true;
             Explode(point, true);
             return;
         }
+
+        if (!nearMissPlayed && Hd2NearMiss.TryPass(from, next, owner, false))
+            nearMissPlayed = true;
 
         traveled += Vector3.Distance(transform.position, next);
         transform.position = next;
@@ -199,9 +206,10 @@ public class Hd2Rocket : MonoBehaviour
             transform.rotation = Quaternion.LookRotation(direction);
     }
 
-    bool HitAlong(Vector3 from, Vector3 to, out Vector3 point)
+    bool HitAlong(Vector3 from, Vector3 to, out Vector3 point, out bool struckPlayer)
     {
         point = to;
+        struckPlayer = false;
         Vector3 delta = to - from;
         float distance = delta.magnitude;
         if (distance < 0.0001f)
@@ -220,6 +228,7 @@ public class Hd2Rocket : MonoBehaviour
                 continue;
             best = hits[i].distance;
             point = hits[i].point;
+            struckPlayer = Hd2NearMiss.HitsPlayer(collider);
             found = true;
         }
 
@@ -281,11 +290,10 @@ public class Hd2Rocket : MonoBehaviour
             if (owner != null)
                 health.LastAttacker = owner;
             health.MarkHit(colliders[i].ClosestPoint(point));
-            health.ApplyHit(amount, false);
+            health.ApplyHit(amount, false, true);
         }
 
-        SpawnBurst(point, Color.white, 0.9f, 1.2f);
-        SpawnBurst(point, new Color(1f, 0.92f, 0.25f), 0.55f, outerRadiusMeters * 2f);
+        Hd2Explosion.Rocket(point, impact);
         PlayExplosion(point, impact ? "Audio/RocketImpact" : "Audio/RocketAirExplosion");
         Destroy(gameObject);
     }
@@ -308,91 +316,5 @@ public class Hd2Rocket : MonoBehaviour
         source.clip = clip;
         source.Play();
         Destroy(sound, clip.length + 0.1f);
-    }
-
-    void SpawnBurst(Vector3 point, Color color, float alpha, float diameter)
-    {
-        var burst = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        burst.name = "RocketBurst";
-        var collider = burst.GetComponent<Collider>();
-        if (collider != null)
-            Destroy(collider);
-
-        burst.transform.position = point;
-        burst.transform.localScale = Vector3.one * 0.2f;
-        var renderer = burst.GetComponent<Renderer>();
-        var filter = burst.GetComponent<MeshFilter>();
-        if (filter != null && filter.sharedMesh != null)
-        {
-            Mesh mesh = Instantiate(filter.sharedMesh);
-            var colors = new Color[mesh.vertexCount];
-            for (int i = 0; i < colors.Length; i++)
-                colors[i] = Color.white;
-            mesh.colors = colors;
-            filter.sharedMesh = mesh;
-        }
-
-        Shader shader = Shader.Find("Sprites/Default");
-        if (shader == null)
-            shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (renderer != null && shader != null)
-        {
-            var material = new Material(shader);
-            Color tint = color;
-            tint.a = alpha;
-            material.color = tint;
-            material.SetColor("_BaseColor", tint);
-            if (material.HasProperty("_Cull"))
-                material.SetFloat("_Cull", 0f);
-            renderer.sharedMaterial = material;
-        }
-
-        var fade = burst.AddComponent<Hd2RocketBurst>();
-        fade.diameter = diameter;
-        fade.color = color;
-        fade.alpha = alpha;
-    }
-}
-
-/// <summary>
-/// Short flash at a rocket explosion. The outer sphere grows to the damage radius.
-/// </summary>
-public class Hd2RocketBurst : MonoBehaviour
-{
-    public float diameter = 3f;
-    public Color color = Color.white;
-    public float alpha = 0.8f;
-    float age;
-    Material material;
-
-    void Awake()
-    {
-        var renderer = GetComponent<Renderer>();
-        if (renderer != null)
-            material = renderer.sharedMaterial;
-    }
-
-    void Update()
-    {
-        const float duration = 0.1f;
-        age += Time.deltaTime;
-        float t = Mathf.Clamp01(age / duration);
-        transform.localScale = Vector3.one * Mathf.Lerp(0.2f, diameter, t);
-        if (material != null)
-        {
-            Color tint = color;
-            tint.a = Mathf.Lerp(alpha, 0f, t);
-            material.color = tint;
-            material.SetColor("_BaseColor", tint);
-        }
-
-        if (age >= duration)
-            Destroy(gameObject);
-    }
-
-    void OnDestroy()
-    {
-        if (material != null)
-            Destroy(material);
     }
 }

@@ -2,24 +2,23 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Blue pad with a red pistol inside the sphere. A hand inside the sphere
+/// Peach pad with the Shocks icon inside the sphere. A hand inside the sphere
 /// swaps that hand's gun for Shocks while that hand's grip is held.
 /// </summary>
 [ExecuteAlways]
 public class Hd2ShocksPickup : MonoBehaviour
 {
+    public Texture2D icon;
     public GameObject gripLeft;
     public GameObject gripRight;
     public float cooldown = 10f;
 
-    static readonly Color pickupColor = new Color(0.22f, 0.4f, 0.95f, 1f);
+    static readonly Color pickupColor = new Color(1f, 0.906f, 0.82f, 1f);
     static readonly Vector3 equippedPosition = new Vector3(0f, 0.01f, 0.05f);
     const float equippedScale = 0.65f;
-    const float displayScale = 1.1f;
-    static readonly Vector3 displayEuler = new Vector3(-90f, 0f, 0f);
 
     Transform sphere;
-    Transform mini;
+    Transform iconQuad;
     LineRenderer ring;
     bool ready = true;
     float cooldownLeft;
@@ -55,15 +54,11 @@ public class Hd2ShocksPickup : MonoBehaviour
 
     void Update()
     {
-        if (mini == null && sphere != null && (gripLeft != null || gripRight != null))
-            BuildMini();
-
         var view = Camera.main;
+        if (iconQuad != null && view != null)
+            iconQuad.rotation = Quaternion.LookRotation(iconQuad.position - view.transform.position);
         if (ring != null && view != null)
             ring.transform.rotation = Quaternion.LookRotation(ring.transform.position - view.transform.position);
-
-        if (mini != null && ready)
-            mini.Rotate(0f, 40f * Time.deltaTime, 0f, Space.World);
 
         if (!ready)
         {
@@ -202,6 +197,18 @@ public class Hd2ShocksPickup : MonoBehaviour
         EnsureMaterial(transform.Find("Pad"), pickupColor, false);
         EnsureMaterial(transform.Find("Sphere"), new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
         EnsureLine(transform.Find("Ring"));
+        Transform iconTransform = transform.Find("Sphere/Icon");
+        if (iconTransform == null)
+            return;
+
+        var renderer = iconTransform.GetComponent<Renderer>();
+        if (renderer != null && (renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null))
+        {
+            var iconMaterial = new Material(Shader.Find("HD2/PickupIcon"));
+            if (icon != null)
+                iconMaterial.mainTexture = icon;
+            renderer.sharedMaterial = iconMaterial;
+        }
     }
 
     static void EnsureMaterial(Transform target, Color color, bool transparent)
@@ -239,15 +246,17 @@ public class Hd2ShocksPickup : MonoBehaviour
         if (transform.Find("Pad") != null)
         {
             sphere = transform.Find("Sphere");
-            mini = transform.Find("Sphere/Mini");
+            iconQuad = transform.Find("Sphere/Icon");
             ring = transform.Find("Ring") != null ? transform.Find("Ring").GetComponent<LineRenderer>() : null;
+            if (iconQuad == null)
+                BuildIcon();
             return;
         }
 
         var pad = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         pad.name = "Pad";
         pad.transform.SetParent(transform, false);
-        pad.transform.localPosition = new Vector3(0f, 0.03f, 0f);
+        pad.transform.localPosition = new Vector3(0f, 0.015f, 0f);
         pad.transform.localScale = new Vector3(0.7f, 0.03f, 0.7f);
         RemoveCollider(pad);
         Paint(pad, pickupColor, false);
@@ -255,15 +264,16 @@ public class Hd2ShocksPickup : MonoBehaviour
         var ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         ball.name = "Sphere";
         ball.transform.SetParent(transform, false);
-        ball.transform.localPosition = new Vector3(0f, 1.05f, 0f);
-        ball.transform.localScale = Vector3.one * 0.42f;
+        ball.transform.localPosition = new Vector3(0f, 1.3f, 0f);
+        ball.transform.localScale = Vector3.one * 0.7f;
         RemoveCollider(ball);
         Paint(ball, new Color(pickupColor.r, pickupColor.g, pickupColor.b, 0.35f), true);
         sphere = ball.transform;
 
         var ringObject = new GameObject("Ring");
         ringObject.transform.SetParent(transform, false);
-        ringObject.transform.localPosition = new Vector3(0f, 1.05f, 0f);
+        ringObject.transform.localPosition = new Vector3(0f, 1.3f, 0f);
+        ringObject.transform.localScale = Vector3.one * 0.7f;
         ring = ringObject.AddComponent<LineRenderer>();
         ring.useWorldSpace = false;
         ring.loop = false;
@@ -273,26 +283,25 @@ public class Hd2ShocksPickup : MonoBehaviour
         ring.startColor = ring.endColor = pickupColor;
         ring.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         ring.enabled = false;
-        BuildMini();
+        BuildIcon();
     }
 
-    void BuildMini()
+    void BuildIcon()
     {
-        if (sphere == null || sphere.Find("Mini") != null)
+        if (sphere == null || sphere.Find("Icon") != null)
             return;
 
-        GameObject model = gripRight != null ? gripRight : gripLeft;
-        if (model == null)
-            return;
-
-        var display = Instantiate(model, sphere);
-        display.name = "Mini";
-        display.transform.localPosition = Vector3.zero;
-        display.transform.localRotation = Quaternion.Euler(displayEuler);
-        display.transform.localScale = Vector3.one * displayScale;
-        StripColliders(display);
-        Hd2Shocks.TintRed(display);
-        mini = display.transform;
+        var iconObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        iconObject.name = "Icon";
+        iconObject.transform.SetParent(sphere, false);
+        iconObject.transform.localPosition = Vector3.zero;
+        iconObject.transform.localScale = Vector3.one * 0.48f;
+        RemoveCollider(iconObject);
+        var iconMaterial = new Material(Shader.Find("HD2/PickupIcon"));
+        if (icon != null)
+            iconMaterial.mainTexture = icon;
+        iconObject.GetComponent<Renderer>().sharedMaterial = iconMaterial;
+        iconQuad = iconObject.transform;
     }
 
     void SetRing(float amount)

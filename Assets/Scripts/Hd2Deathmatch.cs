@@ -32,6 +32,11 @@ public class Hd2Deathmatch : MonoBehaviour
         new ColorName { Name = "Black", Color = new Color(0.08f, 0.08f, 0.08f) }
     };
 
+    static readonly string[] BotNumbers =
+    {
+        "one", "two", "three", "four", "five", "six", "seven", "eight"
+    };
+
     class Fighter
     {
         public Transform Body;
@@ -73,6 +78,9 @@ public class Hd2Deathmatch : MonoBehaviour
             HookHealth();
             hooked = true;
         }
+
+        if (killLine != null && killLine.enabled && Time.time >= killLineUntil)
+            killLine.enabled = false;
 
         if (Over)
             return;
@@ -127,6 +135,7 @@ public class Hd2Deathmatch : MonoBehaviour
         {
             Transform spawn = director.PickOpening(0);
             director.MoveToSpawn(player.transform, spawn);
+            Hd2TeleportArrive.Play(player.transform.position);
             var health = player.GetComponent<Hd2Health>();
             if (health != null)
                 health.RememberSpawn();
@@ -148,7 +157,7 @@ public class Hd2Deathmatch : MonoBehaviour
     {
         fighters.Clear();
         if (player != null)
-            fighters.Add(MakeFighter(player.transform, Palette[0], true));
+            fighters.Add(MakeFighter(player.transform, Palette[0].Name, Palette[0].Color, true));
 
         var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         System.Array.Sort(bots, (a, b) => string.CompareOrdinal(a.name, b.name));
@@ -157,9 +166,11 @@ public class Hd2Deathmatch : MonoBehaviour
         {
             ColorName paint = Palette[colorIndex % Palette.Length];
             colorIndex++;
+            string name = BotName(i);
+            bots[i].displayName = name;
             bots[i].bodyColor = paint.Color;
             bots[i].useBodyColor = true;
-            fighters.Add(MakeFighter(bots[i].transform, paint, false));
+            fighters.Add(MakeFighter(bots[i].transform, name, paint.Color, false));
         }
 
         if (player != null)
@@ -171,13 +182,19 @@ public class Hd2Deathmatch : MonoBehaviour
         }
     }
 
-    static Fighter MakeFighter(Transform body, ColorName paint, bool isPlayer)
+    static string BotName(int index)
+    {
+        string word = index >= 0 && index < BotNumbers.Length ? BotNumbers[index] : (index + 1).ToString();
+        return "bot " + word;
+    }
+
+    static Fighter MakeFighter(Transform body, string name, Color color, bool isPlayer)
     {
         return new Fighter
         {
             Body = body,
-            Name = paint.Name,
-            Color = paint.Color,
+            Name = name,
+            Color = color,
             IsPlayer = isPlayer
         };
     }
@@ -210,6 +227,23 @@ public class Hd2Deathmatch : MonoBehaviour
         if (scorer != null && scorer != victim)
         {
             scorer.Kills++;
+            if (scorer.IsPlayer)
+            {
+                var hud = scorer.Body.GetComponent<Hd2Hud>();
+                if (hud != null)
+                    hud.ShowKill(victim.Name);
+            }
+
+            if (victim.IsPlayer)
+            {
+                var hud = victim.Body.GetComponent<Hd2Hud>();
+                if (hud != null)
+                    hud.ShowDeath(scorer.Name);
+            }
+
+            if (scorer.IsPlayer || victim.IsPlayer)
+                ShowKillLine(current, scorer.Body, victim.Body);
+
             if (scorer.Kills >= KillsToWin)
                 Finish(null);
         }
@@ -219,17 +253,78 @@ public class Hd2Deathmatch : MonoBehaviour
     {
         if (body == null)
             return null;
-        Transform root = body.root;
+
+        Fighter best = null;
+        int bestDepth = int.MaxValue;
         for (int i = 0; i < fighters.Count; i++)
         {
-            Fighter fighter = fighters[i];
-            if (fighter.Body == null)
+            Transform fighterBody = fighters[i].Body;
+            if (fighterBody == null)
                 continue;
-            if (fighter.Body == body || fighter.Body == root || fighter.Body.root == root)
-                return fighter;
+
+            Transform cursor = body;
+            int depth = 0;
+            while (cursor != null)
+            {
+                if (cursor == fighterBody)
+                {
+                    if (depth < bestDepth)
+                    {
+                        best = fighters[i];
+                        bestDepth = depth;
+                    }
+
+                    break;
+                }
+
+                cursor = cursor.parent;
+                depth++;
+            }
         }
 
-        return null;
+        return best;
+    }
+
+    LineRenderer killLine;
+    float killLineUntil;
+
+    void ShowKillLine(Hd2Health victim, Transform fromBody, Transform toBody)
+    {
+        if (victim == null)
+            return;
+
+        Vector3 from = victim.LastShotOrigin;
+        Vector3 to = victim.LastHitPoint;
+        if ((from - to).sqrMagnitude < 0.04f)
+        {
+            if (fromBody == null || toBody == null)
+                return;
+            from = fromBody.position + Vector3.up * 1.2f;
+            to = toBody.position + Vector3.up * 1.1f;
+        }
+
+        if (killLine == null)
+        {
+            var lineObject = new GameObject("KillLine");
+            killLine = lineObject.AddComponent<LineRenderer>();
+            killLine.positionCount = 2;
+            killLine.startWidth = 0.03f;
+            killLine.endWidth = 0.03f;
+            killLine.numCapVertices = 4;
+            killLine.useWorldSpace = true;
+            killLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            killLine.receiveShadows = false;
+            Material material = Resources.Load<Material>("Spark");
+            if (material != null)
+                killLine.sharedMaterial = material;
+            killLine.startColor = Color.white;
+            killLine.endColor = Color.white;
+        }
+
+        killLine.SetPosition(0, from);
+        killLine.SetPosition(1, to);
+        killLine.enabled = true;
+        killLineUntil = Time.time + 2.5f;
     }
 
     void Finish(string reason)

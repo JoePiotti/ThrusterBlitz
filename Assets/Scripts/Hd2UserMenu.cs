@@ -564,7 +564,7 @@ public class Hd2UserMenu : MonoBehaviour
     void ResetControls()
     {
         controls.SetDefaults();
-        controls.MicrophoneMode = Hd2ControlMap.MicMode.PushToTalk;
+        controls.MicrophoneMode = Hd2ControlMap.MicMode.Toggle;
         HideActionList();
     }
 

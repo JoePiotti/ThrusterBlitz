@@ -119,7 +119,7 @@ public class Hd2ThrustPickup : MonoBehaviour
         iconObject.name = "Icon";
         iconObject.transform.SetParent(sphere, false);
         iconObject.transform.localPosition = Vector3.zero;
-        iconObject.transform.localScale = Vector3.one * 0.62f;
+        iconObject.transform.localScale = Vector3.one * 0.36f;
         DestroyCollider(iconObject);
         iconMaterial = new Material(Shader.Find("HD2/JetpackIcon"));
         if (icon != null)
