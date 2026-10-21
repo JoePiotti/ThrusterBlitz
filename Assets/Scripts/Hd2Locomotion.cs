@@ -23,8 +23,8 @@ using UnityEngine.XR;
 ///   at the first solid hit. Release moves the root toward that point at
 ///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, a hit on
 ///   Hd2NoLanding, or a hit on water does nothing. The pointer stays red on water.
-///   The local player's aim arc ignores Hd2SpawnField and continues to a landing beyond it.
-///   The shield still stops shots from outside and is meant to block enemies, not this player.
+///   The aim arc passes a spawn shield only when this body is on that shield's team.
+///   The shield still stops shots from outside.
 ///   Arc color: the rail's own color on a grind rail, green on other legal landings, red when the landing
 ///   is illegal or there is no valid hit. The arc stops at thrustMaxDistance instead of turning red
 ///   for being too far. With less than one thrust charge the lines keep that color,
@@ -116,6 +116,8 @@ public class Hd2Locomotion : MonoBehaviour
     [Header("Team")]
     [Tooltip("Blitz sparkle color. Use red or blue for a team. Gold is the demo default.")]
     public Color teamColor = new Color(1f, 0.76f, 0.22f, 1f);
+    [Tooltip("Spawn shields of this team let this player through. None is stopped by red and blue shields.")]
+    public Hd2Team team;
 
     [Header("Body")]
     public float bodyRadius = 0.25f;
@@ -981,9 +983,8 @@ public class Hd2Locomotion : MonoBehaviour
                 Hd2SpawnField field = hit.collider != null
                     ? hit.collider.GetComponentInParent<Hd2SpawnField>()
                     : null;
-                if (field != null)
+                if (field != null && field.Allows(this))
                 {
-                    // The local player may aim through the spawn shield. Enemies do not use this arc.
                     Vector3 travel = next - pos;
                     if (travel.sqrMagnitude < 0.0000001f)
                         travel = velocity;
@@ -1301,7 +1302,7 @@ public class Hd2Locomotion : MonoBehaviour
             arcPoints[arcPointCount++] = hit.point;
 
         Hd2SpawnField field = hit.collider != null ? hit.collider.GetComponentInParent<Hd2SpawnField>() : null;
-        if (field != null)
+        if (field != null && field.Allows(this))
         {
             Vector3 passLanding = field.PassThroughPoint(hit.point, Vector3.down, bodyRadius, out Collider ground);
             if (arcPointCount < ArcPointCapacity)
@@ -1392,8 +1393,8 @@ public class Hd2Locomotion : MonoBehaviour
             || collider.GetComponentInParent<Hd2Water>() != null;
     }
 
-    // The spawn field stays solid so outside shots hit it. The local player walks and
-    // falls through it. Thrust aims through it in SimulateArc.
+    // The spawn field stays solid so outside shots hit it. This body walks through
+    // a shield only when that shield allows this team.
     bool CastBody(Vector3 bottom, Vector3 top, float radius, Vector3 direction, float distance, out RaycastHit hit)
     {
         int count = Physics.CapsuleCastNonAlloc(bottom, top, radius, direction, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
@@ -1421,7 +1422,8 @@ public class Hd2Locomotion : MonoBehaviour
             Collider collider = bodyHits[i].collider;
             if (IsSelf(collider))
                 continue;
-            if (collider != null && collider.GetComponentInParent<Hd2SpawnField>() != null)
+            Hd2SpawnField field = collider != null ? collider.GetComponentInParent<Hd2SpawnField>() : null;
+            if (field != null && field.Allows(this))
                 continue;
             if (bodyHits[i].distance >= best)
                 continue;
@@ -1515,6 +1517,9 @@ public class Hd2Locomotion : MonoBehaviour
 
     bool BeginThrust()
     {
+        if (Hd2SpawnField.Blocks(this, transform.position + Vector3.up * 0.9f, aimLanding + Vector3.up * 0.9f))
+            return false;
+
         var meter = GetComponent<Hd2ThrustMeter>();
         if (meter != null && !meter.TrySpend())
             return false;
@@ -1842,7 +1847,8 @@ public class Hd2Locomotion : MonoBehaviour
             return false;
         if (collider.transform == transform || collider.transform.IsChildOf(transform))
             return false;
-        if (collider.GetComponentInParent<Hd2SpawnField>() != null)
+        Hd2SpawnField field = collider.GetComponentInParent<Hd2SpawnField>();
+        if (field != null && field.Allows(this))
             return false;
         if (collider.GetComponentInParent<Hd2GrindRail>() != null)
             return false;

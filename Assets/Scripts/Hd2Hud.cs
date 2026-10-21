@@ -4,9 +4,10 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Player-only readout, low and to the left of the view. More rows can be added later.
-/// Health is a green percent. Below 10 health that number turns red and blinks.
-/// Blitz is the charge to a tenth, such as 2.3. The microphone is green while open and gray while closed,
-/// with an On or Off label beside the icon.
+/// Health is a whole percent, such as 84%. Below 10 health that number turns red and blinks.
+/// Thrust is whole charges out of the current maximum, such as 2/3 or 2/5.
+/// The microphone is green while open and gray while closed, with an On or Off label beside the icon.
+/// It follows the button mapped to the microphone.
 /// </summary>
 public class Hd2Hud : MonoBehaviour
 {
@@ -17,7 +18,6 @@ public class Hd2Hud : MonoBehaviour
     static readonly Color micGreen = new Color(0.3f, 0.95f, 0.4f, 1f);
     static readonly Color micGray = new Color(0.42f, 0.44f, 0.46f, 1f);
     static readonly string[] percents = BuildPercents();
-    static readonly string[] tenths = BuildTenths();
 
     Hd2Health health;
     Hd2ThrustMeter meter;
@@ -37,16 +37,29 @@ public class Hd2Hud : MonoBehaviour
     bool shownMic;
     bool micReady;
     int shownPercent = -1;
-    int shownTenth = -1;
+    int shownCharges = -1;
+    int shownMax = -1;
     bool shownCritical;
     bool blinkOn = true;
 
     void Awake()
     {
-        health = GetComponent<Hd2Health>();
-        meter = GetComponent<Hd2ThrustMeter>();
-        controls = GetComponent<Hd2ControlMap>();
         Build();
+    }
+
+    void Start()
+    {
+        Bind();
+    }
+
+    void Bind()
+    {
+        if (health == null)
+            health = GetComponent<Hd2Health>();
+        if (meter == null)
+            meter = GetComponent<Hd2ThrustMeter>();
+        if (controls == null)
+            controls = GetComponent<Hd2ControlMap>();
     }
 
     void OnDestroy()
@@ -69,6 +82,7 @@ public class Hd2Hud : MonoBehaviour
 
     void LateUpdate()
     {
+        Bind();
         RefreshHealth();
         RefreshBlitz();
         RefreshMic();
@@ -129,12 +143,15 @@ public class Hd2Hud : MonoBehaviour
         if (meter == null || blitzReadout == null)
             return;
 
-        int tenth = Mathf.Clamp(Mathf.RoundToInt(meter.Charges * 10f), 0, 99);
-        if (tenth == shownTenth)
+        int whole = Mathf.FloorToInt(meter.Charges + 0.0001f);
+        int max = Mathf.Max(1, meter.MaxCharges);
+        whole = Mathf.Clamp(whole, 0, max);
+        if (whole == shownCharges && max == shownMax)
             return;
 
-        shownTenth = tenth;
-        blitzReadout.text = tenths[tenth];
+        shownCharges = whole;
+        shownMax = max;
+        blitzReadout.text = whole + "/" + max;
     }
 
     void RefreshMic()
@@ -163,14 +180,6 @@ public class Hd2Hud : MonoBehaviour
         var values = new string[101];
         for (int i = 0; i < values.Length; i++)
             values[i] = i + "%";
-        return values;
-    }
-
-    static string[] BuildTenths()
-    {
-        var values = new string[100];
-        for (int i = 0; i < values.Length; i++)
-            values[i] = (i / 10) + "." + (i % 10);
         return values;
     }
 
@@ -222,7 +231,7 @@ public class Hd2Hud : MonoBehaviour
         blitzReadout = MakeReadout(view, new Vector3(-0.35f, -0.27f, 0.9f), blitzColor, TextAnchor.MiddleLeft);
         micReadout = MakeReadout(view, new Vector3(-0.35f, -0.334f, 0.9f), micGray, TextAnchor.MiddleLeft);
         healthReadout.text = percents[100];
-        blitzReadout.text = tenths[0];
+        blitzReadout.text = "3/3";
         micReadout.text = "Off";
         banner = MakeReadout(view, new Vector3(0.36f, -0.2f, 0.9f), Color.white, TextAnchor.MiddleRight);
         banner.gameObject.SetActive(false);

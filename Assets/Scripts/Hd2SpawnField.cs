@@ -1,25 +1,31 @@
 using UnityEngine;
 
+public enum Hd2Team
+{
+    None = 0,
+    Red = 1,
+    Blue = 2
+}
+
 /// <summary>
 /// One-way barrier across a spawn-room opening.
 /// Transform.forward is the outward normal: it points out of the room, toward the map.
 /// Inside is the opposite side (the room).
 ///
 /// Shots from inside pass through. Shots from outside stop on this collider.
-/// Teammates may enter. Enemies must be blocked from crossing into the room.
-/// There are no enemies yet, and there is no enemy layer. Keep this object on the
-/// default layer with a solid (non-trigger) collider so Hd2Shot, which raycasts
-/// every layer and ignores triggers, can hit it. Do not add Hd2NoLanding.
-/// A later enemy mover that sets position directly must call MayEnter and refuse
-/// the move when it returns false. Physics bodies are already stopped by the collider.
-/// The local player is a teammate: Hd2Locomotion does not treat this collider as a wall,
-/// and MayEnter returns true for a collider under Hd2Locomotion.
+/// A shield with a team lets only that team cross. A shield with no team still lets
+/// the local player through and stops everyone else.
+/// Keep this object on the default layer with a solid (non-trigger) collider so
+/// Hd2Shot, which raycasts every layer and ignores triggers, can hit it. Do not add Hd2NoLanding.
 /// </summary>
 public class Hd2SpawnField : MonoBehaviour
 {
+    [Tooltip("Who may cross this shield. None lets the local player through and stops everyone else.")]
+    public Hd2Team team;
     const float InsideSlack = 0.05f;
 
     static readonly RaycastHit[] groundHits = new RaycastHit[16];
+    static readonly RaycastHit[] blockHits = new RaycastHit[16];
     static Material markMaterial;
 
     public Vector3 Outward => transform.forward;
@@ -43,20 +49,89 @@ public class Hd2SpawnField : MonoBehaviour
     }
 
     /// <summary>
-    /// Whether this body may cross into the room.
-    /// Teammates may enter. Enemies must be blocked: anything that is not a teammate returns false.
+    /// Whether this body may cross the shield.
     /// </summary>
     public bool MayEnter(Collider body)
     {
-        return IsTeammate(body);
+        return Allows(body);
+    }
+
+    public bool Allows(Component body)
+    {
+        if (body == null)
+            return false;
+        if (team == Hd2Team.None)
+            return body.GetComponentInParent<Hd2Locomotion>() != null;
+        return TeamOf(body) == team;
+    }
+
+    public static Hd2Team TeamOf(Component body)
+    {
+        if (body == null)
+            return Hd2Team.None;
+
+        Hd2Locomotion player = body.GetComponentInParent<Hd2Locomotion>();
+        if (player != null)
+            return player.team;
+
+        Hd2EnemyBot bot = body.GetComponentInParent<Hd2EnemyBot>();
+        if (bot != null)
+            return bot.team;
+
+        return Hd2Team.None;
     }
 
     /// <summary>
-    /// The local player counts as a teammate. A future enemy collider does not.
+    /// The local player counts as a teammate of an unassigned shield.
     /// </summary>
     public static bool IsTeammate(Collider body)
     {
         return body != null && body.GetComponentInParent<Hd2Locomotion>() != null;
+    }
+
+    /// <summary>
+    /// Matching teams do not collide with this solid shield. Everyone else does.
+    /// </summary>
+    public static void ApplyPass(Component mover, Collider moverCollider)
+    {
+        if (mover == null || moverCollider == null)
+            return;
+
+        Hd2SpawnField[] fields = Object.FindObjectsByType<Hd2SpawnField>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < fields.Length; i++)
+        {
+            Hd2SpawnField field = fields[i];
+            if (field == null)
+                continue;
+            Collider shield = field.GetComponent<Collider>();
+            if (shield == null || shield == moverCollider)
+                continue;
+            Physics.IgnoreCollision(moverCollider, shield, field.Allows(mover));
+        }
+    }
+
+    /// <summary>
+    /// True when the segment crosses a shield this body may not enter.
+    /// </summary>
+    public static bool Blocks(Component mover, Vector3 from, Vector3 to)
+    {
+        Vector3 delta = to - from;
+        float distance = delta.magnitude;
+        if (distance < 0.02f)
+            return false;
+
+        int count = Physics.RaycastNonAlloc(from, delta / distance, blockHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = blockHits[i].collider;
+            if (collider == null)
+                continue;
+            Hd2SpawnField field = collider.GetComponentInParent<Hd2SpawnField>();
+            if (field != null && !field.Allows(mover))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -134,6 +209,7 @@ public class Hd2SpawnField : MonoBehaviour
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         renderer.sharedMaterial = MarkMaterial();
+        mark.AddComponent<Hd2FieldHit>();
     }
 
     static Material MarkMaterial()
@@ -141,12 +217,14 @@ public class Hd2SpawnField : MonoBehaviour
         if (markMaterial != null)
             return markMaterial;
 
-        var shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (shader == null)
-            shader = Shader.Find("Universal Render Pipeline/Lit");
+        markMaterial = Resources.Load<Material>("FieldHit");
+        if (markMaterial != null)
+            return markMaterial;
+
+        var shader = Shader.Find("HD2/FieldHit");
         markMaterial = shader != null ? new Material(shader) : null;
         if (markMaterial != null)
-            markMaterial.color = new Color(0.02f, 0.04f, 0.06f, 1f);
+            markMaterial.SetColor("_BaseColor", new Color(0.02f, 0.04f, 0.06f, 1f));
         return markMaterial;
     }
 
@@ -155,5 +233,39 @@ public class Hd2SpawnField : MonoBehaviour
         Gizmos.color = new Color(0.3f, 0.9f, 1f, 0.95f);
         Vector3 origin = transform.position;
         Gizmos.DrawLine(origin, origin + Outward * 0.8f);
+    }
+}
+
+/// <summary>
+/// Dark shield hit, visible from either side. Fades out over 15 seconds, then goes away.
+/// </summary>
+sealed class Hd2FieldHit : MonoBehaviour
+{
+    const float Life = 15f;
+    static readonly Color ink = new Color(0.02f, 0.04f, 0.06f, 1f);
+
+    MeshRenderer markRenderer;
+    MaterialPropertyBlock block;
+    float age;
+
+    void Awake()
+    {
+        markRenderer = GetComponent<MeshRenderer>();
+        block = new MaterialPropertyBlock();
+    }
+
+    void Update()
+    {
+        age += Time.deltaTime;
+        if (markRenderer != null && block != null)
+        {
+            Color color = ink;
+            color.a = 1f - Mathf.Clamp01(age / Life);
+            block.SetColor("_BaseColor", color);
+            markRenderer.SetPropertyBlock(block);
+        }
+
+        if (age >= Life)
+            Destroy(gameObject);
     }
 }

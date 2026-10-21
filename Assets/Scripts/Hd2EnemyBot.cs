@@ -13,6 +13,8 @@ public class Hd2EnemyBot : MonoBehaviour
     public GameObject robotPrefab;
     public GameObject pistolModel;
     public Color bodyColor = Color.white;
+    [Tooltip("Spawn shields of this team let this bot through.")]
+    public Hd2Team team;
     public string displayName = "bot";
     public bool useBodyColor;
 
@@ -130,6 +132,7 @@ public class Hd2EnemyBot : MonoBehaviour
         body.center = new Vector3(0f, 0.9f, 0f);
         body.stepOffset = 0.4f;
         body.skinWidth = 0.05f;
+        Hd2SpawnField.ApplyPass(this, body);
 
         health = gameObject.AddComponent<Hd2Health>();
         health.autoRespawn = false;
@@ -934,6 +937,14 @@ public class Hd2EnemyBot : MonoBehaviour
             float t = duration <= 0.01f ? 1f : Mathf.Clamp01(travelElapsed / duration);
             float hop = 4f * BlitzHop * t * (1f - t);
             Vector3 next = Vector3.Lerp(travelStart, travelEnd, t) + Vector3.up * hop;
+            if (Hd2SpawnField.Blocks(this, transform.position + Vector3.up * 0.9f, next + Vector3.up * 0.9f))
+            {
+                traveling = false;
+                if (body != null)
+                    body.enabled = true;
+                return;
+            }
+
             if (body != null)
                 body.enabled = false;
             transform.position = next;

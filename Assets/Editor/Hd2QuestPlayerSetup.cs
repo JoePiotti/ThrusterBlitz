@@ -9,7 +9,29 @@ public static class Hd2QuestPlayerSetup
 
     static Hd2QuestPlayerSetup()
     {
+        EditorApplication.delayCall += EnsureTowersStarts;
         EditorApplication.delayCall += AutoSetupIfNeeded;
+    }
+
+    static void EnsureTowersStarts()
+    {
+        const string towers = "Assets/Scenes/Towers.unity";
+        var scenes = EditorBuildSettings.scenes;
+        if (scenes.Length > 0 && scenes[0].enabled && scenes[0].path == towers)
+            return;
+
+        var next = new System.Collections.Generic.List<EditorBuildSettingsScene>
+        {
+            new EditorBuildSettingsScene(towers, true)
+        };
+        for (int i = 0; i < scenes.Length; i++)
+        {
+            if (scenes[i].path == towers)
+                continue;
+            next.Add(new EditorBuildSettingsScene(scenes[i].path, false));
+        }
+
+        EditorBuildSettings.scenes = next.ToArray();
     }
 
     static void AutoSetupIfNeeded()
@@ -27,7 +49,8 @@ public static class Hd2QuestPlayerSetup
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.tb.game");
         EditorBuildSettings.scenes = new[]
         {
-            new EditorBuildSettingsScene("Assets/Scenes/Deathmatch.unity", true),
+            new EditorBuildSettingsScene("Assets/Scenes/Towers.unity", true),
+            new EditorBuildSettingsScene("Assets/Scenes/Deathmatch.unity", false),
             new EditorBuildSettingsScene("Assets/Scenes/Greybox.unity", false)
         };
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel32;

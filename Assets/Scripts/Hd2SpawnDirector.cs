@@ -36,19 +36,22 @@ public class Hd2SpawnDirector : MonoBehaviour
     }
 
     /// <summary>
-    /// Match-start spawn: unique point by sorted index, wrapping if more players than points.
+    /// Match-start spawn: unique deathmatch point by sorted index, wrapping if more players than points.
+    /// Points with a red or blue team are reserved and are not used here.
     /// </summary>
     public Transform PickOpening(int playerIndex)
     {
         if (points == null || points.Length == 0)
             RefreshPoints();
-        if (points.Length == 0)
+
+        int count = CountTeam(null);
+        if (count == 0)
             return null;
 
-        int i = playerIndex % points.Length;
+        int i = playerIndex % count;
         if (i < 0)
-            i += points.Length;
-        return points[i].transform;
+            i += count;
+        return PointForTeam(null, i);
     }
 
     /// <summary>
@@ -58,17 +61,25 @@ public class Hd2SpawnDirector : MonoBehaviour
     {
         if (points == null || points.Length == 0)
             RefreshPoints();
-        if (points.Length == 0)
+
+        int count = CountTeam(null);
+        if (count == 0)
             return null;
 
         var living = CollectLivingOthers(self);
         if (living.Count == 0)
-            return points[Random.Range(0, points.Length)].transform;
+            return PointForTeam(null, Random.Range(0, count));
 
         float bestMin = float.NegativeInfinity;
         var mins = new float[points.Length];
         for (int i = 0; i < points.Length; i++)
         {
+            if (!Matches(points[i], null))
+            {
+                mins[i] = float.NegativeInfinity;
+                continue;
+            }
+
             float minDist = float.PositiveInfinity;
             Vector3 spawnPos = points[i].transform.position;
             for (int j = 0; j < living.Count; j++)
@@ -86,21 +97,61 @@ public class Hd2SpawnDirector : MonoBehaviour
         int tieCount = 0;
         for (int i = 0; i < points.Length; i++)
         {
+            if (!Matches(points[i], null))
+                continue;
             if (mins[i] >= bestMin - TieEpsilon)
                 tieCount++;
         }
 
+        if (tieCount == 0)
+            return null;
+
         int pick = Random.Range(0, tieCount);
         for (int i = 0; i < points.Length; i++)
         {
-            if (mins[i] < bestMin - TieEpsilon)
+            if (!Matches(points[i], null) || mins[i] < bestMin - TieEpsilon)
                 continue;
             if (pick == 0)
                 return points[i].transform;
             pick--;
         }
 
-        return points[0].transform;
+        return PointForTeam(null, 0);
+    }
+
+    int CountTeam(Hd2Team? team)
+    {
+        int count = 0;
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (Matches(points[i], team))
+                count++;
+        }
+
+        return count;
+    }
+
+    Transform PointForTeam(Hd2Team? team, int ordinal)
+    {
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (!Matches(points[i], team))
+                continue;
+            if (ordinal == 0)
+                return points[i].transform;
+            ordinal--;
+        }
+
+        return null;
+    }
+
+    static bool Matches(Hd2SpawnPoint point, Hd2Team? team)
+    {
+        if (point == null)
+            return false;
+        if (!team.HasValue)
+            return !point.team.HasValue;
+        return point.team == team;
     }
 
     public void MoveToSpawn(Transform body, Transform spawn)

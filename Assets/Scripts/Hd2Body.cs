@@ -44,9 +44,9 @@ public class Hd2Body : MonoBehaviour
     public float bodyFollowAngle = 30f;
     [Tooltip("How fast the walk cycle plays, in steps per meter.")]
     public float walkStepRate = 1.6f;
-    [Tooltip("Resting length of each arm as a fraction of the rig. 0.6 is three fifths, so a normal gun hold stretches the arm out.")]
+    [Tooltip("No longer shortens the forearm. Forearms rest at the model's full length.")]
     public float armReachScale = 0.6f;
-    [Tooltip("How many times longer the upper arm and the forearm may each get. Extra reach is split between them.")]
+    [Tooltip("Longest the forearm may grow, as a multiple of the model length, after the arm is fully straight and the hand is still farther out.")]
     public float forearmMaxStretch = 2.5f;
     [Tooltip("Drag these in the prefab. They are not skinned, so the arm mesh stays put. Play mode swings the arm around them.")]
     public Transform shoulderPivotL;
@@ -1133,7 +1133,8 @@ public class Hd2Body : MonoBehaviour
         Vector3 direction = toTarget.sqrMagnitude > 0.0001f ? toTarget.normalized : body.forward;
         Vector3 aim = direction * distance;
 
-        Vector3 pole = shoulder + body.right * side + body.forward * -0.35f + Vector3.up * -0.15f;
+        // Closer hands fold the elbow out to the side. The forearm is not shortened to reach them.
+        Vector3 pole = shoulder + body.right * side + Vector3.up * -0.35f;
         Vector3 bend = Vector3.Cross(aim, pole - shoulder);
         if (bend.sqrMagnitude < 0.0001f)
             bend = Vector3.Cross(aim, Vector3.up);
@@ -1158,8 +1159,8 @@ public class Hd2Body : MonoBehaviour
             float foreScale = foreAxis == 0 ? foreScaleNow.x : foreAxis == 1 ? foreScaleNow.y : foreScaleNow.z;
             float restFore = foreScale > 0.01f ? foreLength / foreScale : foreLength;
             float needed = Vector3.Distance(elbow, wrist);
-            float maxScale = Mathf.Max(Mathf.Clamp(armReachScale, 0.2f, 1f), forearmMaxStretch);
-            SetAxisScale(forearm, foreAxis, Mathf.Clamp(needed / Mathf.Max(restFore, 0.02f), 0.35f, maxScale));
+            float maxScale = Mathf.Max(1f, forearmMaxStretch);
+            SetAxisScale(forearm, foreAxis, Mathf.Clamp(needed / Mathf.Max(restFore, 0.02f), 1f, maxScale));
         }
 
         PointAt(upper, forearm, elbow);
@@ -1255,12 +1256,17 @@ public class Hd2Body : MonoBehaviour
         if (upperLength < 0.02f || foreLength < 0.02f)
             return;
 
-        float reachScale = Mathf.Clamp(armReachScale, 0.2f, 1f);
         float gap = Vector3.Distance(upper.position, wrist);
-        float maxScale = Mathf.Max(reachScale, forearmMaxStretch);
-        // Leave the upper arm at its real length. Scaling it stretches the
-        // shoulder into a wing. The forearm takes whatever extra reach is needed.
-        float foreScale = Mathf.Clamp((gap - upperLength) / foreLength, 0.35f, maxScale);
+        float straight = upperLength + foreLength;
+        // Stay at the model's forearm length, and fold at the elbow, until the
+        // arm is straight and the hand is still farther out than that.
+        float foreScale = 1f;
+        if (gap > straight)
+        {
+            float maxScale = Mathf.Max(1f, forearmMaxStretch);
+            foreScale = Mathf.Min(maxScale, (gap - upperLength) / foreLength);
+        }
+
         SetAxisScale(forearm, LengthAxis(forearm, hand), foreScale);
     }
 

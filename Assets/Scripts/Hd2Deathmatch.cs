@@ -170,15 +170,26 @@ public class Hd2Deathmatch : MonoBehaviour
             bots[i].displayName = name;
             bots[i].bodyColor = paint.Color;
             bots[i].useBodyColor = true;
+            bots[i].team = paint.Name == "Red" ? Hd2Team.Red : paint.Name == "Blue" ? Hd2Team.Blue : Hd2Team.None;
             fighters.Add(MakeFighter(bots[i].transform, name, paint.Color, false));
         }
 
         if (player != null)
         {
             player.teamColor = Palette[0].Color;
+            player.team = Hd2Team.None;
             var body = player.GetComponent<Hd2Body>();
             if (body != null)
                 body.SetArmorColor(Palette[0].Color);
+        }
+
+        for (int i = 0; i < bots.Length; i++)
+        {
+            if (bots[i] == null)
+                continue;
+            var controller = bots[i].GetComponent<CharacterController>();
+            if (controller != null)
+                Hd2SpawnField.ApplyPass(bots[i], controller);
         }
     }
 
@@ -241,7 +252,7 @@ public class Hd2Deathmatch : MonoBehaviour
                     hud.ShowDeath(scorer.Name);
             }
 
-            if (scorer.IsPlayer || victim.IsPlayer)
+            if (victim.IsPlayer)
                 ShowKillLine(current, scorer.Body, victim.Body);
 
             if (scorer.Kills >= KillsToWin)
@@ -314,11 +325,17 @@ public class Hd2Deathmatch : MonoBehaviour
             killLine.useWorldSpace = true;
             killLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             killLine.receiveShadows = false;
-            Material material = Resources.Load<Material>("Spark");
-            if (material != null)
-                killLine.sharedMaterial = material;
-            killLine.startColor = Color.white;
-            killLine.endColor = Color.white;
+            Material source = Resources.Load<Material>("Spark");
+            if (source != null)
+            {
+                var material = new Material(source);
+                material.SetColor("_BaseColor", Color.red);
+                material.SetColor("_Color", Color.red);
+                killLine.material = material;
+            }
+
+            killLine.startColor = Color.red;
+            killLine.endColor = Color.red;
         }
 
         killLine.SetPosition(0, from);
