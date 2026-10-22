@@ -10,7 +10,7 @@ using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Places one instance of each pickup prefab that is not already in the open
-/// Towers scene. Runs only while .utmp/pickup_row_place.requested exists.
+/// Rome scene. Runs only while .utmp/pickup_row_place.requested exists.
 /// Does not open or reload a scene.
 /// </summary>
 [InitializeOnLoad]
@@ -77,7 +77,7 @@ public static class Hd2PickupRowPlace
         }
 
         var scene = EditorSceneManager.GetActiveScene();
-        if (!scene.IsValid() || !scene.path.Replace('\\', '/').EndsWith("Assets/Scenes/Towers.unity", StringComparison.OrdinalIgnoreCase))
+        if (!scene.IsValid() || !scene.path.Replace('\\', '/').EndsWith("Assets/Scenes/Rome.unity", StringComparison.OrdinalIgnoreCase))
         {
             WriteReport("ERROR active scene is '" + scene.path + "'; did not open or reload a scene");
             TryDelete(request);
@@ -156,7 +156,7 @@ public static class Hd2PickupRowPlace
 
         var coliseum = FindNamed(scene, "Coliseum");
         if (coliseum == null || !TryBounds(coliseum, out Bounds coliseumBounds))
-            throw new InvalidOperationException("Coliseum was not in the open Towers scene");
+            throw new InvalidOperationException("Coliseum was not in the open Rome scene");
 
         var blockers = CollectBlockers(scene);
         if (!TryFindRow(coliseumBounds, missing.Count, blockers, out float originX, out float rowZ, out string search))

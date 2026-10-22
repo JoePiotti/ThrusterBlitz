@@ -1990,6 +1990,7 @@ public class Hd2Locomotion : MonoBehaviour
 
     // A lip of stepHeight or less is not a wall. Lift over it, finish the step,
     // then put the feet on the floor on the other side, up or down.
+    // The rise test starts behind the contact so the lip itself is not a ceiling.
     bool TryStep(Vector3 direction, float distance, float blockedTravel)
     {
         float rise = stepHeight;
@@ -2000,36 +2001,91 @@ public class Hd2Locomotion : MonoBehaviour
         if (remaining < 0.001f)
             return false;
 
+        float backoff = skinWidth + 0.03f;
+        Vector3 back = direction * backoff;
         CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        bottom -= back;
+        top -= back;
         float radius = bodyRadius * 0.9f;
-        if (CastBody(bottom, top, radius, Vector3.up, rise + skinWidth, out RaycastHit ceiling))
+        if (CastBody(bottom, top, radius, Vector3.up, rise + skinWidth, out RaycastHit ceiling)
+            && ceiling.distance > 0.001f
+            && ceiling.normal.y < -0.2f)
         {
             rise = Mathf.Max(0f, ceiling.distance - skinWidth);
             if (rise < 0.02f)
                 return false;
         }
 
+        float forward = remaining + backoff;
         Vector3 raised = Vector3.up * rise;
-        if (CastBody(bottom + raised, top + raised, radius, direction, remaining + skinWidth, out RaycastHit wall))
+        if (CastBody(bottom + raised, top + raised, radius, direction, forward + skinWidth, out RaycastHit wall))
         {
-            remaining = Mathf.Max(0f, wall.distance - skinWidth);
-            if (remaining < 0.01f)
+            forward = Mathf.Max(0f, wall.distance - skinWidth);
+            if (forward < 0.02f)
                 return false;
         }
 
         Vector3 feet = transform.position;
-        Vector3 landed = feet + direction * (blockedTravel + remaining) + raised;
-        if (!RaycastBody(landed + Vector3.up * 0.05f, Vector3.down, rise + stepHeight + 0.15f, out RaycastHit floor))
+        Vector3 landed = feet - back + direction * forward + raised;
+        if (!TryStepFloor(landed + Vector3.up * 0.05f, rise + stepHeight + 0.2f, out float floorY))
             return false;
 
-        float change = floor.point.y - feet.y;
+        float change = floorY - feet.y;
         if (change > stepHeight + 0.001f || change < -stepHeight - 0.001f)
             return false;
-        if (Mathf.Abs(change) < 0.01f)
+        if (change < 0.004f && change > -0.004f)
             return false;
 
-        landed.y = floor.point.y;
+        landed.y = floorY;
+        if (!CapsuleFits(landed))
+            return false;
+
         transform.position = landed;
+        return true;
+    }
+
+    bool TryStepFloor(Vector3 origin, float distance, out float floorY)
+    {
+        floorY = origin.y;
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = bodyHits[i].collider;
+            if (IsSelf(collider))
+                continue;
+            Hd2SpawnField field = collider != null ? collider.GetComponentInParent<Hd2SpawnField>() : null;
+            if (field != null && field.Allows(this))
+                continue;
+            if (bodyHits[i].normal.y < 0.45f)
+                continue;
+            if (bodyHits[i].distance >= best)
+                continue;
+
+            best = bodyHits[i].distance;
+            floorY = bodyHits[i].point.y;
+            found = true;
+        }
+
+        return found;
+    }
+
+    bool CapsuleFits(Vector3 feet)
+    {
+        float radius = Mathf.Max(0.05f, bodyRadius);
+        float height = Mathf.Max(bodyHeight, radius * 2f + 0.01f);
+        float castRadius = radius * 0.9f;
+        Vector3 bottom = feet + Vector3.up * (radius + skinWidth);
+        Vector3 top = feet + Vector3.up * (height - radius);
+        int count = Physics.OverlapCapsuleNonAlloc(bottom, top, castRadius, stuckOverlap, ~0, QueryTriggerInteraction.Ignore);
+        float limit = skinWidth * skinWidth;
+        for (int i = 0; i < count; i++)
+        {
+            if (TryWallPush(stuckOverlap[i], bottom, top, castRadius, out Vector3 push) && push.sqrMagnitude > limit)
+                return false;
+        }
+
         return true;
     }
 

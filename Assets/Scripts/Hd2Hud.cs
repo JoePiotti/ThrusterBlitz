@@ -8,6 +8,8 @@ using UnityEngine.UI;
 /// Thrust is whole charges out of the current maximum, such as 2/3 or 2/5.
 /// The microphone is green while open and gray while closed, with an On or Off label beside the icon.
 /// It follows the button mapped to the microphone.
+/// During domination, A B C sit just above that stack. Each letter is white, blue, or red
+/// with the matching point.
 /// </summary>
 public class Hd2Hud : MonoBehaviour
 {
@@ -41,6 +43,16 @@ public class Hd2Hud : MonoBehaviour
     int shownMax = -1;
     bool shownCritical;
     bool blinkOn = true;
+    bool dominationReady;
+    TextMesh pointA;
+    TextMesh pointB;
+    TextMesh pointC;
+    Hd2TeamButton buttonA;
+    Hd2TeamButton buttonB;
+    Hd2TeamButton buttonC;
+    int shownA = -1;
+    int shownB = -1;
+    int shownC = -1;
 
     void Awake()
     {
@@ -86,6 +98,7 @@ public class Hd2Hud : MonoBehaviour
         RefreshHealth();
         RefreshBlitz();
         RefreshMic();
+        RefreshDomination();
         RefreshBanner();
     }
 
@@ -173,6 +186,64 @@ public class Hd2Hud : MonoBehaviour
             micReadout.text = open ? "On" : "Off";
             micReadout.color = tint;
         }
+    }
+
+    void RefreshDomination()
+    {
+        if (!dominationReady)
+        {
+            var all = Hd2TeamButton.All;
+            for (int i = 0; i < all.Count; i++)
+            {
+                Hd2TeamButton point = all[i];
+                if (point == null)
+                    continue;
+                if (point.Label == "A")
+                    buttonA = point;
+                else if (point.Label == "B")
+                    buttonB = point;
+                else if (point.Label == "C")
+                    buttonC = point;
+            }
+
+            if (buttonA == null && buttonB == null && buttonC == null)
+                return;
+
+            Transform parent = view != null ? view : transform;
+            pointA = MakePoint(parent, new Vector3(-0.40f, -0.145f, 0.9f), "A");
+            pointB = MakePoint(parent, new Vector3(-0.33f, -0.145f, 0.9f), "B");
+            pointC = MakePoint(parent, new Vector3(-0.26f, -0.145f, 0.9f), "C");
+            dominationReady = true;
+        }
+
+        PaintPoint(buttonA, pointA, ref shownA);
+        PaintPoint(buttonB, pointB, ref shownB);
+        PaintPoint(buttonC, pointC, ref shownC);
+    }
+
+    static void PaintPoint(Hd2TeamButton point, TextMesh text, ref int shown)
+    {
+        if (point == null || text == null)
+            return;
+
+        int id = (int)point.Owner;
+        if (id == shown)
+            return;
+
+        shown = id;
+        text.color = point.MarkerColor;
+    }
+
+    static TextMesh MakePoint(Transform parent, Vector3 local, string letter)
+    {
+        TextMesh text = MakeReadout(parent, local, Color.white, TextAnchor.MiddleCenter);
+        text.gameObject.name = letter;
+        text.text = letter;
+        text.fontSize = 120;
+        text.characterSize = 0.0045f;
+        text.alignment = TextAlignment.Center;
+        text.anchor = TextAnchor.MiddleCenter;
+        return text;
     }
 
     static string[] BuildPercents()

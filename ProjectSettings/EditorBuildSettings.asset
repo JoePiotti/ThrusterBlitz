@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/Towers.unity
+    path: Assets/Scenes/Rome.unity
     guid: a7c3e91b4d2f48e6b0a15c8d7e3f2941
   - enabled: 0
     path: Assets/Scenes/Deathmatch.unity

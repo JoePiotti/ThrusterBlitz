@@ -9,24 +9,24 @@ public static class Hd2QuestPlayerSetup
 
     static Hd2QuestPlayerSetup()
     {
-        EditorApplication.delayCall += EnsureTowersStarts;
+        EditorApplication.delayCall += EnsureRomeStarts;
         EditorApplication.delayCall += AutoSetupIfNeeded;
     }
 
-    static void EnsureTowersStarts()
+    static void EnsureRomeStarts()
     {
-        const string towers = "Assets/Scenes/Towers.unity";
+        const string rome = "Assets/Scenes/Rome.unity";
         var scenes = EditorBuildSettings.scenes;
-        if (scenes.Length > 0 && scenes[0].enabled && scenes[0].path == towers)
+        if (scenes.Length > 0 && scenes[0].enabled && scenes[0].path == rome)
             return;
 
         var next = new System.Collections.Generic.List<EditorBuildSettingsScene>
         {
-            new EditorBuildSettingsScene(towers, true)
+            new EditorBuildSettingsScene(rome, true)
         };
         for (int i = 0; i < scenes.Length; i++)
         {
-            if (scenes[i].path == towers)
+            if (scenes[i].path == rome)
                 continue;
             next.Add(new EditorBuildSettingsScene(scenes[i].path, false));
         }
@@ -49,7 +49,7 @@ public static class Hd2QuestPlayerSetup
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.tb.game");
         EditorBuildSettings.scenes = new[]
         {
-            new EditorBuildSettingsScene("Assets/Scenes/Towers.unity", true),
+            new EditorBuildSettingsScene("Assets/Scenes/Rome.unity", true),
             new EditorBuildSettingsScene("Assets/Scenes/Deathmatch.unity", false),
             new EditorBuildSettingsScene("Assets/Scenes/Greybox.unity", false)
         };

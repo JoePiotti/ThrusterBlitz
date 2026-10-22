@@ -500,6 +500,7 @@ MonoBehaviour:
   jumpMaxTime: 0.3
   jumpThrustPerSecond: 1
   teamColor: {r: 1, g: 0.76, b: 0.22, a: 1}
+  team: 0
   bodyRadius: 0.25
   bodyHeight: 1.7
   gravity: 15

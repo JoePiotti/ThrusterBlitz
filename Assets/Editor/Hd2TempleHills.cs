@@ -9,7 +9,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Raises one soft hill under each Towers temple and seats the temple on it.
+/// Raises one soft hill under each Rome temple and seats the temple on it.
 /// Runs only while .utmp/temple_hill.requested exists. Does not open or reload a scene.
 /// Parks the request while another .utmp/*.requested job is running so the two saves
 /// do not block each other.
@@ -91,7 +91,7 @@ public static class Hd2TempleHills
         }
 
         var scene = EditorSceneManager.GetActiveScene();
-        if (!scene.IsValid() || !scene.path.Replace('\\', '/').EndsWith("Assets/Scenes/Towers.unity", StringComparison.OrdinalIgnoreCase))
+        if (!scene.IsValid() || !scene.path.Replace('\\', '/').EndsWith("Assets/Scenes/Rome.unity", StringComparison.OrdinalIgnoreCase))
         {
             WriteReport("ERROR active scene is '" + scene.path + "'; did not open or reload a scene");
             ClearRequests();
