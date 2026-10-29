@@ -3,8 +3,9 @@ using UnityEngine;
 /// <summary>
 /// Team button. ButtonShaft and ButtonTop sit under ButtonBase.
 /// A living fighter's hand or arm collider depresses the shaft 20 cm,
-/// plays a click, and claims the point. The claim stays after they let go.
-/// While that fighter is alive and still touching, nobody else can take it.
+/// plays a click, and claims the point. The color stays after they let go or die.
+/// Another press can only change it to the other team. It never returns to white.
+/// While a fighter is alive and still touching, nobody else can take it.
 /// </summary>
 public class Hd2TeamButton : MonoBehaviour
 {
@@ -34,6 +35,7 @@ public class Hd2TeamButton : MonoBehaviour
     Vector3 volumeCenter;
     Vector3 volumeHalf;
     Component holder;
+    Component offeredTouch;
     Hd2Team owner = Hd2Team.None;
     Color glow = Color.white;
     Material glowMaterial;
@@ -60,6 +62,30 @@ public class Hd2TeamButton : MonoBehaviour
 
     public string Label => pointLabel;
     public Hd2Team Owner => owner;
+
+    /// <summary>
+    /// New round. The point goes back to white until someone claims it again.
+    /// </summary>
+    public void ResetClaim()
+    {
+        owner = Hd2Team.None;
+        holder = null;
+        offeredTouch = null;
+        glow = Color.white;
+        if (beamRenderer != null)
+            beamRenderer.enabled = false;
+        if (ring != null)
+            ring.enabled = false;
+    }
+    public bool Occupied => holder != null;
+    public Hd2Team OccupantTeam => holder == null ? Hd2Team.None : Hd2SpawnField.TeamOf(holder);
+    public Vector3 TouchPoint => transform.TransformPoint(volumeCenter);
+
+    public void OfferTouch(Component body)
+    {
+        if (body != null && Living(body))
+            offeredTouch = body;
+    }
 
     /// <summary>
     /// White until a team claims it, then that claim's color.
@@ -124,6 +150,13 @@ public class Hd2TeamButton : MonoBehaviour
         if (!Hd2Domination.Decided)
         {
             Collect();
+            if (offeredTouch != null)
+            {
+                if (Living(offeredTouch) && !Contains(offeredTouch) && touchCount < touches.Length)
+                    touches[touchCount++] = offeredTouch;
+                offeredTouch = null;
+            }
+
             Component next = NextHolder();
             if (next != holder)
             {
@@ -299,6 +332,7 @@ public class Hd2TeamButton : MonoBehaviour
         Renderer pedestal = GetComponent<Renderer>();
         if (pedestal != null)
             width = Mathf.Clamp(Mathf.Max(pedestal.bounds.size.x, pedestal.bounds.size.z), 0.2f, 2f);
+        width *= 0.25f;
 
         float bottom = 0.8f;
         if (top != null)
@@ -311,6 +345,11 @@ public class Hd2TeamButton : MonoBehaviour
                 bottom = transform.InverseTransformPoint(worldTop).y;
             }
         }
+
+        float scaleY = Mathf.Abs(transform.lossyScale.y);
+        if (scaleY < 0.01f)
+            scaleY = 1f;
+        bottom -= 0.2f / scaleY;
 
         var beam = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         beam.name = "TeamBeam";

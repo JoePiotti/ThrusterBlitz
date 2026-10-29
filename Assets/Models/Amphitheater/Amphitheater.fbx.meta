@@ -17,6 +17,16 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Limestone.001
+    second: {fileID: 2100000, guid: f5ffd758ca4bd5b4d811f68e87a4db8f, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Shrine.001
+    second: {fileID: 2100000, guid: e3e0957801a74b07aef63cc299ae8a88, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Foliage
     second: {fileID: 2100000, guid: 0052831adee846338923af183050a9d1, type: 2}
   materials:

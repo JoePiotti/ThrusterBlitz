@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// On death the visible body drops as a ragdoll, and the guns leave the
@@ -21,11 +22,14 @@ public class Hd2PlayerDeath : MonoBehaviour
     GameObject ragdoll;
     bool downed;
     bool holdCamera;
+    bool quietDeath;
     Vector3 frozenCameraPosition;
     readonly List<Renderer> hiddenRenderers = new List<Renderer>();
     readonly List<Collider> hiddenColliders = new List<Collider>();
     StartingPistol rightPistol;
     StartingPistol leftPistol;
+    LineRenderer killLine;
+    Material killLineMaterial;
 
     struct StartingPistol
     {
@@ -58,6 +62,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         if (health != null)
             health.Changed += OnHealthChanged;
         Application.onBeforeRender += HoldCamera;
+        RenderPipelineManager.beginCameraRendering += CullKillLine;
     }
 
     void OnDisable()
@@ -65,6 +70,16 @@ public class Hd2PlayerDeath : MonoBehaviour
         if (health != null)
             health.Changed -= OnHealthChanged;
         Application.onBeforeRender -= HoldCamera;
+        RenderPipelineManager.beginCameraRendering -= CullKillLine;
+    }
+
+    void CullKillLine(ScriptableRenderContext context, Camera camera)
+    {
+        if (killLine == null)
+            return;
+
+        bool mine = camera != null && camera.transform.IsChildOf(transform);
+        killLine.forceRenderingOff = !mine;
     }
 
     void OnDestroy()
@@ -74,14 +89,137 @@ public class Hd2PlayerDeath : MonoBehaviour
             locomotion.MovementLocked = false;
         if (ragdoll != null)
             Destroy(ragdoll);
+        if (killLine != null)
+            Destroy(killLine.gameObject);
+        if (killLineMaterial != null)
+            Destroy(killLineMaterial);
     }
 
     void OnHealthChanged(Hd2Health current)
     {
-        if (current == null || !current.IsDead || downed)
+        if (quietDeath || current == null || !current.IsDead || downed)
             return;
 
+        AnnounceDeath(current.LastAttacker);
+        ShowKillingBullet(current);
         StartCoroutine(DeathWatch());
+    }
+
+    void ShowKillingBullet(Hd2Health current)
+    {
+        bool fresh = Time.time - current.KillLineTime <= 0.05f;
+        int pathCount = current.KillPathCount;
+        Vector3 from = current.LastShotOrigin;
+        Vector3 to = current.LastHitPoint;
+        bool curved = pathCount >= 2;
+        if (!fresh || (!curved && (from - to).sqrMagnitude < 0.04f))
+        {
+            if (killLine != null)
+                killLine.enabled = false;
+            return;
+        }
+
+        if (killLine == null)
+        {
+            var lineObject = new GameObject("KillLine");
+            killLine = lineObject.AddComponent<LineRenderer>();
+            killLine.startWidth = 0.03f;
+            killLine.endWidth = 0.03f;
+            killLine.numCapVertices = 4;
+            killLine.useWorldSpace = true;
+            killLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            killLine.receiveShadows = false;
+            Material source = Resources.Load<Material>("Spark");
+            if (source != null)
+            {
+                killLineMaterial = new Material(source);
+                killLineMaterial.SetColor("_BaseColor", Color.red);
+                killLineMaterial.SetColor("_Color", Color.red);
+                killLine.material = killLineMaterial;
+            }
+
+            killLine.startColor = Color.red;
+            killLine.endColor = Color.red;
+            killLine.forceRenderingOff = true;
+        }
+
+        if (curved)
+        {
+            killLine.positionCount = pathCount;
+            for (int i = 0; i < pathCount; i++)
+                killLine.SetPosition(i, current.KillPathPoint(i));
+        }
+        else
+        {
+            killLine.positionCount = 2;
+            killLine.SetPosition(0, from);
+            killLine.SetPosition(1, to);
+        }
+
+        killLine.enabled = true;
+    }
+
+    void AnnounceDeath(Transform killer)
+    {
+        Hd2Hud hud = GetComponent<Hd2Hud>();
+        if (hud == null)
+            return;
+
+        string name = null;
+        Hd2EnemyBot bot = killer != null ? killer.GetComponentInParent<Hd2EnemyBot>() : null;
+        if (bot != null && !string.IsNullOrEmpty(bot.displayName))
+            name = bot.displayName;
+        else if (killer != null)
+            name = "an enemy";
+        hud.ShowDeath(name);
+    }
+
+    public void DieImmediately()
+    {
+        quietDeath = true;
+        if (health != null && !health.IsDead)
+            health.ApplyHit(health.Health, false);
+        quietDeath = false;
+
+        if (downed)
+        {
+            StopAllCoroutines();
+            holdCamera = false;
+            ClearRagdoll();
+            if (locomotion != null)
+                locomotion.MovementLocked = false;
+            downed = false;
+        }
+
+        if (killLine != null)
+            killLine.enabled = false;
+        if (health != null)
+            health.Respawn();
+        RestoreStartingPistols();
+    }
+
+    /// <summary>
+    /// Round reset. Clears a ragdoll and stands the player up at the pinned spawn.
+    /// </summary>
+    public void RecoverAtSpawn()
+    {
+        StopAllCoroutines();
+        holdCamera = false;
+        ClearRagdoll();
+        if (locomotion != null)
+        {
+            locomotion.MovementLocked = false;
+            locomotion.HaltTravel();
+        }
+
+        downed = false;
+        quietDeath = true;
+        if (killLine != null)
+            killLine.enabled = false;
+        if (health != null)
+            health.Respawn();
+        RestoreStartingPistols();
+        quietDeath = false;
     }
 
     IEnumerator DeathWatch()
@@ -239,7 +377,8 @@ public class Hd2PlayerDeath : MonoBehaviour
         }
 
         HideLiveBody(body);
-        ActivateRagdoll(ragdoll);
+        bool blast = health != null && health.KilledByBlast;
+        ActivateRagdoll(ragdoll, blast ? health.BlastOrigin : Vector3.zero, blast);
         IgnorePlayerColliders(ragdoll);
         CarryGuns(ragdoll);
     }
@@ -357,6 +496,8 @@ public class Hd2PlayerDeath : MonoBehaviour
 
         hiddenRenderers.Clear();
         hiddenColliders.Clear();
+        if (killLine != null)
+            killLine.enabled = false;
 
         if (ragdoll == null)
             return;
@@ -366,7 +507,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         ragdoll = null;
     }
 
-    static void ActivateRagdoll(GameObject corpse)
+    static void ActivateRagdoll(GameObject corpse, Vector3 blastOrigin, bool blast)
     {
         var bodies = new List<Rigidbody>();
         var transforms = corpse.GetComponentsInChildren<Transform>();
@@ -419,6 +560,9 @@ public class Hd2PlayerDeath : MonoBehaviour
             joint.connectedBody = parentBody;
             joint.enableProjection = true;
         }
+
+        if (blast)
+            Hd2Health.ThrowFromBlast(bodies, blastOrigin, corpse.transform.position);
     }
 
     void IgnorePlayerColliders(GameObject corpse)

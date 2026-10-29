@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEditor.Build;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 [InitializeOnLoad]
@@ -9,26 +10,37 @@ public static class Hd2QuestPlayerSetup
 
     static Hd2QuestPlayerSetup()
     {
-        EditorApplication.delayCall += EnsureRomeStarts;
+        EditorApplication.delayCall += EnsureTitleStarts;
         EditorApplication.delayCall += AutoSetupIfNeeded;
     }
 
-    static void EnsureRomeStarts()
+    static void EnsureTitleStarts()
     {
+        const string title = "Assets/Scenes/Title.unity";
         const string rome = "Assets/Scenes/Rome.unity";
+        var titleAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>(title);
+        if (titleAsset != null && EditorSceneManager.playModeStartScene != titleAsset)
+            EditorSceneManager.playModeStartScene = titleAsset;
+
         var scenes = EditorBuildSettings.scenes;
-        if (scenes.Length > 0 && scenes[0].enabled && scenes[0].path == rome)
+        bool titleFirst = scenes.Length > 1
+            && scenes[0].enabled
+            && scenes[0].path == title
+            && scenes[1].enabled
+            && scenes[1].path == rome;
+        if (titleFirst)
             return;
 
         var next = new System.Collections.Generic.List<EditorBuildSettingsScene>
         {
+            new EditorBuildSettingsScene(title, true),
             new EditorBuildSettingsScene(rome, true)
         };
         for (int i = 0; i < scenes.Length; i++)
         {
-            if (scenes[i].path == rome)
+            if (scenes[i].path == title || scenes[i].path == rome)
                 continue;
-            next.Add(new EditorBuildSettingsScene(scenes[i].path, false));
+            next.Add(scenes[i]);
         }
 
         EditorBuildSettings.scenes = next.ToArray();
@@ -49,10 +61,14 @@ public static class Hd2QuestPlayerSetup
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.tb.game");
         EditorBuildSettings.scenes = new[]
         {
+            new EditorBuildSettingsScene("Assets/Scenes/Title.unity", true),
             new EditorBuildSettingsScene("Assets/Scenes/Rome.unity", true),
             new EditorBuildSettingsScene("Assets/Scenes/Deathmatch.unity", false),
             new EditorBuildSettingsScene("Assets/Scenes/Greybox.unity", false)
         };
+        var title = AssetDatabase.LoadAssetAtPath<SceneAsset>("Assets/Scenes/Title.unity");
+        if (title != null)
+            EditorSceneManager.playModeStartScene = title;
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel32;
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);

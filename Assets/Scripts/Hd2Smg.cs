@@ -95,8 +95,10 @@ public class Hd2Smg : MonoBehaviour
             shotSource.playOnAwake = false;
             shotSource.loop = false;
             shotSource.spatialBlend = 1f;
-            shotSource.minDistance = 0.4f;
-            shotSource.maxDistance = 12f;
+            shotSource.dopplerLevel = 0f;
+            shotSource.rolloffMode = AudioRolloffMode.Linear;
+            shotSource.minDistance = 2f;
+            shotSource.maxDistance = 36f;
         }
 
         EnsureAmmoScreen();
@@ -225,7 +227,8 @@ public class Hd2Smg : MonoBehaviour
 
         rounds--;
         RefreshAmmo();
-        nextFireTime = Time.time + 1f / Mathf.Max(0.01f, shotsPerSecond);
+        float rate = botHeld ? 6f : shotsPerSecond;
+        nextFireTime = Time.time + 1f / Mathf.Max(0.01f, rate);
         if (climbedRounds < recoilClimbRounds)
         {
             climbedRounds++;
@@ -251,7 +254,7 @@ public class Hd2Smg : MonoBehaviour
         projectile.transform.rotation = Quaternion.LookRotation(direction);
         projectile.velocity = direction * bulletSpeed;
         projectile.lifetime = shotLifetime;
-        projectile.owner = transform.root;
+        projectile.owner = Hd2SpawnField.FighterBody(this);
         projectile.damage = bodyDamage;
         projectile.headMultiplier = bodyDamage > 0.01f ? headDamage / bodyDamage : 1f;
         projectile.bouncesRemaining = 0;

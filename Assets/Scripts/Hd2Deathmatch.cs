@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// Free-for-all deathmatch. Eight fighters, each a different color.
@@ -298,6 +299,26 @@ public class Hd2Deathmatch : MonoBehaviour
 
     LineRenderer killLine;
     float killLineUntil;
+    Transform killLineOwner;
+
+    void OnEnable()
+    {
+        RenderPipelineManager.beginCameraRendering += CullKillLine;
+    }
+
+    void OnDisable()
+    {
+        RenderPipelineManager.beginCameraRendering -= CullKillLine;
+    }
+
+    void CullKillLine(ScriptableRenderContext context, Camera camera)
+    {
+        if (killLine == null)
+            return;
+
+        bool mine = killLineOwner != null && camera != null && camera.transform.IsChildOf(killLineOwner);
+        killLine.forceRenderingOff = !mine;
+    }
 
     void ShowKillLine(Hd2Health victim, Transform fromBody, Transform toBody)
     {
@@ -336,8 +357,10 @@ public class Hd2Deathmatch : MonoBehaviour
 
             killLine.startColor = Color.red;
             killLine.endColor = Color.red;
+            killLine.forceRenderingOff = true;
         }
 
+        killLineOwner = toBody;
         killLine.SetPosition(0, from);
         killLine.SetPosition(1, to);
         killLine.enabled = true;

@@ -25,7 +25,7 @@ public class Hd2Shocks : MonoBehaviour
 
     public float chargeHoldTime = 1.25f;
     public float orbSpeed = 35f;
-    public float orbRadius = 0.14f;
+    public float orbRadius = 0.098f;
     public float innerRadius = 1.5f;
     public float innerDamage = 72f;
     public float outerRadius = 2.75f;
@@ -123,8 +123,10 @@ public class Hd2Shocks : MonoBehaviour
         source.playOnAwake = false;
         source.loop = false;
         source.spatialBlend = 1f;
-        source.minDistance = 0.4f;
-        source.maxDistance = 18f;
+        source.dopplerLevel = 0f;
+        source.rolloffMode = AudioRolloffMode.Linear;
+        source.minDistance = 2f;
+        source.maxDistance = 36f;
         return source;
     }
 
@@ -282,14 +284,14 @@ public class Hd2Shocks : MonoBehaviour
     {
         Transform origin = muzzle != null ? muzzle : transform;
         Vector3 direction = origin.forward;
-        PlayClip("Audio/PistolShot");
+        PlayClip("Audio/ShockShot");
         var projectile = Hd2Shot.Rent();
         projectile.gameObject.name = "ShockBolt";
         projectile.transform.position = origin.position;
         projectile.transform.rotation = Quaternion.LookRotation(direction);
         projectile.velocity = direction * boltSpeed;
         projectile.lifetime = 1.6f;
-        projectile.owner = transform.root;
+        projectile.owner = Hd2SpawnField.FighterBody(this);
         projectile.damage = boltDamage;
         projectile.headMultiplier = 1.5f;
         projectile.gravel = true;
@@ -313,12 +315,13 @@ public class Hd2Shocks : MonoBehaviour
 
         var projectile = orb.AddComponent<Hd2ShockOrb>();
         projectile.velocity = direction * orbSpeed;
-        projectile.owner = transform.root;
+        projectile.owner = Hd2SpawnField.FighterBody(this);
         projectile.color = boltColor;
         projectile.innerRadius = innerRadius;
         projectile.innerDamage = innerDamage;
         projectile.outerRadius = outerRadius;
         projectile.outerDamage = outerDamage;
+        projectile.Begin();
         projectile.Paint();
         SpawnFlash(origin);
     }
@@ -511,6 +514,47 @@ public class Hd2ShockOrb : MonoBehaviour
     float traveled;
     bool exploded;
     bool nearMissPlayed;
+    Material solidMaterial;
+    Material glowMaterial;
+    readonly Vector3[] flight = new Vector3[96];
+    int flightCount;
+    float flightSpacing = 0.45f;
+
+    public void Begin()
+    {
+        flightCount = 0;
+        flightSpacing = 0.45f;
+        Remember(transform.position);
+    }
+
+    void Remember(Vector3 point)
+    {
+        if (flightCount > 0 && (point - flight[flightCount - 1]).sqrMagnitude < flightSpacing * flightSpacing)
+            return;
+        if (flightCount >= flight.Length)
+            ThinFlight();
+        flight[flightCount++] = point;
+    }
+
+    void ThinFlight()
+    {
+        int kept = 0;
+        for (int i = 0; i < flightCount; i += 2)
+            flight[kept++] = flight[i];
+        if ((flightCount & 1) == 0)
+            flight[kept++] = flight[flightCount - 1];
+        flightCount = kept;
+        flightSpacing *= 2f;
+    }
+
+    void RememberEnd(Vector3 point)
+    {
+        if (flightCount > 0 && (point - flight[flightCount - 1]).sqrMagnitude < 0.0004f)
+            return;
+        if (flightCount >= flight.Length)
+            ThinFlight();
+        flight[flightCount++] = point;
+    }
 
     public void Paint()
     {
@@ -518,26 +562,60 @@ public class Hd2ShockOrb : MonoBehaviour
         if (renderer == null)
             return;
 
-        Material material = Resources.Load<Material>("PlasmaBolt");
-        if (material != null)
-            material = new Material(material);
-        else
+        Color solid = color;
+        solid.a = 1f;
+        solidMaterial = OrbMaterial("ShockOrb", "HD2/ShockOrb", solid);
+        if (solidMaterial == null)
+            return;
+
+        renderer.sharedMaterial = solidMaterial;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        var halo = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        halo.name = "Glow";
+        halo.transform.SetParent(transform, false);
+        halo.transform.localScale = Vector3.one * 1.75f;
+        Collider haloCollider = halo.GetComponent<Collider>();
+        if (haloCollider != null)
+            Destroy(haloCollider);
+        var glowRenderer = halo.GetComponent<Renderer>();
+        glowMaterial = OrbMaterial("ShockOrbGlow", "HD2/ShockOrbGlow", solid);
+        if (glowMaterial == null || glowRenderer == null)
+            return;
+        glowRenderer.sharedMaterial = glowMaterial;
+        glowRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        glowRenderer.receiveShadows = false;
+    }
+
+    static Material OrbMaterial(string resource, string shaderName, Color solid)
+    {
+        Material source = Resources.Load<Material>(resource);
+        Material material = source != null ? new Material(source) : null;
+        if (material == null)
         {
-            Shader shader = Shader.Find("HD2/PlasmaBolt");
+            Shader shader = Shader.Find(shaderName);
             if (shader == null)
                 shader = Shader.Find("Universal Render Pipeline/Unlit");
             if (shader == null)
-                return;
+                return null;
             material = new Material(shader);
         }
+
         if (material.HasProperty("_Color"))
-            material.SetColor("_Color", color);
+            material.SetColor("_Color", solid);
         if (material.HasProperty("_Core"))
             material.SetColor("_Core", Color.white);
         if (material.HasProperty("_BaseColor"))
-            material.SetColor("_BaseColor", color);
-        renderer.sharedMaterial = material;
-        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            material.SetColor("_BaseColor", solid);
+        return material;
+    }
+
+    void OnDestroy()
+    {
+        if (solidMaterial != null)
+            Destroy(solidMaterial);
+        if (glowMaterial != null)
+            Destroy(glowMaterial);
     }
 
     void Update()
@@ -564,6 +642,7 @@ public class Hd2ShockOrb : MonoBehaviour
 
         transform.position += step;
         traveled += distance;
+        Remember(transform.position);
         if (age >= lifetime)
             Burst(transform.position);
     }
@@ -603,6 +682,7 @@ public class Hd2ShockOrb : MonoBehaviour
             return;
 
         exploded = true;
+        RememberEnd(point);
         var seen = new HashSet<Hd2Health>();
         Collider[] colliders = Physics.OverlapSphere(point, outerRadius, ~0, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < colliders.Length; i++)
@@ -612,6 +692,8 @@ public class Hd2ShockOrb : MonoBehaviour
 
             Hd2Health health = colliders[i].GetComponentInParent<Hd2Health>();
             if (health == null || !seen.Add(health))
+                continue;
+            if (health.IsAlly(owner))
                 continue;
 
             float reach = Vector3.Distance(colliders[i].ClosestPoint(point), point);
@@ -626,6 +708,9 @@ public class Hd2ShockOrb : MonoBehaviour
             if (owner != null)
                 health.LastAttacker = owner;
             health.MarkHit(colliders[i].ClosestPoint(point));
+            health.MarkBlast(point);
+            if (health.Health > 0f && health.Health <= amount)
+                health.MarkKillPath(flight, flightCount);
             health.ApplyHit(amount, false, true);
         }
 
@@ -638,8 +723,10 @@ public class Hd2ShockOrb : MonoBehaviour
             sound.transform.position = point;
             var source = sound.AddComponent<AudioSource>();
             source.spatialBlend = 1f;
+            source.dopplerLevel = 0f;
+            source.rolloffMode = AudioRolloffMode.Linear;
             source.minDistance = 4f;
-            source.maxDistance = 28f;
+            source.maxDistance = 36f;
             source.PlayOneShot(clip);
             Destroy(sound, clip.length + 0.1f);
         }

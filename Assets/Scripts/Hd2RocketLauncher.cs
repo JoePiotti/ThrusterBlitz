@@ -94,8 +94,10 @@ public class Hd2RocketLauncher : MonoBehaviour
             reloadSource.playOnAwake = false;
             reloadSource.loop = false;
             reloadSource.spatialBlend = 1f;
-            reloadSource.minDistance = 0.4f;
-            reloadSource.maxDistance = 12f;
+            reloadSource.dopplerLevel = 0f;
+            reloadSource.rolloffMode = AudioRolloffMode.Linear;
+            reloadSource.minDistance = 2f;
+            reloadSource.maxDistance = 36f;
         }
 
         if (launchClip != null)
@@ -104,8 +106,10 @@ public class Hd2RocketLauncher : MonoBehaviour
             launchSource.playOnAwake = false;
             launchSource.loop = false;
             launchSource.spatialBlend = 1f;
-            launchSource.minDistance = 1f;
-            launchSource.maxDistance = 28f;
+            launchSource.dopplerLevel = 0f;
+            launchSource.rolloffMode = AudioRolloffMode.Linear;
+            launchSource.minDistance = 2f;
+            launchSource.maxDistance = 40f;
         }
     }
 
@@ -234,7 +238,7 @@ public class Hd2RocketLauncher : MonoBehaviour
 
         var rocket = body.AddComponent<Hd2Rocket>();
         rocket.source = this;
-        rocket.owner = transform.root;
+        rocket.owner = Hd2SpawnField.FighterBody(this);
         rocket.BindOwner(GetComponentInParent<Hd2Health>());
         rocket.aimPoint = point;
         rocket.homing = true;
@@ -428,59 +432,6 @@ public class Hd2RocketLauncher : MonoBehaviour
         renderer.receiveShadows = false;
         particles.Play();
         AddSmoke(vent.transform);
-        AddStreak(vent.transform, TeamColor());
-    }
-
-    Color TeamColor()
-    {
-        var player = GetComponentInParent<Hd2Locomotion>();
-        if (player != null)
-            return player.teamColor;
-
-        var bot = GetComponentInParent<Hd2EnemyBot>();
-        if (bot != null)
-            return bot.bodyColor;
-
-        return Color.white;
-    }
-
-    void AddStreak(Transform vent, Color team)
-    {
-        var streakObject = new GameObject("Streak");
-        streakObject.transform.SetParent(vent, false);
-
-        var streak = streakObject.AddComponent<TrailRenderer>();
-        streak.time = 4f;
-        streak.minVertexDistance = 0.15f;
-        streak.widthMultiplier = 0.055f;
-        streak.numCornerVertices = 1;
-        streak.numCapVertices = 0;
-        streak.alignment = LineAlignment.View;
-        streak.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        streak.receiveShadows = false;
-        streak.generateLightingData = false;
-        Material ribbon = ThrustMaterial();
-        if (ribbon != null)
-            streak.sharedMaterial = ribbon;
-
-        team.a = 1f;
-        var fade = new Gradient();
-        fade.SetKeys(
-            new[]
-            {
-                new GradientColorKey(team, 0f),
-                new GradientColorKey(team, 1f)
-            },
-            new[]
-            {
-                new GradientAlphaKey(0.95f, 0f),
-                new GradientAlphaKey(0.35f, 0.45f),
-                new GradientAlphaKey(0f, 1f)
-            });
-        streak.colorGradient = fade;
-        streak.widthCurve = new AnimationCurve(
-            new Keyframe(0f, 1f),
-            new Keyframe(1f, 0.2f));
     }
 
     void AddSmoke(Transform vent)
@@ -507,7 +458,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         main.simulationSpace = ParticleSystemSimulationSpace.World;
 
         var emission = particles.emission;
-        emission.rateOverTime = 22f;
+        emission.rateOverTime = 44f;
 
         var shape = particles.shape;
         shape.shapeType = ParticleSystemShapeType.Cone;
@@ -689,7 +640,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         int count = Physics.RaycastNonAlloc(origin, direction, aimHits, 200f, ~0, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         bool found = false;
-        Transform owner = transform.root;
+        Transform owner = Hd2SpawnField.FighterBody(this);
         for (int i = 0; i < count; i++)
         {
             Collider collider = aimHits[i].collider;

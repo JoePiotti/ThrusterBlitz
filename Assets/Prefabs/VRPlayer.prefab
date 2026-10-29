@@ -1577,7 +1577,7 @@ MonoBehaviour:
   normalDamage: 10
   shotColor: {r: 0.55, g: 0.88, b: 1, a: 1}
   chargeHoldTime: 1
-  chargedRadius: 0.09
+  chargedRadius: 0.108
   chargedSpeedMultiplier: 0.7
   chargedAmmoCost: 3
   chargedBounces: 6
@@ -1727,7 +1727,7 @@ MonoBehaviour:
   normalDamage: 10
   shotColor: {r: 0.55, g: 0.88, b: 1, a: 1}
   chargeHoldTime: 1
-  chargedRadius: 0.09
+  chargedRadius: 0.108
   chargedSpeedMultiplier: 0.7
   chargedAmmoCost: 3
   chargedBounces: 6
@@ -1805,15 +1805,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -4709081284882413929, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.1454398
+      value: 0.223
       objectReference: {fileID: 0}
     - target: {fileID: -4709081284882413929, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.02332377
+      value: 0.128
       objectReference: {fileID: 0}
     - target: {fileID: -4709081284882413929, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -0.01038967
+      value: -0.027
       objectReference: {fileID: 0}
     - target: {fileID: -3251792917602393498, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'

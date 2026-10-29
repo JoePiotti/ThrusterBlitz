@@ -3,7 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Segmented thrust bar drawn under the pointer target. No HUD.
 /// Starts at 3 charges. A blitz spends one whole block. A jump spends a fraction of a block.
-/// A missing block returns over rechargeSeconds unless the player is sprinting.
+/// A missing block returns over rechargeSeconds unless that body is sprinting.
 /// Filling a whole bar plays the restore sound once. A kill adds one immediately, even while sprinting.
 /// Pickups can later raise the maximum to 5 and refill.
 /// </summary>
@@ -53,7 +53,9 @@ public class Hd2ThrustMeter : MonoBehaviour
     void LateUpdate()
     {
         var locomotion = GetComponent<Hd2Locomotion>();
-        bool sprinting = locomotion != null && locomotion.IsSprinting;
+        var bot = GetComponent<Hd2EnemyBot>();
+        bool sprinting = (locomotion != null && locomotion.IsSprinting)
+            || (bot != null && bot.IsSprinting);
         if (!sprinting && charges < maxCharges)
         {
             charges = Mathf.Min(maxCharges, charges + Time.deltaTime / Mathf.Max(0.01f, rechargeSeconds));

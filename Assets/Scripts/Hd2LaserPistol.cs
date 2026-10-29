@@ -175,8 +175,10 @@ public class Hd2LaserPistol : MonoBehaviour
         source.playOnAwake = false;
         source.loop = false;
         source.spatialBlend = 1f;
-        source.minDistance = 0.4f;
-        source.maxDistance = 18f;
+        source.dopplerLevel = 0f;
+        source.rolloffMode = AudioRolloffMode.Linear;
+        source.minDistance = 2f;
+        source.maxDistance = 36f;
         return source;
     }
 
@@ -299,10 +301,10 @@ public class Hd2LaserPistol : MonoBehaviour
         if (pointer != null)
             pointer.enabled = false;
         PlaceShot(origin, end);
-        Hd2NearMiss.TryPass(origin, end, transform.root, target != null && Hd2NearMiss.HitsPlayer(target));
+        Hd2NearMiss.TryPass(origin, end, Hd2SpawnField.FighterBody(this), target != null && Hd2NearMiss.HitsPlayer(target));
 
         Hd2Health attacker = GetComponentInParent<Hd2Health>();
-        if (target != null && target != attacker)
+        if (target != null && target != attacker && !target.IsAlly(attacker))
         {
             if (attacker != null)
                 target.LastAttacker = attacker.transform;
@@ -377,7 +379,7 @@ public class Hd2LaserPistol : MonoBehaviour
         int count = Physics.RaycastNonAlloc(origin, direction, hits, reach, ~0, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         bool found = false;
-        Transform owner = transform.root;
+        Transform owner = Hd2SpawnField.FighterBody(this);
         for (int i = 0; i < count; i++)
         {
             Collider collider = hits[i].collider;

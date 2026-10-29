@@ -195,6 +195,7 @@ public class Hd2LaserPickup : MonoBehaviour
             laser.muzzle = muzzle;
         }
 
+        Hd2Pistol.PulseEquip(hand);
         return true;
     }
 

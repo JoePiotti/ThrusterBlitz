@@ -199,6 +199,7 @@ public class Hd2ShotgunPickup : MonoBehaviour
         if (muzzle != null)
             shotgun.muzzle = muzzle;
 
+        Hd2Pistol.PulseEquip(hand);
         return true;
     }
 

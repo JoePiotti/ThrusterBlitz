@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 using UnityEngine.XR;
 
 /// <summary>
@@ -13,20 +14,24 @@ using UnityEngine.XR;
 /// - Right stick left/right: snap turn around the headset. One snap per deflection; the stick
 ///   must return near center and stay there briefly before the next snap. Holding the stick does not spin.
 /// - Sprint: left stick click held, and only while there is move input. Stick magnitude does not sprint.
-/// - Thrust: hold left primary (X) or right primary (A). An arc is drawn from that hand. If the
+/// - Thrust: hold left primary (X) or right primary (A). An arc is drawn from that hand
+///   and stays parented to it while the body moves. If the
 ///   arc ends in the air or on a wall, a straight line drops to the surface below and the marker
 ///   sits there. If a floor at least 2 m higher is found by going up 0.4 m from that drop and
 ///   then 0.2 m farther from the player, the marker sits on that floor and the drop line is hidden.
 ///   A second drop 0.2 m closer to the player cancels that upper floor when it lands at the
 ///   same height, which is a floor seen from underneath rather than a cliff lip.
 ///   The arc stops
-///   at the first solid hit. Release moves the root toward that point at
+///   at the first solid hit. A hand inside a wall hides the pointer, so the release
+///   cannot start a thrust from inside that wall. Release moves the root toward that point at
 ///   thrustSpeed, phasing through geometry. No hit, a hit past thrustMaxDistance, a hit on
 ///   Hd2NoLanding, or a hit on water does nothing. The pointer stays red on water.
 ///   The aim arc passes a spawn shield only when this body is on that shield's team.
 ///   The shield still stops shots from outside.
 ///   Arc color: the rail's own color on a grind rail, green on other legal landings, red when the landing
-///   is illegal or there is no valid hit. The arc stops at thrustMaxDistance instead of turning red
+///   is illegal or there is no valid hit. A 0.5 m tube around the arc and the drop line is not drawn.
+///   If that tube touches a grind rail, the marker and the line end on that rail instead of the ground.
+///   The arc stops at thrustMaxDistance instead of turning red
 ///   for being too far. With less than one thrust charge the lines keep that color,
 ///   and the robot preview is hidden.
 ///   The arc, landing wireframe, and charge marks render only for this player's camera.
@@ -130,7 +135,7 @@ public class Hd2Locomotion : MonoBehaviour
     public float skinWidth = 0.05f;
     public float groundProbe = 0.3f;
     [Tooltip("Floor changes this tall or shorter are walked over. Taller faces still stop the player.")]
-    public float stepHeight = 0.4f;
+    public float stepHeight = 0.5f;
 
     const int ArcPointCapacity = 64;
     const float SnapEngage = 0.6f;
@@ -206,6 +211,7 @@ public class Hd2Locomotion : MonoBehaviour
     readonly Vector3[] arcPoints = new Vector3[ArcPointCapacity];
     int arcPointCount;
     static readonly Collider[] railOverlap = new Collider[16];
+    static readonly Collider[] railGrab = new Collider[32];
     static readonly RaycastHit[] bodyHits = new RaycastHit[24];
 
     LineRenderer arcLine;
@@ -313,7 +319,258 @@ public class Hd2Locomotion : MonoBehaviour
     {
         if (FindFirstObjectByType<Hd2Deathmatch>() != null)
             return;
+
+        team = Hd2Team.Blue;
+        teamColor = BlueArmor;
+        var avatar = GetComponent<Hd2Body>();
+        if (avatar != null)
+            avatar.SetArmorColor(teamColor);
+
+        PlantOnFloor();
+        var health = GetComponent<Hd2Health>();
+        if (health != null)
+            health.RememberSpawn();
         Hd2TeleportArrive.Play(transform.position);
+    }
+
+    public static readonly Color BlueArmor = new Color(0.16f, 0.38f, 0.95f, 1f);
+    public static readonly Color RedArmor = new Color(0.82f, 0.1f, 0.08f, 1f);
+
+    public static Color ArmorOf(Hd2Team side)
+    {
+        return side == Hd2Team.Red ? RedArmor : BlueArmor;
+    }
+
+    public bool OtherTeamHasBot()
+    {
+        return BotOn(OtherTeam(team)) != null;
+    }
+
+    public void SwitchTeam()
+    {
+        if (FindFirstObjectByType<Hd2Deathmatch>() != null)
+            return;
+
+        Hd2Team next = OtherTeam(team);
+        Hd2EnemyBot bot = BotOn(next);
+        if (bot == null)
+            return;
+
+        Hd2Team previous = team;
+        Transform mySpawn = NearestSpawn(previous);
+        int mySlot = SpawnSlot(mySpawn, previous);
+        Transform theirSpawn = bot.Home;
+        if (theirSpawn == null)
+            theirSpawn = bot.transform;
+
+        bot.TakePlace(previous, ArmorOf(previous), mySlot, mySpawn);
+
+        team = next;
+        teamColor = ArmorOf(next);
+        var avatar = GetComponent<Hd2Body>();
+        if (avatar != null)
+            avatar.SetArmorColor(teamColor);
+
+        var life = GetComponent<Hd2Health>();
+        if (life != null)
+            life.PinSpawn(theirSpawn.position, theirSpawn.rotation);
+
+        var death = GetComponent<Hd2PlayerDeath>();
+        if (death != null)
+            death.DieImmediately();
+        else if (life != null)
+            life.Respawn();
+    }
+
+    /// <summary>
+    /// Leave the match. The last person returns to the title. Anyone else is replaced by a bot on their team.
+    /// </summary>
+    public void LeaveMatch()
+    {
+        var humans = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        if (humans != null && humans.Length > 1)
+        {
+            SpawnReplacement();
+            Hd2VisionCone.Unregister(transform);
+            Destroy(gameObject);
+            return;
+        }
+
+        SceneManager.LoadScene("Title");
+    }
+
+    void SpawnReplacement()
+    {
+        Hd2EnemyBot template = FindFirstObjectByType<Hd2EnemyBot>();
+        var go = new GameObject(team == Hd2Team.Red ? "Red bot" : team == Hd2Team.Blue ? "Blue bot" : "Bot");
+        if (template != null && template.transform.parent != null)
+            go.transform.SetParent(template.transform.parent, false);
+        go.transform.SetPositionAndRotation(transform.position, transform.rotation);
+
+        var bot = go.AddComponent<Hd2EnemyBot>();
+        if (template != null)
+        {
+            bot.robotPrefab = template.robotPrefab;
+            bot.pistolModel = template.pistolModel;
+            bot.domination = template.domination;
+            bot.objectiveWeight = template.objectiveWeight;
+            bot.retreatFraction = template.retreatFraction;
+            bot.retreatHealPerSecond = template.retreatHealPerSecond;
+        }
+        else if (FindFirstObjectByType<Hd2Domination>() != null)
+            bot.domination = true;
+
+        bot.team = team;
+        bot.bodyColor = teamColor;
+        bot.useBodyColor = true;
+        bot.spawnSlot = SpawnSlot(SpawnNear(transform.position, team), team);
+        bot.displayName = team == Hd2Team.Red ? "red bot" : team == Hd2Team.Blue ? "blue bot" : "bot";
+    }
+
+    static Transform SpawnNear(Vector3 from, Hd2Team side)
+    {
+        var points = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Transform best = null;
+        float bestSqr = float.MaxValue;
+        for (int i = 0; i < points.Length; i++)
+        {
+            Hd2SpawnPoint point = points[i];
+            if (point == null || point.team != side)
+                continue;
+            float sqr = (point.transform.position - from).sqrMagnitude;
+            if (sqr >= bestSqr)
+                continue;
+            bestSqr = sqr;
+            best = point.transform;
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// Stand this player at their team's base spawn with full health.
+    /// </summary>
+    public void ReturnToBase()
+    {
+        Transform spawn = NearestSpawn(team);
+        var life = GetComponent<Hd2Health>();
+        if (spawn != null && life != null)
+            life.PinSpawn(spawn.position, spawn.rotation);
+
+        var death = GetComponent<Hd2PlayerDeath>();
+        if (death != null)
+            death.RecoverAtSpawn();
+        else if (life != null)
+            life.Respawn();
+    }
+
+    static Hd2Team OtherTeam(Hd2Team side)
+    {
+        return side == Hd2Team.Red ? Hd2Team.Blue : Hd2Team.Red;
+    }
+
+    static Hd2EnemyBot BotOn(Hd2Team side)
+    {
+        if (side != Hd2Team.Red && side != Hd2Team.Blue)
+            return null;
+
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Hd2EnemyBot waiting = null;
+        for (int i = 0; i < bots.Length; i++)
+        {
+            Hd2EnemyBot bot = bots[i];
+            if (bot == null || bot.team != side)
+                continue;
+            var life = bot.GetComponent<Hd2Health>();
+            if (life == null || !life.IsDead)
+                return bot;
+            if (waiting == null)
+                waiting = bot;
+        }
+
+        return waiting;
+    }
+
+    static Transform NearestSpawn(Hd2Team side)
+    {
+        var points = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Transform best = null;
+        float bestSqr = float.MaxValue;
+        Vector3 from = Vector3.zero;
+        var player = FindFirstObjectByType<Hd2Locomotion>();
+        if (player != null)
+            from = player.transform.position;
+        for (int i = 0; i < points.Length; i++)
+        {
+            Hd2SpawnPoint point = points[i];
+            if (point == null || point.team != side)
+                continue;
+            float sqr = (point.transform.position - from).sqrMagnitude;
+            if (sqr >= bestSqr)
+                continue;
+            bestSqr = sqr;
+            best = point.transform;
+        }
+
+        return best;
+    }
+
+    static int SpawnSlot(Transform spawn, Hd2Team side)
+    {
+        if (spawn == null)
+            return 0;
+
+        var points = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        int slot = 0;
+        int index = int.MaxValue;
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (points[i] != null && points[i].transform == spawn)
+            {
+                index = points[i].index;
+                break;
+            }
+        }
+
+        for (int i = 0; i < points.Length; i++)
+        {
+            Hd2SpawnPoint point = points[i];
+            if (point == null || point.transform == spawn || point.team != side)
+                continue;
+            if (point.index < index || (point.index == index && point.transform.GetSiblingIndex() < spawn.GetSiblingIndex()))
+                slot++;
+        }
+
+        return slot;
+    }
+
+    void PlantOnFloor()
+    {
+        Vector3 origin = transform.position + Vector3.up * 0.2f;
+        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 80f, ~0, QueryTriggerInteraction.Ignore);
+        float nearest = float.MaxValue;
+        float floorY = transform.position.y;
+        bool found = false;
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider collider = hits[i].collider;
+            if (collider == null || collider.transform == transform || collider.transform.IsChildOf(transform))
+                continue;
+            if (hits[i].normal.y < 0.5f || hits[i].distance >= nearest)
+                continue;
+            if (collider.GetComponentInParent<Hd2Water>() != null)
+                continue;
+            nearest = hits[i].distance;
+            floorY = hits[i].point.y;
+            found = true;
+        }
+
+        if (!found || transform.position.y - floorY < 0.2f)
+            return;
+
+        Vector3 planted = transform.position;
+        planted.y = floorY;
+        transform.position = planted;
     }
 
     void CreateGrindLoop()
@@ -632,22 +889,10 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         AimSource sample = UpdateAimSource(out bool released);
-        if (sample != AimSource.None)
-        {
-            AimSource held = aimSource;
-            aimSource = sample;
-            UpdateAimArc();
-            aimSource = held;
-        }
-        else
-        {
-            HidePreview();
-        }
-
         if (released && aimSource == AimSource.None && aimValid)
         {
             HidePreview();
-            if (BeginThrust())
+            if (!TrackedAimInsideWall(sample) && BeginThrust())
             {
                 AdvanceThrust(dt);
                 UpdateGrindAudio();
@@ -672,6 +917,7 @@ public class Hd2Locomotion : MonoBehaviour
             {
                 UpdateGrindAudio();
                 DrownIfTouchingWater();
+                ShowHeldAim(sample);
                 return;
             }
         }
@@ -690,6 +936,22 @@ public class Hd2Locomotion : MonoBehaviour
         NoteLanding();
         UpdateGrindAudio();
         DrownIfTouchingWater();
+        ShowHeldAim(sample);
+    }
+
+    void ShowHeldAim(AimSource sample)
+    {
+        if (sample == AimSource.None || thrusting)
+        {
+            if (!thrusting)
+                HidePreview();
+            return;
+        }
+
+        AimSource held = aimSource;
+        aimSource = sample;
+        UpdateAimArc();
+        aimSource = held;
     }
 
     static bool HeadsetPresent()
@@ -874,19 +1136,17 @@ public class Hd2Locomotion : MonoBehaviour
             return;
         }
 
-        SimulateArc(origin, direction, bend);
-        TrimArcToRange(transform.position, Mathf.Max(0.5f, thrustMaxDistance));
-        bool showLine = arcPointCount >= 2;
-        if (arcLine != null)
+        if (TrackedAimInsideWall(aimSource))
         {
-            arcLine.enabled = showLine;
-            if (showLine)
-            {
-                arcLine.positionCount = arcPointCount;
-                for (int i = 0; i < arcPointCount; i++)
-                    arcLine.SetPosition(i, arcPoints[i]);
-            }
+            HidePreview();
+            return;
         }
+
+        SimulateArc(origin, direction, bend);
+        float reach = Mathf.Max(0.5f, thrustMaxDistance);
+        PreferRailAlongArc(transform.position, reach * reach);
+        TrimArcToRange(transform.position, reach);
+        PoseArcOnHand();
 
         var meter = GetComponent<Hd2ThrustMeter>();
         bool noThrust = meter != null && meter.Charges < 1;
@@ -958,6 +1218,106 @@ public class Hd2Locomotion : MonoBehaviour
 
         origin += direction * 0.08f;
         return true;
+    }
+
+    static readonly Collider[] handOverlap = new Collider[16];
+    static readonly RaycastHit[] handHits = new RaycastHit[16];
+
+    bool TrackedAimInsideWall(AimSource source)
+    {
+        Transform aim = source == AimSource.Right ? rightHand
+            : source == AimSource.Left ? leftHand
+            : head;
+        Vector3 point = aim != null ? aim.position : transform.position + Vector3.up;
+        if (InsideSolidVolume(point))
+            return true;
+
+        // A shell the hand has crossed is between the hand and the chest. The near
+        // side of that shell faces away from the hand, so the pointer stays off.
+        Vector3 chest = transform.position + Vector3.up * 0.9f;
+        Vector3 delta = chest - point;
+        float dist = delta.magnitude;
+        if (dist < 0.12f)
+            return false;
+
+        Vector3 dir = delta / dist;
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        int count = Physics.RaycastNonAlloc(point, dir, handHits, dist, ~0, QueryTriggerInteraction.Ignore);
+        Physics.queriesHitBackfaces = previous;
+
+        float best = dist;
+        bool backface = false;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            if (!CountsAsWall(handHits[i].collider) || handHits[i].distance >= best)
+                continue;
+            best = handHits[i].distance;
+            backface = Vector3.Dot(handHits[i].normal, dir) > 0.05f;
+            found = true;
+        }
+
+        return found && backface;
+    }
+
+    bool InsideSolidVolume(Vector3 point)
+    {
+        int count = Physics.OverlapSphereNonAlloc(point, 0.02f, handOverlap, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = handOverlap[i];
+            if (!CountsAsWall(collider))
+                continue;
+            if (collider is MeshCollider mesh && !mesh.convex)
+                continue;
+            if ((collider.ClosestPoint(point) - point).sqrMagnitude < 0.000001f)
+                return true;
+        }
+
+        return false;
+    }
+
+    bool CountsAsWall(Collider collider)
+    {
+        if (collider == null || IsSelf(collider))
+            return false;
+        if (collider.GetComponentInParent<Hd2Health>() != null)
+            return false;
+        if (collider.GetComponentInParent<Hd2Water>() != null)
+            return false;
+        Hd2SpawnField field = collider.GetComponentInParent<Hd2SpawnField>();
+        return field == null || !field.Allows(this);
+    }
+
+    void PoseArcOnHand()
+    {
+        if (arcLine == null)
+            return;
+
+        Transform aim = AimTransform();
+        bool showLine = arcPointCount >= 2 && aim != null;
+        arcLine.enabled = showLine;
+        if (!showLine)
+            return;
+
+        if (arcLine.transform.parent != aim)
+            arcLine.transform.SetParent(aim, false);
+        arcLine.useWorldSpace = false;
+        arcLine.positionCount = arcPointCount;
+        for (int i = 0; i < arcPointCount; i++)
+            arcLine.SetPosition(i, aim.InverseTransformPoint(arcPoints[i]));
+    }
+
+    Transform AimTransform()
+    {
+        if (aimSource == AimSource.Right && rightHand != null)
+            return rightHand;
+        if (aimSource == AimSource.Left && leftHand != null)
+            return leftHand;
+        if (head != null)
+            return head;
+        return transform;
     }
 
     void SimulateArc(Vector3 origin, Vector3 direction, Vector3 bend)
@@ -1495,6 +1855,169 @@ public class Hd2Locomotion : MonoBehaviour
         return player + offset * (maxDistance / distance);
     }
 
+    const float RailGrabRadius = 0.5f;
+
+    /// <summary>
+    /// The drawn arc and drop stay thin. A 0.5 m tube around that same path grabs a rail
+    /// the thin line missed, and the landing moves onto that rail.
+    /// </summary>
+    void PreferRailAlongArc(Vector3 player, float maxSqr)
+    {
+        if (aimRail != null || arcPointCount < 2)
+            return;
+
+        // Short pieces keep the tube on the drawn line. One capsule from mid-arc
+        // to the ground would cut across and miss the drop.
+        const float chunk = 0.8f;
+        float traveled = 0f;
+        for (int i = 1; i < arcPointCount; i++)
+        {
+            Vector3 from = arcPoints[i - 1];
+            Vector3 to = arcPoints[i];
+            float seg = Vector3.Distance(from, to);
+            if (seg < 0.0001f)
+                continue;
+
+            float covered = 0f;
+            while (covered < seg - 0.0001f)
+            {
+                float piece = Mathf.Min(chunk, seg - covered);
+                float t0 = covered / seg;
+                float t1 = (covered + piece) / seg;
+                Vector3 a = Vector3.Lerp(from, to, t0);
+                Vector3 b = Vector3.Lerp(from, to, t1);
+                if (RailInTube(a, b, player, maxSqr, out Hd2GrindRail rail, out Vector3 onRail))
+                {
+                    float along = ClosestAlong(a, b, traveled + covered, onRail);
+                    CutArcAt(along);
+                    if (arcPointCount > 0 && (arcPoints[arcPointCount - 1] - onRail).sqrMagnitude > 0.01f)
+                    {
+                        if (arcPointCount < ArcPointCapacity)
+                            arcPoints[arcPointCount++] = onRail;
+                        else
+                            arcPoints[arcPointCount - 1] = onRail;
+                    }
+
+                    aimLanding = onRail;
+                    aimShowOutline = true;
+                    aimKind = AimKind.Rail;
+                    aimValid = true;
+                    aimRail = rail;
+                    aimGrindSign = rail.EntrySign(player, onRail);
+                    return;
+                }
+
+                covered += piece;
+            }
+
+            traveled += seg;
+        }
+    }
+
+    bool RailInTube(Vector3 from, Vector3 to, Vector3 player, float maxSqr, out Hd2GrindRail rail, out Vector3 onRail)
+    {
+        rail = null;
+        onRail = to;
+        Vector3 span = to - from;
+        float length = span.magnitude;
+        if (length < 0.0001f)
+            return false;
+
+        int count = Physics.OverlapCapsuleNonAlloc(from, to, RailGrabRadius, railGrab, ~0, QueryTriggerInteraction.Ignore);
+        // The beam is about 0.18 m thick, so a centerline just outside the 0.5 m tube still counts.
+        float limit = (RailGrabRadius + 0.2f) * (RailGrabRadius + 0.2f);
+        float bestT = float.MaxValue;
+        float bestSqr = limit;
+        bool found = false;
+        int samples = Mathf.Max(1, Mathf.CeilToInt(length / 0.25f));
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = railGrab[i];
+            if (collider == null || IsSelf(collider))
+                continue;
+
+            Hd2GrindRail candidate = collider.GetComponentInParent<Hd2GrindRail>();
+            if (candidate == null || (grinding && candidate == grindRail))
+                continue;
+
+            float candidateT = 1f;
+            float candidateSqr = limit;
+            Vector3 candidatePoint = to;
+            bool near = false;
+            for (int s = 0; s <= samples; s++)
+            {
+                Vector3 sample = from + span * (s / (float)samples);
+                Vector3 closest = candidate.PointAlong(candidate.DistanceAlong(sample));
+                float sqr = (NearestOnSegment(from, to, closest) - closest).sqrMagnitude;
+                if (sqr >= candidateSqr)
+                    continue;
+
+                candidateSqr = sqr;
+                candidatePoint = closest;
+                candidateT = ClosestAlong(from, to, 0f, closest) / length;
+                near = true;
+            }
+
+            if (!near || candidateSqr >= limit)
+                continue;
+            if ((candidatePoint - player).sqrMagnitude > maxSqr)
+                continue;
+            if (candidateT > bestT + 0.02f)
+                continue;
+            if (candidateT >= bestT - 0.02f && candidateSqr >= bestSqr)
+                continue;
+
+            bestT = candidateT;
+            bestSqr = candidateSqr;
+            rail = candidate;
+            onRail = candidatePoint;
+            found = true;
+        }
+
+        return found;
+    }
+
+    static Vector3 NearestOnSegment(Vector3 from, Vector3 to, Vector3 point)
+    {
+        Vector3 end = to - from;
+        float length = end.magnitude;
+        if (length < 0.0001f)
+            return from;
+
+        float t = Mathf.Clamp01(Vector3.Dot(point - from, end) / (length * length));
+        return Vector3.Lerp(from, to, t);
+    }
+
+    static float ClosestAlong(Vector3 from, Vector3 to, float startAlong, Vector3 point)
+    {
+        Vector3 end = to - from;
+        float length = end.magnitude;
+        if (length < 0.0001f)
+            return startAlong;
+
+        float t = Mathf.Clamp01(Vector3.Dot(point - from, end) / (length * length));
+        return startAlong + t * length;
+    }
+
+    void CutArcAt(float along)
+    {
+        float traveled = 0f;
+        for (int i = 1; i < arcPointCount; i++)
+        {
+            float seg = Vector3.Distance(arcPoints[i - 1], arcPoints[i]);
+            if (traveled + seg < along && i < arcPointCount - 1)
+            {
+                traveled += seg;
+                continue;
+            }
+
+            float t = seg > 0.0001f ? Mathf.Clamp01((along - traveled) / seg) : 1f;
+            arcPoints[i] = Vector3.Lerp(arcPoints[i - 1], arcPoints[i], t);
+            arcPointCount = i + 1;
+            return;
+        }
+    }
+
     void TrimArcToRange(Vector3 player, float maxDistance)
     {
         float maxSqr = maxDistance * maxDistance;
@@ -1938,7 +2461,7 @@ public class Hd2Locomotion : MonoBehaviour
                 if (rail != null && TryWalkOnRail(rail, direction, distance))
                     return;
 
-                if (TryStep(direction, distance, travel))
+                if (TryStep(direction, distance, travel, hit))
                     return;
 
                 transform.position += direction * travel;
@@ -1948,6 +2471,7 @@ public class Hd2Locomotion : MonoBehaviour
             else
             {
                 transform.position += delta;
+                StickToLowerFloor();
                 return;
             }
         }
@@ -1988,66 +2512,47 @@ public class Hd2Locomotion : MonoBehaviour
         return true;
     }
 
-    // A lip of stepHeight or less is not a wall. Lift over it, finish the step,
-    // then put the feet on the floor on the other side, up or down.
-    // The rise test starts behind the contact so the lip itself is not a ceiling.
-    bool TryStep(Vector3 direction, float distance, float blockedTravel)
+    // A lip up to half a meter is floor, not a wall. The capsule sphere hits the
+    // face early, so the walkable surface is sampled past that contact.
+    bool TryStep(Vector3 direction, float distance, float blockedTravel, RaycastHit block)
     {
-        float rise = stepHeight;
-        if (rise < 0.01f)
+        float maxStep = Mathf.Max(0.5f, stepHeight);
+        float reach = blockedTravel + Mathf.Max(0.12f, bodyRadius) + 0.08f;
+        Vector3 past = transform.position + direction * reach;
+        Vector3 contact = block.point + direction * 0.12f;
+        if (!FloorBeside(past, maxStep, out float floorY) && !FloorBeside(contact, maxStep, out floorY))
             return false;
 
-        float remaining = distance - blockedTravel;
-        if (remaining < 0.001f)
+        float change = floorY - transform.position.y;
+        if (change > maxStep || change < -maxStep)
+            return false;
+        if (change > -0.004f && change < 0.004f)
             return false;
 
-        float backoff = skinWidth + 0.03f;
-        Vector3 back = direction * backoff;
-        CapsuleEnds(out Vector3 bottom, out Vector3 top);
-        bottom -= back;
-        top -= back;
-        float radius = bodyRadius * 0.9f;
-        if (CastBody(bottom, top, radius, Vector3.up, rise + skinWidth, out RaycastHit ceiling)
-            && ceiling.distance > 0.001f
-            && ceiling.normal.y < -0.2f)
+        if (change < 0f)
         {
-            rise = Mathf.Max(0f, ceiling.distance - skinWidth);
-            if (rise < 0.02f)
-                return false;
+            transform.position += direction * distance;
+            return true;
         }
 
-        float forward = remaining + backoff;
-        Vector3 raised = Vector3.up * rise;
-        if (CastBody(bottom + raised, top + raised, radius, direction, forward + skinWidth, out RaycastHit wall))
-        {
-            forward = Mathf.Max(0f, wall.distance - skinWidth);
-            if (forward < 0.02f)
-                return false;
-        }
-
-        Vector3 feet = transform.position;
-        Vector3 landed = feet - back + direction * forward + raised;
-        if (!TryStepFloor(landed + Vector3.up * 0.05f, rise + stepHeight + 0.2f, out float floorY))
+        float forward = Mathf.Max(distance, blockedTravel + 0.08f);
+        if (!HeadroomForStep(direction, forward, change))
             return false;
 
-        float change = floorY - feet.y;
-        if (change > stepHeight + 0.001f || change < -stepHeight - 0.001f)
-            return false;
-        if (change < 0.004f && change > -0.004f)
-            return false;
-
+        Vector3 landed = transform.position + direction * forward;
         landed.y = floorY;
-        if (!CapsuleFits(landed))
+        if (!CapsuleFitsAbove(landed))
             return false;
 
         transform.position = landed;
         return true;
     }
 
-    bool TryStepFloor(Vector3 origin, float distance, out float floorY)
+    bool FloorBeside(Vector3 point, float maxStep, out float floorY)
     {
-        floorY = origin.y;
-        int count = Physics.RaycastNonAlloc(origin, Vector3.down, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        floorY = point.y;
+        Vector3 origin = new Vector3(point.x, transform.position.y + maxStep + 0.08f, point.z);
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, bodyHits, maxStep * 2f + 0.2f, ~0, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         bool found = false;
         for (int i = 0; i < count; i++)
@@ -2058,11 +2563,8 @@ public class Hd2Locomotion : MonoBehaviour
             Hd2SpawnField field = collider != null ? collider.GetComponentInParent<Hd2SpawnField>() : null;
             if (field != null && field.Allows(this))
                 continue;
-            if (bodyHits[i].normal.y < 0.45f)
+            if (bodyHits[i].normal.y < 0.45f || bodyHits[i].distance >= best)
                 continue;
-            if (bodyHits[i].distance >= best)
-                continue;
-
             best = bodyHits[i].distance;
             floorY = bodyHits[i].point.y;
             found = true;
@@ -2071,7 +2573,52 @@ public class Hd2Locomotion : MonoBehaviour
         return found;
     }
 
-    bool CapsuleFits(Vector3 feet)
+    bool HeadroomForStep(Vector3 direction, float forward, float change)
+    {
+        CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        Vector3 raised = Vector3.up * (change + 0.03f);
+        float radius = Mathf.Max(0.05f, bodyRadius) * 0.85f;
+        if (!CastBody(bottom + raised, top + raised, radius, direction, forward + skinWidth, out RaycastHit wall))
+            return true;
+        return wall.distance >= 0.04f;
+    }
+
+    void StickToLowerFloor()
+    {
+        if (jumpBoosting || jumpSpent)
+            return;
+
+        float maxStep = Mathf.Max(0.5f, stepHeight);
+        Vector3 origin = transform.position + Vector3.up * 0.12f;
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, bodyHits, 0.12f + maxStep, ~0, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        float floorY = transform.position.y;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = bodyHits[i].collider;
+            if (IsSelf(collider))
+                continue;
+            if (bodyHits[i].normal.y < 0.45f || bodyHits[i].distance >= best)
+                continue;
+            best = bodyHits[i].distance;
+            floorY = bodyHits[i].point.y;
+            found = true;
+        }
+
+        if (!found)
+            return;
+
+        float drop = transform.position.y - floorY;
+        if (drop < 0.004f || drop > maxStep)
+            return;
+
+        Vector3 planted = transform.position;
+        planted.y = floorY;
+        transform.position = planted;
+    }
+
+    bool CapsuleFitsAbove(Vector3 feet)
     {
         float radius = Mathf.Max(0.05f, bodyRadius);
         float height = Mathf.Max(bodyHeight, radius * 2f + 0.01f);
@@ -2080,9 +2627,15 @@ public class Hd2Locomotion : MonoBehaviour
         Vector3 top = feet + Vector3.up * (height - radius);
         int count = Physics.OverlapCapsuleNonAlloc(bottom, top, castRadius, stuckOverlap, ~0, QueryTriggerInteraction.Ignore);
         float limit = skinWidth * skinWidth;
+        Vector3 sample = feet + Vector3.up * (radius + 0.05f);
         for (int i = 0; i < count; i++)
         {
-            if (TryWallPush(stuckOverlap[i], bottom, top, castRadius, out Vector3 push) && push.sqrMagnitude > limit)
+            Collider collider = stuckOverlap[i];
+            if (collider == null || collider.isTrigger)
+                continue;
+            if (collider.ClosestPoint(sample).y < feet.y + 0.03f)
+                continue;
+            if (TryWallPush(collider, bottom, top, castRadius, out Vector3 push) && push.sqrMagnitude > limit)
                 return false;
         }
 

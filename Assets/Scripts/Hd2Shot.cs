@@ -697,6 +697,9 @@ public class Hd2Shot : MonoBehaviour
         if (health == null)
             return false;
 
+        if (health.IsAlly(owner))
+            return true;
+
         if (owner != null)
             health.LastAttacker = owner;
         Vector3 from = hasFiredFrom ? firedFrom : hit.point;

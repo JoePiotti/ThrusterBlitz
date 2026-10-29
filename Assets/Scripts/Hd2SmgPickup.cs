@@ -230,6 +230,7 @@ public class Hd2SmgPickup : MonoBehaviour
             smg.BindMuzzle(muzzle);
         }
 
+        Hd2Pistol.PulseEquip(hand);
         return true;
     }
 

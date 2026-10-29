@@ -237,7 +237,7 @@ public class Hd2Shotgun : MonoBehaviour
         float range = Mathf.Max(0.5f, maxRangeMeters);
         projectile.velocity = direction * speed;
         projectile.lifetime = range / speed + 0.05f;
-        projectile.owner = transform.root;
+        projectile.owner = Hd2SpawnField.FighterBody(this);
         projectile.damage = closeBodyDamage;
         projectile.headMultiplier = closeBodyDamage > 0.01f ? closeHeadDamage / closeBodyDamage : 1f;
         projectile.gravel = true;
@@ -297,8 +297,10 @@ public class Hd2Shotgun : MonoBehaviour
         source.playOnAwake = false;
         source.loop = false;
         source.spatialBlend = 1f;
-        source.minDistance = 0.4f;
-        source.maxDistance = 18f;
+        source.dopplerLevel = 0f;
+        source.rolloffMode = AudioRolloffMode.Linear;
+        source.minDistance = 2f;
+        source.maxDistance = 36f;
         return source;
     }
 

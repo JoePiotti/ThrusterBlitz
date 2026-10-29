@@ -184,6 +184,7 @@ public class Hd2RocketPickup : MonoBehaviour
         launcher.SetHand(hand.name == "LeftHand" ? Hd2Pistol.Hand.Left : Hd2Pistol.Hand.Right);
         if (hand.name != "LeftHand")
             MirrorAcrossLocalX(gun.transform);
+        Hd2Pistol.PulseEquip(hand);
         return true;
     }
 

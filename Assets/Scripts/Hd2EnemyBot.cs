@@ -5,7 +5,10 @@ using UnityEngine;
 /// <summary>
 /// Deathmatch bot. Wanders until it sees an enemy or takes a hit, then shoots the body
 /// while sprinting, strafing, or blitzing. Walk, blitz, and guns match the player.
-/// Combat sidesteps are a little slower than a player sprint.
+/// A jump spends thrust the same way a player's does, and the meter refills only
+/// while the bot is not sprinting. Combat sidesteps are a little slower than a player sprint.
+/// With domination on, the same body holds a point, walks to a weak or contested one,
+/// fights, and falls back to heal.
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public class Hd2EnemyBot : MonoBehaviour
@@ -17,8 +20,21 @@ public class Hd2EnemyBot : MonoBehaviour
     public Hd2Team team;
     public string displayName = "bot";
     public bool useBodyColor;
+    [Tooltip("Rome domination. Holds and walks points, fights enemies, and falls back to heal.")]
+    public bool domination;
+    [Tooltip("0 walks to the nearest point. Higher values prefer a contested or enemy-held point.")]
+    public float objectiveWeight = 1f;
+    [Tooltip("Leaves the fight when health falls to this fraction of max.")]
+    public float retreatFraction = 0.34f;
+    [Tooltip("Health restored each second while falling back.")]
+    public float retreatHealPerSecond = 8f;
+    [Tooltip("Tie break so this bot leans toward one point.")]
+    public string pointBias = "A";
+    [Tooltip("Which reserved spawn of this team this bot uses.")]
+    public int spawnSlot;
 
     const float WalkSpeed = 2.5f;
+    const float ObjectiveSpeed = 6.5f;
     const float SidestepSpeed = 4.6f;
     const float BlitzSpeed = 30f;
     const float BlitzRange = 13f;
@@ -30,6 +46,11 @@ public class Hd2EnemyBot : MonoBehaviour
     const float NoticeDelay = 0.25f;
     const float DropCombatRange = 30f;
     const float RagdollSeconds = 5f;
+    const float TurnStep = 45f;
+    const float JumpGravity = 15f;
+    const float JumpAccelGs = 3f;
+    const float JumpMaxTime = 0.3f;
+    const float JumpThrustPerSecond = 1f;
 
     enum Mode
     {
@@ -61,18 +82,23 @@ public class Hd2EnemyBot : MonoBehaviour
     Transform eye;
     readonly List<Transform> seen = new List<Transform>();
     static readonly RaycastHit[] sightHits = new RaycastHit[16];
+    static readonly RaycastHit[] stepHits = new RaycastHit[8];
     Mode mode = Mode.Wander;
     WanderKind wander = WanderKind.Walk;
     CombatKind combat = CombatKind.Sprint;
     Transform target;
     Vector3 moveDir = Vector3.forward;
     Vector3 mapCenter;
+    float playRadius;
     bool hasCenter;
     float modeUntil;
     float verticalVelocity;
     float fallTime;
+    bool jumpBoosting;
+    float jumpTime;
     float lastMovedAt;
     float nextPump;
+    float nextPistolFire;
     float strafeFlipAt;
     int strafeSign = 1;
     bool wallReversed;
@@ -113,6 +139,7 @@ public class Hd2EnemyBot : MonoBehaviour
     Quaternion restFootR;
     float gait;
     float gaitWeight;
+    int turnSign;
     float attackAt;
     bool ragdolling;
     float killMarkUntil;
@@ -123,6 +150,19 @@ public class Hd2EnemyBot : MonoBehaviour
     readonly List<Rigidbody> ragdollBodies = new List<Rigidbody>();
     readonly List<CharacterJoint> ragdollJoints = new List<CharacterJoint>();
     readonly List<Collider> silencedGunColliders = new List<Collider>();
+    bool retreating;
+    Hd2TeamButton objective;
+    float nextObjectiveAt;
+    float nextHopAt;
+    Transform homeSpawn;
+    Transform pressHand;
+    bool pressingButton;
+    AudioSource walkLoop;
+    AudioSource grindLoop;
+    AudioSource thrustLoop;
+    AudioSource blitzSource;
+    AudioSource landSource;
+    float airborneTime;
 
     void Start()
     {
@@ -130,8 +170,9 @@ public class Hd2EnemyBot : MonoBehaviour
         body.height = 1.7f;
         body.radius = 0.25f;
         body.center = new Vector3(0f, 0.9f, 0f);
-        body.stepOffset = 0.4f;
-        body.skinWidth = 0.05f;
+        body.stepOffset = 0.5f;
+        body.skinWidth = 0.02f;
+        body.minMoveDistance = 0.001f;
         Hd2SpawnField.ApplyPass(this, body);
 
         health = gameObject.AddComponent<Hd2Health>();
@@ -184,6 +225,154 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         CacheCenter();
+        CacheHome();
+        CreateBodyAudio();
+        EnterWander();
+        lastMovedAt = Time.time;
+    }
+
+    void CreateBodyAudio()
+    {
+        walkLoop = LoopVoice("Audio/RobotWalk", 0.32f);
+        grindLoop = LoopVoice("Audio/RailGrindLoop", 0.5f);
+        thrustLoop = LoopVoice("Audio/JumpThrust", 1f);
+        blitzSource = ShotVoice("Audio/RobotBlitz");
+        landSource = ShotVoice("Audio/RobotLand");
+    }
+
+    AudioSource LoopVoice(string path, float volume)
+    {
+        AudioClip clip = Resources.Load<AudioClip>(path);
+        if (clip == null)
+            return null;
+
+        var source = gameObject.AddComponent<AudioSource>();
+        source.clip = clip;
+        source.loop = true;
+        source.playOnAwake = false;
+        source.volume = volume;
+        PlaceVoice(source);
+        return source;
+    }
+
+    AudioSource ShotVoice(string path)
+    {
+        AudioClip clip = Resources.Load<AudioClip>(path);
+        if (clip == null)
+            return null;
+
+        var source = gameObject.AddComponent<AudioSource>();
+        source.clip = clip;
+        source.loop = false;
+        source.playOnAwake = false;
+        PlaceVoice(source);
+        return source;
+    }
+
+    static void PlaceVoice(AudioSource source)
+    {
+        source.spatialBlend = 1f;
+        source.dopplerLevel = 0f;
+        source.rolloffMode = AudioRolloffMode.Linear;
+        source.minDistance = 2f;
+        source.maxDistance = 14f;
+    }
+
+    void UpdateBodyAudio()
+    {
+        bool dead = health != null && health.IsDead;
+        bool walking = !dead && !traveling && !grinding && body != null && body.enabled && body.isGrounded
+            && moveDir.sqrMagnitude > 0.04f;
+        SetLoop(walkLoop, walking);
+        if (walking && walkLoop != null)
+        {
+            bool fast = (mode == Mode.Combat && combat == CombatKind.Sprint)
+                || (domination && mode == Mode.Wander && !retreating);
+            walkLoop.pitch = fast ? 1.55f : 1f;
+            walkLoop.volume = 0.32f;
+        }
+
+        SetLoop(grindLoop, !dead && grinding && grindRail != null);
+        SetLoop(thrustLoop, !dead && (traveling || jumpBoosting));
+        if (dead)
+        {
+            airborneTime = 0f;
+            return;
+        }
+
+        bool airborne = !traveling && !grinding && body != null && body.enabled && !body.isGrounded;
+        if (airborne)
+        {
+            airborneTime += Time.deltaTime;
+            return;
+        }
+
+        if (airborneTime > 0.2f && landSource != null && landSource.clip != null)
+            landSource.PlayOneShot(landSource.clip, 0.85f);
+        airborneTime = 0f;
+    }
+
+    static void SetLoop(AudioSource source, bool play)
+    {
+        if (source == null)
+            return;
+        if (play)
+        {
+            if (!source.isPlaying)
+                source.Play();
+        }
+        else if (source.isPlaying)
+            source.Stop();
+    }
+
+    /// <summary>
+    /// Round reset. Clears a ragdoll and stands the bot on its base spawn.
+    /// </summary>
+    public void ReturnToBase()
+    {
+        StopAllCoroutines();
+        if (ragdolling)
+        {
+            FreezeRagdoll();
+            for (int i = ragdollJoints.Count - 1; i >= 0; i--)
+            {
+                if (ragdollJoints[i] != null)
+                    Destroy(ragdollJoints[i]);
+            }
+
+            ragdollJoints.Clear();
+            RestorePose();
+            for (int i = ragdollBodies.Count - 1; i >= 0; i--)
+            {
+                if (ragdollBodies[i] != null)
+                    Destroy(ragdollBodies[i]);
+            }
+
+            ragdollBodies.Clear();
+            RestoreGunColliders();
+            ragdolling = false;
+        }
+
+        retreating = false;
+        if (homeSpawn == null)
+            CacheHome();
+        if (health != null)
+        {
+            health.Respawn();
+            lastHealth = health.Health;
+        }
+
+        if (homeSpawn != null)
+        {
+            if (body != null)
+                body.enabled = false;
+            transform.SetPositionAndRotation(homeSpawn.position, homeSpawn.rotation);
+            if (body != null)
+                body.enabled = true;
+            if (health != null)
+                health.RememberSpawn();
+        }
+
         EnterWander();
         lastMovedAt = Time.time;
     }
@@ -268,19 +457,24 @@ public class Hd2EnemyBot : MonoBehaviour
 
     void Update()
     {
-        if (Hd2Deathmatch.Over)
+        pressingButton = false;
+        if (Hd2Deathmatch.Over || (domination && Hd2Domination.Decided))
         {
+            RetractPress();
             StopMotion();
             if (body != null && !body.enabled && health != null && health.Health > 0f)
                 body.enabled = true;
             ReleaseGuns();
+            UpdateBodyAudio();
             return;
         }
 
         FaceKillMark();
         if (health != null && health.IsDead)
         {
+            RetractPress();
             ReleaseGuns();
+            UpdateBodyAudio();
             return;
         }
 
@@ -290,18 +484,33 @@ public class Hd2EnemyBot : MonoBehaviour
             EnterWander();
         }
 
-        if (mode == Mode.Wander && SeesEnemy(out Transform seen))
-            Engage(seen);
+        if (domination)
+            TickDominationGate();
+
+        if (!retreating && mode == Mode.Wander)
+        {
+            if (!SeesEnemy(out Transform seen))
+                EnemyAtPoint(out seen);
+            if (seen != null)
+                Engage(seen);
+        }
+
+        if (mode == Mode.Combat && domination && target != null && Friendly(target))
+            EnterWander();
 
         if (mode == Mode.Combat && !TargetAlive())
             EnterWander();
 
         bool finishingRail = grinding || (traveling && travelRail != null);
         bool waitingToAttack = mode == Mode.Combat && Time.time < attackAt;
-        if (Time.time >= modeUntil && !finishingRail && !waitingToAttack)
+        if (Time.time >= modeUntil && !finishingRail && !waitingToAttack && (!domination || mode == Mode.Combat))
             PickSubmode();
 
-        if (mode == Mode.Wander)
+        if (retreating)
+            TickRetreat();
+        else if (domination && mode == Mode.Wander)
+            TickObjective();
+        else if (mode == Mode.Wander)
             TickWander();
         else
             TickCombat();
@@ -310,6 +519,9 @@ public class Hd2EnemyBot : MonoBehaviour
         if (!traveling && !grinding)
             TickWalk();
         DrownIfOnWater();
+        if (!pressingButton)
+            RetractPress();
+        UpdateBodyAudio();
     }
 
     void LateUpdate()
@@ -333,13 +545,294 @@ public class Hd2EnemyBot : MonoBehaviour
         target = null;
         StopMotion();
         ReleaseGuns();
+        if (domination)
+        {
+            moveDir = Vector3.zero;
+            modeUntil = Time.time;
+            return;
+        }
+
         PickSubmode();
+    }
+
+    void TickDominationGate()
+    {
+        if (health == null || health.maxHealth <= 0f)
+            return;
+
+        float frac = health.Health / health.maxHealth;
+        if (frac <= retreatFraction)
+        {
+            if (!retreating)
+            {
+                retreating = true;
+                StopMotion();
+            }
+
+            target = null;
+            mode = Mode.Wander;
+            ReleaseGuns();
+        }
+        else if (retreating && frac >= retreatFraction + 0.3f)
+        {
+            retreating = false;
+        }
+    }
+
+    void TickRetreat()
+    {
+        ReleaseGuns();
+        Vector3 at = FallbackPoint();
+        float gap = Horizontal(at);
+        moveDir = gap < 1.5f ? Vector3.zero : Flat(at - transform.position);
+        if (gap < 1.5f && health != null)
+            health.Heal(retreatHealPerSecond * Time.deltaTime);
+        moveDir = ClearOfWater(moveDir);
+        if (WallAhead(1.6f, out Vector3 away) && moveDir.sqrMagnitude > 0.0001f)
+            moveDir = Vector3.Slerp(moveDir, away, 0.5f).normalized;
+        if (moveDir.sqrMagnitude > 0.0001f)
+            Face(moveDir);
+        AimAt(transform.position + Vector3.up * 1.2f + transform.forward * 6f, false);
+    }
+
+    void TickObjective()
+    {
+        ReleaseGuns();
+        if (Time.time >= nextObjectiveAt || objective == null)
+        {
+            objective = ChoosePoint();
+            nextObjectiveAt = Time.time + 1.2f;
+        }
+
+        Vector3 at = objective != null ? objective.transform.position : HomePosition();
+        float gap = Horizontal(at);
+        Hd2Team enemy = EnemyOf(team);
+        bool ours = objective != null && team != Hd2Team.None && objective.Owner == team
+            && objective.OccupantTeam != enemy;
+        if (gap < 1.35f && ours)
+        {
+            moveDir = Vector3.zero;
+            AimAt(transform.position + Vector3.up * 1.2f + transform.forward * 8f, false);
+            return;
+        }
+
+        moveDir = gap < 0.55f ? Vector3.zero : Flat(at - transform.position);
+        if (WallAhead(1.6f, out Vector3 away) && moveDir.sqrMagnitude > 0.0001f)
+        {
+            Vector3 blended = Vector3.Slerp(moveDir, away, 0.5f).normalized;
+            if (!WaterAlong(blended, 2.4f))
+                moveDir = blended;
+        }
+
+        moveDir = ClearOfWater(moveDir);
+        if (moveDir.sqrMagnitude > 0.0001f)
+            Face(moveDir);
+        if (gap < 1.6f && objective != null)
+            AimAt(at + Vector3.up * 0.7f, false);
+        else
+            AimAt(transform.position + Vector3.up * 1.2f + transform.forward * 8f, false);
+
+        if (objective != null && !ours && gap < 1.25f)
+            ReachButton(objective);
+
+        if (!traveling && !grinding && gap > 14f && meter != null && meter.Charges >= 1f && moveDir.sqrMagnitude > 0.0001f)
+            TryBlitz(BlitzLanding(moveDir, false), null, 1f);
+    }
+
+    void ReachButton(Hd2TeamButton point)
+    {
+        if (point == null)
+            return;
+
+        if (pressHand == null)
+        {
+            var hand = new GameObject("RightHand");
+            hand.transform.SetParent(transform, false);
+            var sphere = hand.AddComponent<SphereCollider>();
+            sphere.isTrigger = true;
+            sphere.radius = 0.05f;
+            pressHand = hand.transform;
+        }
+
+        pressingButton = true;
+        if (!pressHand.gameObject.activeSelf)
+            pressHand.gameObject.SetActive(true);
+        pressHand.position = point.TouchPoint;
+        point.OfferTouch(this);
+    }
+
+    void RetractPress()
+    {
+        pressingButton = false;
+        if (pressHand != null && pressHand.gameObject.activeSelf)
+            pressHand.gameObject.SetActive(false);
+    }
+
+    Hd2TeamButton ChoosePoint()
+    {
+        var all = Hd2TeamButton.All;
+        Hd2TeamButton best = null;
+        float bestScore = float.NegativeInfinity;
+        float weight = Mathf.Clamp(objectiveWeight, 0f, 2f) * 0.5f;
+        for (int i = 0; i < all.Count; i++)
+        {
+            Hd2TeamButton point = all[i];
+            if (point == null)
+                continue;
+            float score = ScorePoint(point, weight);
+            if (score <= bestScore)
+                continue;
+            bestScore = score;
+            best = point;
+        }
+
+        return best;
+    }
+
+    float ScorePoint(Hd2TeamButton point, float weight)
+    {
+        float distance = Horizontal(point.transform.position);
+        float near = 1f / (1f + distance * 0.04f);
+        Hd2Team enemy = EnemyOf(team);
+        float weakness = point.Owner == enemy ? 1f : point.Owner == Hd2Team.None ? 0.55f : 0.12f;
+        float contested = 0f;
+        if (point.Occupied && point.OccupantTeam == enemy)
+            contested = 1f;
+        else if (point.Occupied && point.Owner == Hd2Team.None)
+            contested = 0.45f;
+
+        float score = Mathf.Lerp(near, weakness + contested * 0.85f, weight);
+        if (!string.IsNullOrEmpty(pointBias) && point.Label == pointBias)
+            score += 0.08f;
+        return score;
+    }
+
+    Vector3 FallbackPoint()
+    {
+        var all = Hd2TeamButton.All;
+        Vector3 pick = HomePosition();
+        float best = float.MaxValue;
+        bool found = false;
+        for (int i = 0; i < all.Count; i++)
+        {
+            Hd2TeamButton point = all[i];
+            if (point == null || point.Owner != team)
+                continue;
+            float distance = Horizontal(point.transform.position);
+            if (distance >= best)
+                continue;
+            best = distance;
+            pick = point.transform.position;
+            found = true;
+        }
+
+        if (!found && homeSpawn != null)
+            return homeSpawn.position;
+        return pick;
+    }
+
+    Vector3 HomePosition()
+    {
+        return homeSpawn != null ? homeSpawn.position : transform.position;
+    }
+
+    public Transform Home => homeSpawn;
+
+    public void TakePlace(Hd2Team side, Color color, int slot, Transform spawn)
+    {
+        team = side;
+        bodyColor = color;
+        useBodyColor = true;
+        spawnSlot = slot;
+        if (side == Hd2Team.Red && displayName != null && displayName.StartsWith("blue"))
+            displayName = "red" + displayName.Substring(4);
+        else if (side == Hd2Team.Blue && displayName != null && displayName.StartsWith("red"))
+            displayName = "blue" + displayName.Substring(3);
+
+        CacheHome();
+        if (spawn != null)
+            homeSpawn = spawn;
+
+        Transform suit = transform.Find("Body");
+        if (suit != null)
+            TintRenderers(suit, color);
+        if (health != null && health.IsDead)
+            return;
+        if (homeSpawn == null)
+            return;
+
+        retreating = false;
+        if (body != null)
+            body.enabled = false;
+        transform.SetPositionAndRotation(homeSpawn.position, homeSpawn.rotation);
+        if (body != null)
+            body.enabled = true;
+        if (health != null)
+            health.RememberSpawn();
+        EnterWander();
+    }
+
+    void CacheHome()
+    {
+        if (!domination || team == Hd2Team.None)
+            return;
+
+        var points = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < points.Length; i++)
+        {
+            Hd2SpawnPoint point = points[i];
+            if (point == null || point.team != team)
+                continue;
+
+            int rank = 0;
+            for (int j = 0; j < points.Length; j++)
+            {
+                Hd2SpawnPoint other = points[j];
+                if (other == null || other == point || other.team != team)
+                    continue;
+                if (other.index < point.index || (other.index == point.index && j < i))
+                    rank++;
+            }
+
+            if (rank != spawnSlot)
+                continue;
+
+            homeSpawn = point.transform;
+            return;
+        }
+    }
+
+    bool Friendly(Transform other)
+    {
+        if (other == null || team == Hd2Team.None)
+            return false;
+
+        Hd2EnemyBot bot = other.GetComponent<Hd2EnemyBot>();
+        if (bot != null)
+            return bot.team == team;
+
+        Hd2Locomotion player = other.GetComponent<Hd2Locomotion>();
+        return player != null && player.team == team;
+    }
+
+    static Hd2Team EnemyOf(Hd2Team side)
+    {
+        if (side == Hd2Team.Red)
+            return Hd2Team.Blue;
+        if (side == Hd2Team.Blue)
+            return Hd2Team.Red;
+        return Hd2Team.None;
     }
 
     void Engage(Transform enemy)
     {
+        if (retreating)
+            return;
+
         Transform body = FighterBody(enemy);
         if (body == null || body == transform)
+            return;
+        if (domination && Friendly(body))
             return;
         bool fresh = mode != Mode.Combat || target != body;
         target = body;
@@ -541,13 +1034,17 @@ public class Hd2EnemyBot : MonoBehaviour
         if (!combatFire)
             return;
 
-        var pistols = GetComponentsInChildren<Hd2Pistol>();
-        for (int i = 0; i < pistols.Length; i++)
-            pistols[i].BotTap();
+        if (Time.time >= nextPistolFire)
+        {
+            nextPistolFire = Time.time + 0.2f;
+            var pistols = GetComponentsInChildren<Hd2Pistol>();
+            for (int i = 0; i < pistols.Length; i++)
+                pistols[i].BotTap();
+        }
 
         if (Time.time < nextPump)
             return;
-        nextPump = Time.time + 0.5f;
+        nextPump = Time.time + 0.85f;
         var shotguns = GetComponentsInChildren<Hd2Shotgun>();
         for (int i = 0; i < shotguns.Length; i++)
             shotguns[i].BotTap();
@@ -565,6 +1062,8 @@ public class Hd2EnemyBot : MonoBehaviour
         grinding = false;
         grindRail = null;
         travelRail = null;
+        jumpBoosting = false;
+        jumpTime = 0f;
         verticalVelocity = 0f;
         moveDir = Vector3.zero;
     }
@@ -731,8 +1230,8 @@ public class Hd2EnemyBot : MonoBehaviour
             return false;
 
         Hd2VisionCone.CopyFighters(seen);
-        float best = SeeRange;
-        float minDot = Mathf.Cos(SeeHalfAngle * Mathf.Deg2Rad);
+        float best = domination ? 28f : SeeRange;
+        float minDot = Mathf.Cos((domination ? 70f : SeeHalfAngle) * Mathf.Deg2Rad);
         for (int i = 0; i < seen.Count; i++)
         {
             Transform other = seen[i];
@@ -740,6 +1239,8 @@ public class Hd2EnemyBot : MonoBehaviour
                 continue;
             var life = other.GetComponent<Hd2Health>();
             if (life != null && life.IsDead)
+                continue;
+            if (domination && Friendly(other))
                 continue;
             Vector3 to = other.position + Vector3.up * 1.1f - eye.position;
             float distance = to.magnitude;
@@ -757,6 +1258,57 @@ public class Hd2EnemyBot : MonoBehaviour
         return enemy != null;
     }
 
+    /// <summary>
+    /// An enemy standing on the same point counts even when this bot is looking at the button.
+    /// </summary>
+    bool EnemyAtPoint(out Transform enemy)
+    {
+        enemy = null;
+        if (!domination)
+            return false;
+
+        const float near = 6f;
+        var points = Hd2TeamButton.All;
+        Hd2TeamButton here = null;
+        float nearestPoint = near;
+        for (int i = 0; i < points.Count; i++)
+        {
+            Hd2TeamButton point = points[i];
+            if (point == null)
+                continue;
+            float gap = Horizontal(point.transform.position);
+            if (gap >= nearestPoint)
+                continue;
+            nearestPoint = gap;
+            here = point;
+        }
+
+        if (here == null)
+            return false;
+
+        Hd2VisionCone.CopyFighters(seen);
+        float best = near;
+        Vector3 at = here.transform.position;
+        for (int i = 0; i < seen.Count; i++)
+        {
+            Transform other = seen[i];
+            if (other == null || other == transform || Friendly(other))
+                continue;
+            var life = other.GetComponent<Hd2Health>();
+            if (life != null && life.IsDead)
+                continue;
+            float dx = other.position.x - at.x;
+            float dz = other.position.z - at.z;
+            float gap = Mathf.Sqrt(dx * dx + dz * dz);
+            if (gap >= best)
+                continue;
+            best = gap;
+            enemy = other;
+        }
+
+        return enemy != null;
+    }
+
     bool Blocked(Vector3 origin, Vector3 dir, float distance, Transform root)
     {
         int count = Physics.RaycastNonAlloc(origin, dir, sightHits, distance, ~0, QueryTriggerInteraction.Ignore);
@@ -764,6 +1316,8 @@ public class Hd2EnemyBot : MonoBehaviour
         bool wall = false;
         for (int i = 0; i < count; i++)
         {
+            if (sightHits[i].collider.GetComponentInParent<Hd2TeamButton>() != null)
+                continue;
             Transform hit = sightHits[i].collider.transform;
             if (hit.root == transform || hit.root == root)
                 continue;
@@ -867,7 +1421,7 @@ public class Hd2EnemyBot : MonoBehaviour
             Vector3 probe = transform.position + direction * distances[i];
             if (!FloorBelow(probe, out Vector3 floor))
                 continue;
-            if (Horizontal(floor) > BlitzRange)
+            if (OutsidePlay(floor) || Horizontal(floor) > BlitzRange)
                 continue;
             float rise = floor.y - transform.position.y;
             float score = distances[i] + (preferUp ? rise * 0.45f : 0f);
@@ -904,7 +1458,7 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         Vector3 flat = landing - transform.position;
         flat.y = 0f;
-        if (flat.magnitude < 0.8f || flat.magnitude > BlitzRange || StandingOnWater(landing))
+        if (flat.magnitude < 0.8f || flat.magnitude > BlitzRange || StandingOnWater(landing) || OutsidePlay(landing))
             return false;
         if (meter != null && !meter.TrySpend())
             return false;
@@ -912,6 +1466,8 @@ public class Hd2EnemyBot : MonoBehaviour
         grinding = false;
         grindRail = null;
         traveling = true;
+        if (blitzSource != null && blitzSource.clip != null)
+            blitzSource.PlayOneShot(blitzSource.clip);
         travelStart = transform.position;
         travelEnd = landing;
         travelElapsed = 0f;
@@ -1003,26 +1559,16 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
 
         float speed = WalkSpeed;
-        if (mode == Mode.Combat && combat == CombatKind.Sprint)
+        if (domination && mode == Mode.Wander)
+            speed = retreating ? SidestepSpeed : ObjectiveSpeed;
+        else if (mode == Mode.Combat && combat == CombatKind.Sprint)
             speed = SidestepSpeed;
         else if (mode == Mode.Combat && combat == CombatKind.Strafe)
             speed = WalkSpeed * 0.85f;
         if (moveDir.sqrMagnitude > 0.0001f && WaterAlong(moveDir, 0.9f))
             moveDir = Vector3.zero;
+        moveDir = StayOnMap(moveDir);
         Vector3 step = moveDir * speed;
-        if (body.isGrounded && verticalVelocity < 0f)
-        {
-            verticalVelocity = -2f;
-            fallTime = 0f;
-        }
-        else
-        {
-            verticalVelocity -= 15f * Time.deltaTime;
-            verticalVelocity = Mathf.Max(verticalVelocity, -25f);
-            if (!body.isGrounded)
-                fallTime += Time.deltaTime;
-        }
-
         if (fallTime >= 5f && health != null)
         {
             health.MarkHit(transform.position + Vector3.up * 1.1f);
@@ -1031,6 +1577,29 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
         }
 
+        ClearSmallLedge();
+        if (!jumpBoosting)
+            ConsiderHop();
+
+        float dt = Time.deltaTime;
+        float burn = BurnJump(dt);
+        float coast = dt - burn;
+        if (burn > 0f)
+            verticalVelocity += JumpGravity * JumpAccelGs * burn;
+        if (body.isGrounded && verticalVelocity <= 0f && burn <= 0f)
+        {
+            verticalVelocity = -2f;
+            fallTime = 0f;
+        }
+        else if (coast > 0f)
+        {
+            verticalVelocity -= JumpGravity * coast;
+            verticalVelocity = Mathf.Max(verticalVelocity, -25f);
+            if (!body.isGrounded)
+                fallTime += dt;
+        }
+        else if (!body.isGrounded)
+            fallTime += dt;
         Vector3 before = transform.position;
         body.Move((step + Vector3.up * verticalVelocity) * Time.deltaTime);
         if ((transform.position - before).sqrMagnitude > 0.0004f)
@@ -1042,6 +1611,200 @@ public class Hd2EnemyBot : MonoBehaviour
             moveDir = WanderDirection();
             lastMovedAt = Time.time;
         }
+    }
+
+    void ClearSmallLedge()
+    {
+        if (body == null || !body.isGrounded || moveDir.sqrMagnitude < 0.01f)
+            return;
+
+        Vector3 dir = moveDir;
+        Vector3 origin = transform.position + Vector3.up * 0.03f;
+        int count = Physics.RaycastNonAlloc(origin, dir, stepHits, 0.4f, ~0, QueryTriggerInteraction.Ignore);
+        float nearest = float.MaxValue;
+        bool blocked = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stepHits[i].collider;
+            if (collider == null || collider.transform.IsChildOf(transform))
+                continue;
+            if (stepHits[i].distance >= nearest)
+                continue;
+            nearest = stepHits[i].distance;
+            blocked = true;
+        }
+
+        if (!blocked)
+            return;
+
+        Vector3 over = origin + dir * (nearest + 0.12f) + Vector3.up * 0.55f;
+        count = Physics.RaycastNonAlloc(over, Vector3.down, stepHits, 0.7f, ~0, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        float floorY = transform.position.y;
+        bool found = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stepHits[i].collider;
+            if (collider == null || collider.transform.IsChildOf(transform))
+                continue;
+            if (stepHits[i].distance >= best)
+                continue;
+            best = stepHits[i].distance;
+            floorY = stepHits[i].point.y;
+            found = true;
+        }
+
+        if (!found)
+            return;
+
+        float rise = floorY - transform.position.y;
+        if (rise < 0.004f || rise > 0.45f)
+            return;
+
+        body.enabled = false;
+        transform.position += Vector3.up * (rise + 0.02f);
+        body.enabled = true;
+    }
+
+    void ConsiderHop()
+    {
+        if (traveling || grinding || body == null || !body.enabled || !body.isGrounded)
+            return;
+        if (moveDir.sqrMagnitude < 0.01f || Time.time < nextHopAt)
+            return;
+
+        bool ledge = RouteAhead(out float rise, out float span);
+        bool wanderHop = !ledge && Random.value < 0.012f;
+        if (!ledge && !wanderHop)
+            return;
+
+        bool blitz = ledge && meter != null && meter.Charges >= 1f && (rise > 0.4f || span > 1.3f);
+        if (blitz)
+        {
+            Vector3 landing = transform.position + moveDir * Mathf.Clamp(span + 1.4f, 2f, 8f);
+            if (FloorBelow(landing, out Vector3 floor) && TryBlitz(floor, null, 1f))
+            {
+                nextHopAt = Time.time + 2.2f;
+                return;
+            }
+        }
+
+        if (meter == null || meter.Charges <= 0.001f)
+            return;
+
+        nextHopAt = Time.time + (ledge ? 2.2f : Random.Range(6f, 12f));
+        jumpBoosting = true;
+        jumpTime = 0f;
+    }
+
+    float BurnJump(float dt)
+    {
+        if (!jumpBoosting)
+            return 0f;
+        if (jumpTime >= JumpMaxTime || meter == null || meter.Charges <= 0.001f)
+        {
+            jumpBoosting = false;
+            return 0f;
+        }
+
+        float timeLeft = Mathf.Max(0f, JumpMaxTime) - jumpTime;
+        float burn = Mathf.Min(dt, timeLeft);
+        float rate = Mathf.Max(0.01f, JumpThrustPerSecond);
+        float spent = meter.SpendUpTo(burn * rate);
+        burn = spent / rate;
+        if (burn <= 0.0001f)
+        {
+            jumpBoosting = false;
+            return 0f;
+        }
+
+        jumpTime += burn;
+        if (jumpTime >= JumpMaxTime - 0.0001f || meter.Charges <= 0.001f)
+            jumpBoosting = false;
+        return burn;
+    }
+
+    public bool IsSprinting
+    {
+        get
+        {
+            if (moveDir.sqrMagnitude < 0.01f || traveling || grinding)
+                return false;
+            if (mode == Mode.Combat && combat == CombatKind.Sprint)
+                return true;
+            return domination && mode == Mode.Wander && !retreating;
+        }
+    }
+
+    bool RouteAhead(out float rise, out float span)
+    {
+        rise = 0f;
+        span = 0f;
+        Vector3 dir = moveDir;
+        Vector3 feet = transform.position + Vector3.up * 0.08f;
+        int count = Physics.RaycastNonAlloc(feet, dir, stepHits, 1.3f, ~0, QueryTriggerInteraction.Ignore);
+        float nearest = float.MaxValue;
+        Vector3 hitPoint = feet + dir;
+        bool wall = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stepHits[i].collider;
+            if (collider == null || collider.transform.IsChildOf(transform))
+                continue;
+            if (stepHits[i].distance >= nearest)
+                continue;
+            nearest = stepHits[i].distance;
+            hitPoint = stepHits[i].point;
+            wall = true;
+        }
+
+        if (wall)
+        {
+            Vector3 over = hitPoint + dir * 0.2f + Vector3.up * 1.1f;
+            count = Physics.RaycastNonAlloc(over, Vector3.down, stepHits, 1.6f, ~0, QueryTriggerInteraction.Ignore);
+            float best = float.MaxValue;
+            bool found = false;
+            float topY = transform.position.y;
+            for (int i = 0; i < count; i++)
+            {
+                Collider collider = stepHits[i].collider;
+                if (collider == null || collider.transform.IsChildOf(transform))
+                    continue;
+                if (stepHits[i].distance >= best)
+                    continue;
+                best = stepHits[i].distance;
+                topY = stepHits[i].point.y;
+                found = true;
+            }
+
+            rise = found ? topY - transform.position.y : 0.8f;
+            span = nearest;
+            return rise > 0.12f && rise < 1.6f;
+        }
+
+        Vector3 probe = transform.position + dir * 1.2f + Vector3.up * 0.3f;
+        count = Physics.RaycastNonAlloc(probe, Vector3.down, stepHits, 2.4f, ~0, QueryTriggerInteraction.Ignore);
+        float ground = float.MaxValue;
+        bool floor = false;
+        float groundY = transform.position.y;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stepHits[i].collider;
+            if (collider == null || collider.transform.IsChildOf(transform))
+                continue;
+            if (stepHits[i].distance >= ground)
+                continue;
+            ground = stepHits[i].distance;
+            groundY = stepHits[i].point.y;
+            floor = true;
+        }
+
+        if (floor && groundY >= transform.position.y - 0.3f)
+            return false;
+
+        rise = 0.35f;
+        span = 1.6f;
+        return true;
     }
 
     bool FloorBelow(Vector3 around, out Vector3 point)
@@ -1110,7 +1873,37 @@ public class Hd2EnemyBot : MonoBehaviour
             water = hits[i].collider.GetComponentInParent<Hd2Water>() != null;
         }
 
-        return found && water;
+        return !found || water;
+    }
+
+    bool OutsidePlay(Vector3 point)
+    {
+        if (!hasCenter || playRadius < 4f)
+            return false;
+        return Flat(point - mapCenter).magnitude > playRadius + 1.5f;
+    }
+
+    Vector3 StayOnMap(Vector3 dir)
+    {
+        dir = ClearOfWater(dir);
+        if (!hasCenter || playRadius < 4f || dir.sqrMagnitude < 0.0001f)
+            return dir;
+
+        Vector3 fromCenter = Flat(transform.position - mapCenter);
+        float dist = fromCenter.magnitude;
+        if (dist <= playRadius + 1.5f)
+            return dir;
+
+        Vector3 outward = fromCenter / dist;
+        if (Vector3.Dot(dir.normalized, outward) <= 0f)
+            return dir;
+
+        Vector3 tangent = Vector3.Cross(Vector3.up, outward);
+        if (Vector3.Dot(tangent, dir) < 0f)
+            tangent = -tangent;
+        Vector3 back = (-outward + tangent * 0.45f).normalized;
+        Vector3 turned = ClearOfWater(back);
+        return turned.sqrMagnitude > 0.0001f ? turned : -outward;
     }
 
     bool StandingOnWater(Vector3 point)
@@ -1241,6 +2034,30 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
         mapCenter = sum / count;
         hasCenter = true;
+        playRadius = 0f;
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (points[i] == null)
+                continue;
+            playRadius = Mathf.Max(playRadius, Flat(points[i].transform.position - mapCenter).magnitude);
+        }
+
+        var buttons = FindObjectsByType<Hd2TeamButton>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            if (buttons[i] == null)
+                continue;
+            playRadius = Mathf.Max(playRadius, Flat(buttons[i].transform.position - mapCenter).magnitude);
+        }
+
+        var rails = FindObjectsByType<Hd2GrindRail>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < rails.Length; i++)
+        {
+            if (rails[i] == null)
+                continue;
+            for (float distance = 0f; distance <= rails[i].length; distance += 4f)
+                playRadius = Mathf.Max(playRadius, Flat(rails[i].PointAlong(distance) - mapCenter).magnitude);
+        }
     }
 
     void Face(Vector3 flat)
@@ -1248,7 +2065,25 @@ public class Hd2EnemyBot : MonoBehaviour
         flat.y = 0f;
         if (flat.sqrMagnitude < 0.0001f)
             return;
-        transform.rotation = Quaternion.LookRotation(flat.normalized);
+
+        Vector3 forward = transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+
+        float delta = Vector3.SignedAngle(forward.normalized, flat.normalized, Vector3.up);
+        if (Mathf.Abs(delta) > 135f && turnSign != 0)
+            delta = TurnStep * turnSign;
+
+        float step = Mathf.Clamp(delta, -TurnStep, TurnStep);
+        if (Mathf.Abs(step) < 0.5f)
+        {
+            turnSign = 0;
+            return;
+        }
+
+        turnSign = step > 0f ? 1 : -1;
+        transform.Rotate(0f, step, 0f, Space.World);
     }
 
     float Horizontal(Vector3 world)
@@ -1634,6 +2469,8 @@ public class Hd2EnemyBot : MonoBehaviour
         if (body != null)
             body.enabled = false;
         EnableRagdoll();
+        if (health != null && health.KilledByBlast)
+            Hd2Health.ThrowFromBlast(ragdollBodies, health.BlastOrigin, transform.position);
         yield return new WaitForSeconds(RagdollSeconds);
         if (this == null)
             yield break;
@@ -1670,6 +2507,8 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         health.Respawn();
+        if (domination && homeSpawn != null)
+            transform.SetPositionAndRotation(homeSpawn.position, homeSpawn.rotation);
         if (body != null)
         {
             Vector3 pos = transform.position;
@@ -1698,7 +2537,10 @@ public class Hd2EnemyBot : MonoBehaviour
 
     void ShowKillMark(Transform killer, Vector3 point)
     {
-        if (killer == null || killer.GetComponentInParent<Hd2Locomotion>() == null)
+        Hd2Locomotion player = killer != null ? killer.GetComponentInParent<Hd2Locomotion>() : null;
+        if (player == null || killer.GetComponentInParent<Hd2EnemyBot>() != null)
+            return;
+        if (Friendly(player.transform))
             return;
 
         if (killMark != null)

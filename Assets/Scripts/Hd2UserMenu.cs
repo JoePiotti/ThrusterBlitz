@@ -7,7 +7,7 @@ using UnityEngine.XR;
 
 /// <summary>
 /// World-space menu for this player only. The left controller menu button opens and closes it.
-/// More tabs can be added beside Controls. Controls rebinds the buttons and the microphone mode.
+/// Game is the first tab. Controls rebinds the buttons, the microphone mode, and the HUD side.
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public class Hd2UserMenu : MonoBehaviour
@@ -34,22 +34,25 @@ public class Hd2UserMenu : MonoBehaviour
     const float height = 760f;
 
     Hd2ControlMap controls;
+    Hd2Hud hud;
     InputAction menuButton;
     InputAction editorMenu;
     Camera ownerCamera;
     Canvas canvas;
     RectTransform panel;
+    GameObject gamePage;
     GameObject controlsPage;
-    GameObject lookPage;
+    Image gameTabImage;
     Image controlsTabImage;
-    Image lookTabImage;
-    readonly Image[] themeImages = new Image[3];
+    Text pageTitle;
     GameObject actionList;
     Text actionListTitle;
     readonly List<Click> clicks = new List<Click>();
     readonly List<Click> actionClicks = new List<Click>();
     readonly Text[] actionLabels = new Text[Hd2ControlMap.ButtonCount];
     readonly Image[] micImages = new Image[3];
+    readonly Image[] hudImages = new Image[3];
+    Image switchTeams;
     LineRenderer laser;
     bool open;
     Hd2ControlMap.Button picking;
@@ -71,6 +74,11 @@ public class Hd2UserMenu : MonoBehaviour
         controls.Changed += RefreshLabels;
         Build();
         SetOpen(false);
+    }
+
+    void Start()
+    {
+        PaintHud();
     }
 
     void OnEnable()
@@ -123,6 +131,7 @@ public class Hd2UserMenu : MonoBehaviour
         if (!open)
             return;
 
+        RefreshSwitchTeams();
         Aim();
     }
 
@@ -344,22 +353,23 @@ public class Hd2UserMenu : MonoBehaviour
         background.color = new Color(0.07f, 0.08f, 0.1f, 0.94f);
         background.raycastTarget = false;
 
-        var tab = MakeButton(panel, "Controls", new Vector2(16f, -16f), new Vector2(180f, 48f), new Color(0.2f, 0.5f, 0.78f, 1f));
+        var gameTab = MakeButton(panel, "Game", new Vector2(16f, -16f), new Vector2(140f, 48f), new Color(0.2f, 0.5f, 0.78f, 1f));
+        gameTabImage = gameTab.GetComponent<Image>();
+        Stretch(gameTab.GetComponentInChildren<Text>().rectTransform, 8f);
+        clicks.Add(new Click { rect = gameTab, action = ShowGame });
+
+        var tab = MakeButton(panel, "Controls", new Vector2(168f, -16f), new Vector2(180f, 48f), new Color(0.14f, 0.17f, 0.22f, 1f));
         controlsTabImage = tab.GetComponent<Image>();
         Stretch(tab.GetComponentInChildren<Text>().rectTransform, 8f);
         clicks.Add(new Click { rect = tab, action = ShowControls });
 
-        var lookTab = MakeButton(panel, "Look", new Vector2(208f, -16f), new Vector2(140f, 48f), new Color(0.14f, 0.17f, 0.22f, 1f));
-        lookTabImage = lookTab.GetComponent<Image>();
-        Stretch(lookTab.GetComponentInChildren<Text>().rectTransform, 8f);
-        clicks.Add(new Click { rect = lookTab, action = ShowLook });
-
-        var title = MakeText(panel, "Controls", 34, TextAnchor.UpperLeft, Color.white);
+        var title = MakeText(panel, "Game", 34, TextAnchor.UpperLeft, Color.white);
         var titleRect = title.rectTransform;
         titleRect.anchorMin = titleRect.anchorMax = new Vector2(0f, 1f);
         titleRect.pivot = new Vector2(0f, 1f);
         titleRect.anchoredPosition = new Vector2(364f, -18f);
         titleRect.sizeDelta = new Vector2(500f, 46f);
+        pageTitle = title;
 
         controlsPage = new GameObject("ControlsPage");
         var page = controlsPage.AddComponent<RectTransform>();
@@ -372,123 +382,98 @@ public class Hd2UserMenu : MonoBehaviour
         BuildTable(page);
         BuildMicrophone(page);
         BuildActionList(page);
-        BuildLook();
+        BuildGame();
+        ShowGame();
         RefreshLabels();
+    }
+
+    void ShowGame()
+    {
+        HideActionList();
+        if (gamePage != null)
+            gamePage.SetActive(true);
+        if (controlsPage != null)
+            controlsPage.SetActive(false);
+        if (pageTitle != null)
+            pageTitle.text = "Game";
+        PaintTabs(true);
     }
 
     void ShowControls()
     {
         HideActionList();
+        if (gamePage != null)
+            gamePage.SetActive(false);
         if (controlsPage != null)
             controlsPage.SetActive(true);
-        if (lookPage != null)
-            lookPage.SetActive(false);
-        PaintTabs(true);
-    }
-
-    void ShowLook()
-    {
-        HideActionList();
-        if (controlsPage != null)
-            controlsPage.SetActive(false);
-        if (lookPage != null)
-            lookPage.SetActive(true);
+        if (pageTitle != null)
+            pageTitle.text = "Controls";
         PaintTabs(false);
-        PaintThemes();
     }
 
-    void BuildLook()
+    void BuildGame()
     {
-        lookPage = new GameObject("LookPage");
-        var page = lookPage.AddComponent<RectTransform>();
+        gamePage = new GameObject("GamePage");
+        var page = gamePage.AddComponent<RectTransform>();
         page.SetParent(panel, false);
         page.anchorMin = Vector2.zero;
         page.anchorMax = Vector2.one;
         page.offsetMin = new Vector2(24f, 24f);
         page.offsetMax = new Vector2(-24f, -84f);
 
-        var intro = MakeText(page, "Map skin", 28, TextAnchor.MiddleLeft, Color.white);
-        Place(intro.rectTransform, 0f, -8f, 700f, 40f);
+        switchTeams = MakeImage(page, new Color(0.2f, 0.5f, 0.78f, 1f));
+        Place(switchTeams.rectTransform, 0f, -8f, 320f, 72f);
+        Stretch(MakeText(switchTeams.rectTransform, "Switch teams", 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
+        clicks.Add(new Click { rect = switchTeams.rectTransform, action = SwitchTeams });
+        switchTeams.gameObject.SetActive(false);
 
-        string[] names = { "Nature", "Sci-Fi", "Quarry" };
-        string[] notes =
-        {
-            "Moss, timber, and stone.",
-            "Hull plating and cyan light.",
-            "Limestone and rusted steel."
-        };
-        for (int i = 0; i < names.Length; i++)
-        {
-            float y = -64f - i * 120f;
-            var image = MakeImage(page, new Color(0.14f, 0.17f, 0.22f, 1f));
-            Place(image.rectTransform, 0f, y, 1080f, 104f);
-            themeImages[i] = image;
-            var name = MakeText(image.rectTransform, names[i], 28, TextAnchor.UpperLeft, Color.white);
-            Place(name.rectTransform, 24f, -16f, 500f, 36f);
-            var note = MakeText(image.rectTransform, notes[i], 22, TextAnchor.UpperLeft, new Color(0.75f, 0.82f, 0.88f, 1f));
-            Place(note.rectTransform, 24f, -54f, 900f, 32f);
-            int captured = i;
-            clicks.Add(new Click { rect = image.rectTransform, action = () => ChooseTheme(captured) });
-        }
-
-        var colorLabel = MakeText(page, "Player color", 28, TextAnchor.MiddleLeft, Color.white);
-        Place(colorLabel.rectTransform, 0f, -440f, 700f, 40f);
-
-        AddColorChoice(page, "Red", new Color(0.82f, 0.1f, 0.08f, 1f), 0f);
-        AddColorChoice(page, "Blue", new Color(0.16f, 0.38f, 0.95f, 1f), 220f);
-
-        lookPage.SetActive(false);
+        var quit = MakeImage(page, new Color(0.55f, 0.12f, 0.1f, 1f));
+        Place(quit.rectTransform, 0f, -96f, 320f, 72f);
+        Stretch(MakeText(quit.rectTransform, "Quit", 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
+        clicks.Add(new Click { rect = quit.rectTransform, action = QuitMatch });
     }
 
-    void AddColorChoice(RectTransform page, string label, Color color, float x)
+    void QuitMatch()
     {
-        var image = MakeImage(page, color);
-        Place(image.rectTransform, x, -488f, 200f, 72f);
-        Stretch(MakeText(image.rectTransform, label, 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
-        clicks.Add(new Click { rect = image.rectTransform, action = () => TintPlayer(color) });
+        var move = GetComponent<Hd2Locomotion>();
+        if (move == null)
+            return;
+
+        SetOpen(false);
+        move.LeaveMatch();
     }
 
-    void TintPlayer(Color color)
+    void RefreshSwitchTeams()
     {
-        var avatar = GetComponent<Hd2Body>();
-        if (avatar != null)
-            avatar.SetArmorColor(color);
+        if (switchTeams == null)
+            return;
+
+        var move = GetComponent<Hd2Locomotion>();
+        bool show = move != null && move.OtherTeamHasBot();
+        if (switchTeams.gameObject.activeSelf != show)
+            switchTeams.gameObject.SetActive(show);
     }
 
-    void ChooseTheme(int index)
+    void SwitchTeams()
     {
-        var theme = Hd2MapTheme.Find();
-        if (theme != null)
-            theme.Apply(index);
-        PaintThemes();
+        var move = GetComponent<Hd2Locomotion>();
+        if (move == null || !move.OtherTeamHasBot())
+            return;
+
+        SetOpen(false);
+        move.SwitchTeam();
     }
 
-    void PaintTabs(bool controls)
+    void PaintTabs(bool game)
     {
-        if (controlsTabImage != null)
-            controlsTabImage.color = controls
+        if (gameTabImage != null)
+            gameTabImage.color = game
                 ? new Color(0.2f, 0.5f, 0.78f, 1f)
                 : new Color(0.14f, 0.17f, 0.22f, 1f);
-        if (lookTabImage != null)
-            lookTabImage.color = controls
+        if (controlsTabImage != null)
+            controlsTabImage.color = game
                 ? new Color(0.14f, 0.17f, 0.22f, 1f)
                 : new Color(0.2f, 0.5f, 0.78f, 1f);
-    }
-
-    void PaintThemes()
-    {
-        int selected = 0;
-        var theme = Hd2MapTheme.Find();
-        if (theme != null)
-            selected = theme.current;
-        for (int i = 0; i < themeImages.Length; i++)
-        {
-            if (themeImages[i] == null)
-                continue;
-            themeImages[i].color = i == selected
-                ? new Color(0.2f, 0.5f, 0.78f, 1f)
-                : new Color(0.14f, 0.17f, 0.22f, 1f);
-        }
     }
 
     void BuildTable(RectTransform page)
@@ -551,21 +536,64 @@ public class Hd2UserMenu : MonoBehaviour
         }
 
         PaintMic();
+        BuildHudChoice(page);
 
         var hint = MakeText(page, "Press the left menu button to close", 22, TextAnchor.MiddleLeft, new Color(0.75f, 0.8f, 0.85f, 1f));
-        Place(hint.rectTransform, 0f, -470f, 760f, 36f);
+        Place(hint.rectTransform, 0f, -516f, 760f, 36f);
 
         var reset = MakeImage(page, new Color(0.2f, 0.5f, 0.78f, 1f));
-        Place(reset.rectTransform, 0f, -520f, 200f, 52f);
+        Place(reset.rectTransform, 0f, -560f, 200f, 52f);
         Stretch(MakeText(reset.rectTransform, "Reset", 22, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
         clicks.Add(new Click { rect = reset.rectTransform, action = ResetControls });
+    }
+
+    void BuildHudChoice(RectTransform page)
+    {
+        var label = MakeText(page, "HUD", 26, TextAnchor.MiddleLeft, Color.white);
+        Place(label.rectTransform, 0f, -456f, 240f, 40f);
+
+        string[] names = { "Left side", "Right side", "None" };
+        for (int i = 0; i < names.Length; i++)
+        {
+            var image = MakeImage(page, new Color(0.14f, 0.17f, 0.22f, 1f));
+            Place(image.rectTransform, 250f + i * 280f, -450f, 260f, 52f);
+            Stretch(MakeText(image.rectTransform, names[i], 22, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
+            hudImages[i] = image;
+            int captured = i;
+            clicks.Add(new Click
+            {
+                rect = image.rectTransform,
+                action = () => ChooseHud(captured)
+            });
+        }
+
+        PaintHud();
+    }
+
+    void ChooseHud(int index)
+    {
+        var readout = Hud();
+        if (readout != null)
+            readout.Placement = (Hd2Hud.Side)index;
+        PaintHud();
+    }
+
+    Hd2Hud Hud()
+    {
+        if (hud == null)
+            hud = GetComponent<Hd2Hud>();
+        return hud;
     }
 
     void ResetControls()
     {
         controls.SetDefaults();
         controls.MicrophoneMode = Hd2ControlMap.MicMode.Toggle;
+        var readout = Hud();
+        if (readout != null)
+            readout.Placement = Hd2Hud.Side.Left;
         HideActionList();
+        PaintHud();
     }
 
     void BuildActionList(RectTransform parent)
@@ -638,6 +666,23 @@ public class Hd2UserMenu : MonoBehaviour
         }
 
         PaintMic();
+        PaintHud();
+    }
+
+    void PaintHud()
+    {
+        int selected = 0;
+        var readout = Hud();
+        if (readout != null)
+            selected = (int)readout.Placement;
+        for (int i = 0; i < hudImages.Length; i++)
+        {
+            if (hudImages[i] == null)
+                continue;
+            hudImages[i].color = i == selected
+                ? new Color(0.2f, 0.5f, 0.78f, 1f)
+                : new Color(0.14f, 0.17f, 0.22f, 1f);
+        }
     }
 
     void PaintMic()

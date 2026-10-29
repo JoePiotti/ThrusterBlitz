@@ -300,6 +300,9 @@ public class Hd2PracticeBot : MonoBehaviour
             joint.enableProjection = true;
             joints.Add(joint);
         }
+
+        if (health != null && health.KilledByBlast)
+            Hd2Health.ThrowFromBlast(bodies, health.BlastOrigin, body.position);
     }
 
     void DisableRagdoll()

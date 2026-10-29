@@ -179,6 +179,7 @@ public class Hd2ShocksPickup : MonoBehaviour
             shocks.muzzle = muzzle;
         }
 
+        Hd2Pistol.PulseEquip(hand);
         return true;
     }
 

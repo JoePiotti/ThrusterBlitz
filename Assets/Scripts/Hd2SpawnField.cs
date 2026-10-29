@@ -24,6 +24,17 @@ public class Hd2SpawnField : MonoBehaviour
     public Hd2Team team;
     const float InsideSlack = 0.05f;
 
+    /// <summary>
+    /// Match start. While set, every shield stops every body. Shots are unchanged.
+    /// </summary>
+    public static bool Locked { get; private set; }
+
+    static readonly Hd2SpawnField[] fields = new Hd2SpawnField[16];
+    static readonly CharacterController[] movers = new CharacterController[32];
+    static readonly Component[] moverBodies = new Component[32];
+    static int fieldCount;
+    static int moverCount;
+
     static readonly RaycastHit[] groundHits = new RaycastHit[16];
     static readonly RaycastHit[] blockHits = new RaycastHit[16];
     static Material markMaterial;
@@ -58,11 +69,51 @@ public class Hd2SpawnField : MonoBehaviour
 
     public bool Allows(Component body)
     {
-        if (body == null)
+        if (Locked || body == null)
             return false;
         if (team == Hd2Team.None)
             return body.GetComponentInParent<Hd2Locomotion>() != null;
         return TeamOf(body) == team;
+    }
+
+    void OnEnable()
+    {
+        for (int i = 0; i < fieldCount; i++)
+        {
+            if (fields[i] == this)
+                return;
+        }
+
+        if (fieldCount < fields.Length)
+            fields[fieldCount++] = this;
+    }
+
+    void OnDisable()
+    {
+        for (int i = 0; i < fieldCount; i++)
+        {
+            if (fields[i] != this)
+                continue;
+            fieldCount--;
+            fields[i] = fields[fieldCount];
+            fields[fieldCount] = null;
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Close every base shield, or open them again. Bodies registered with ApplyPass
+    /// get their pass-through updated without a search.
+    /// </summary>
+    public static void SetLocked(bool locked)
+    {
+        Locked = locked;
+        for (int i = 0; i < moverCount; i++)
+        {
+            if (movers[i] == null)
+                continue;
+            ApplyPass(moverBodies[i], movers[i]);
+        }
     }
 
     public static Hd2Team TeamOf(Component body)
@@ -82,6 +133,26 @@ public class Hd2SpawnField : MonoBehaviour
     }
 
     /// <summary>
+    /// The bot or player who owns this part. Guns under a shared parent must not use the scene root,
+    /// or a shot treats every bot in that group as the shooter and passes through them.
+    /// </summary>
+    public static Transform FighterBody(Component part)
+    {
+        if (part == null)
+            return null;
+
+        Hd2EnemyBot bot = part.GetComponentInParent<Hd2EnemyBot>();
+        if (bot != null)
+            return bot.transform;
+
+        Hd2Locomotion player = part.GetComponentInParent<Hd2Locomotion>();
+        if (player != null)
+            return player.transform;
+
+        return part.transform.root;
+    }
+
+    /// <summary>
     /// The local player counts as a teammate of an unassigned shield.
     /// </summary>
     public static bool IsTeammate(Collider body)
@@ -97,8 +168,8 @@ public class Hd2SpawnField : MonoBehaviour
         if (mover == null || moverCollider == null)
             return;
 
-        Hd2SpawnField[] fields = Object.FindObjectsByType<Hd2SpawnField>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        for (int i = 0; i < fields.Length; i++)
+        RememberMover(mover, moverCollider as CharacterController);
+        for (int i = 0; i < fieldCount; i++)
         {
             Hd2SpawnField field = fields[i];
             if (field == null)
@@ -108,6 +179,26 @@ public class Hd2SpawnField : MonoBehaviour
                 continue;
             Physics.IgnoreCollision(moverCollider, shield, field.Allows(mover));
         }
+    }
+
+    static void RememberMover(Component mover, CharacterController body)
+    {
+        if (body == null)
+            return;
+        for (int i = 0; i < moverCount; i++)
+        {
+            if (movers[i] == body)
+            {
+                moverBodies[i] = mover;
+                return;
+            }
+        }
+
+        if (moverCount >= movers.Length)
+            return;
+        movers[moverCount] = body;
+        moverBodies[moverCount] = mover;
+        moverCount++;
     }
 
     /// <summary>

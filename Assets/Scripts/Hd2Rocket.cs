@@ -29,6 +29,9 @@ public class Hd2Rocket : MonoBehaviour
     public float outerDamage = 36f;
 
     Vector3 velocity;
+    readonly Vector3[] flight = new Vector3[96];
+    int flightCount;
+    float flightSpacing = 0.45f;
     float age;
     float traveled;
     bool wander;
@@ -64,6 +67,38 @@ public class Hd2Rocket : MonoBehaviour
         direction.Normalize();
         velocity = direction * Mathf.Max(0.1f, launchSpeed);
         transform.rotation = Quaternion.LookRotation(direction);
+        flightCount = 0;
+        flightSpacing = 0.45f;
+        Remember(transform.position);
+    }
+
+    void Remember(Vector3 point)
+    {
+        if (flightCount > 0 && (point - flight[flightCount - 1]).sqrMagnitude < flightSpacing * flightSpacing)
+            return;
+        if (flightCount >= flight.Length)
+            ThinFlight();
+        flight[flightCount++] = point;
+    }
+
+    void ThinFlight()
+    {
+        int kept = 0;
+        for (int i = 0; i < flightCount; i += 2)
+            flight[kept++] = flight[i];
+        if ((flightCount & 1) == 0)
+            flight[kept++] = flight[flightCount - 1];
+        flightCount = kept;
+        flightSpacing *= 2f;
+    }
+
+    void RememberEnd(Vector3 point)
+    {
+        if (flightCount > 0 && (point - flight[flightCount - 1]).sqrMagnitude < 0.0004f)
+            return;
+        if (flightCount >= flight.Length)
+            ThinFlight();
+        flight[flightCount++] = point;
     }
 
     bool hissPlaying;
@@ -81,8 +116,10 @@ public class Hd2Rocket : MonoBehaviour
             source.playOnAwake = false;
             source.loop = true;
             source.spatialBlend = 1f;
+            source.dopplerLevel = 0f;
+            source.rolloffMode = AudioRolloffMode.Linear;
             source.volume = 1f;
-            source.minDistance = 1f;
+            source.minDistance = 2f;
             source.maxDistance = 40f;
             source.clip = hiss;
             source.Play();
@@ -156,6 +193,7 @@ public class Hd2Rocket : MonoBehaviour
 
         traveled += Vector3.Distance(transform.position, next);
         transform.position = next;
+        Remember(next);
     }
 
     void NoteDeath()
@@ -256,6 +294,7 @@ public class Hd2Rocket : MonoBehaviour
             return;
 
         exploded = true;
+        RememberEnd(point);
         Transform thrust = transform.Find("Thrust");
         if (thrust != null)
         {
@@ -277,6 +316,8 @@ public class Hd2Rocket : MonoBehaviour
                 continue;
             if (!damageOwner && ownerHealth != null && health == ownerHealth)
                 continue;
+            if (health.IsAlly(owner))
+                continue;
 
             float distance = Vector3.Distance(colliders[i].ClosestPoint(point), point);
             float amount = 0f;
@@ -290,6 +331,9 @@ public class Hd2Rocket : MonoBehaviour
             if (owner != null)
                 health.LastAttacker = owner;
             health.MarkHit(colliders[i].ClosestPoint(point));
+            health.MarkBlast(point);
+            if (health.Health > 0f && health.Health <= amount)
+                health.MarkKillPath(flight, flightCount);
             health.ApplyHit(amount, false, true);
         }
 
@@ -310,8 +354,10 @@ public class Hd2Rocket : MonoBehaviour
         source.playOnAwake = false;
         source.loop = false;
         source.spatialBlend = 1f;
+        source.dopplerLevel = 0f;
+        source.rolloffMode = AudioRolloffMode.Linear;
         source.volume = 1f;
-        source.minDistance = 8f;
+        source.minDistance = 4f;
         source.maxDistance = 45f;
         source.clip = clip;
         source.Play();

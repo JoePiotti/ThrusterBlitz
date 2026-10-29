@@ -4,8 +4,8 @@ using UnityEngine.XR;
 
 /// <summary>
 /// One pistol on one hand. A quick trigger release fires a normal shot.
-/// Holding the trigger plays the charge sound once, without looping, then releasing
-/// after chargeHoldTime fires a charged shot.
+/// Holding the trigger past chargeHoldTime, then releasing, fires a charged shot.
+/// The charge sound is muted for now.
 /// Grip starts a timed reload on that gun only. An empty magazine starts the same reload.
 /// Blue text on the back shows the rounds left, or R while reloading.
 /// Move AmmoReadout on each pistol in the VRPlayer prefab. Play mode does not move it.
@@ -35,7 +35,7 @@ public class Hd2Pistol : MonoBehaviour
 
     [Header("Charged shot")]
     public float chargeHoldTime = 1f;
-    public float chargedRadius = 0.09f;
+    public float chargedRadius = 0.108f;
     public float chargedSpeedMultiplier = 0.7f;
     public int chargedAmmoCost = 3;
     public int chargedBounces = 6;
@@ -142,8 +142,10 @@ public class Hd2Pistol : MonoBehaviour
         source.playOnAwake = false;
         source.loop = false;
         source.spatialBlend = 1f;
-        source.minDistance = 0.4f;
-        source.maxDistance = 12f;
+        source.dopplerLevel = 0f;
+        source.rolloffMode = AudioRolloffMode.Linear;
+        source.minDistance = 2f;
+        source.maxDistance = 36f;
         return source;
     }
 
@@ -443,11 +445,7 @@ public class Hd2Pistol : MonoBehaviour
 
     void PlayCharge()
     {
-        if (chargeSource == null || reloading || rounds <= 0)
-            return;
-
-        chargeSource.loop = false;
-        chargeSource.Play();
+        // Muted while we try a silent charge. Shocks still play ShocksCharge.
     }
 
     void StopCharge()
@@ -481,7 +479,7 @@ public class Hd2Pistol : MonoBehaviour
         projectile.transform.rotation = Quaternion.LookRotation(direction);
         projectile.velocity = direction * speed;
         projectile.lifetime = shotLifetime;
-        projectile.owner = transform.root;
+        projectile.owner = Hd2SpawnField.FighterBody(this);
         projectile.damage = normalDamage * (charged ? chargedAmmoCost : 1);
         projectile.bouncesRemaining = charged ? chargedBounces : 0;
         projectile.gravel = !charged;
@@ -523,6 +521,21 @@ public class Hd2Pistol : MonoBehaviour
         if (amplitude <= 0f || duration <= 0f || GetComponentInParent<Hd2EnemyBot>() != null)
             return;
         SendImpulse(amplitude, duration);
+    }
+
+    public static void PulseEquip(Transform hand)
+    {
+        if (hand == null || hand.GetComponentInParent<Hd2EnemyBot>() != null)
+            return;
+
+        var node = hand.name == "LeftHand" ? XRNode.LeftHand : XRNode.RightHand;
+        InputDevices.GetDevicesAtXRNode(node, hapticDevices);
+        for (int i = 0; i < hapticDevices.Count; i++)
+        {
+            UnityEngine.XR.InputDevice device = hapticDevices[i];
+            if (device.TryGetHapticCapabilities(out HapticCapabilities caps) && caps.supportsImpulse)
+                device.SendHapticImpulse(0, 0.35f, 0.05f);
+        }
     }
 
     void SendImpulse(float amplitude, float duration)
