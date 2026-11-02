@@ -30,4 +30,13 @@ public class Hd2VisionCone : MonoBehaviour
                 into.Add(fighters[i]);
         }
     }
+
+    public static int FighterCount => fighters.Count;
+
+    public static Transform FighterAt(int index)
+    {
+        if (index < 0 || index >= fighters.Count)
+            return null;
+        return fighters[index];
+    }
 }

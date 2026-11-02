@@ -5,6 +5,7 @@ using UnityEngine.XR;
 /// <summary>
 /// One-handed automatic SMG. Numbers are inspector parameters.
 /// Hold the trigger to fire. Grip reloads, and an empty magazine reloads on its own.
+/// Blue text on display shows the rounds left, or R while reloading.
 /// </summary>
 public class Hd2Smg : MonoBehaviour
 {
@@ -42,7 +43,7 @@ public class Hd2Smg : MonoBehaviour
     public void BindMuzzle(Transform muzzlePoint)
     {
         muzzle = muzzlePoint;
-        if (ammoLabel != null)
+        if (ammoLabel != null && ammoLabel.gameObject.name == "AmmoReadout")
         {
             Destroy(ammoLabel.gameObject);
             ammoLabel = null;
@@ -158,15 +159,16 @@ public class Hd2Smg : MonoBehaviour
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
 
-        bool editorReload = EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
+        bool bot = GetComponentInParent<Hd2EnemyBot>() != null;
+        bool editorReload = !bot && EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
         var fire = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight;
         var reload = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight;
-        if (ActionPressed(reload, reloadAction) || editorReload)
+        if (!bot && (ActionPressed(reload, reloadAction) || editorReload))
             Reload();
 
         bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
-        bool held = !menuOpen && ActionHeld(fire, triggerAction);
-        if (!menuOpen && EditorFallback && editorFireAction != null)
+        bool held = !bot && !menuOpen && ActionHeld(fire, triggerAction);
+        if (!bot && !menuOpen && EditorFallback && editorFireAction != null)
             held = held || editorFireAction.IsPressed();
 
         if (waitForTriggerRelease)
@@ -193,7 +195,7 @@ public class Hd2Smg : MonoBehaviour
         }
 
         float wobble = firing ? Mathf.Sin(Time.time * 36f) * vibrationDegrees : 0f;
-        transform.localRotation = restLocalRotation * Quaternion.Euler(climb, wobble, 0f);
+        transform.localRotation = restLocalRotation * Quaternion.Euler(-climb, wobble, 0f);
     }
 
     public bool botHeld;
@@ -287,15 +289,11 @@ public class Hd2Smg : MonoBehaviour
     void EnsureAmmoScreen()
     {
         if (ammoLabel == null)
-        {
-            Transform existing = transform.Find("AmmoReadout");
-            if (existing != null)
-                ammoLabel = existing.GetComponent<TextMesh>() ?? existing.GetComponentInChildren<TextMesh>(true);
-        }
+            ammoLabel = Hd2AmmoReadout.Bind(transform);
 
         if (ammoLabel != null)
         {
-            ApplyAmmoFont();
+            Hd2AmmoReadout.Style(ammoLabel);
             RefreshAmmo();
             return;
         }
@@ -360,48 +358,17 @@ public class Hd2Smg : MonoBehaviour
         root.transform.localPosition = pos;
         root.transform.localRotation = Quaternion.LookRotation(-back, Vector3.up);
         ammoLabel = root.AddComponent<TextMesh>();
-        ApplyAmmoFont();
         ammoLabel.fontSize = 32;
         ammoLabel.characterSize = 0.005f;
         ammoLabel.anchor = TextAnchor.MiddleCenter;
         ammoLabel.alignment = TextAlignment.Center;
-        ammoLabel.color = new Color(0.3f, 0.75f, 1f, 1f);
-        var textRenderer = ammoLabel.GetComponent<MeshRenderer>();
-        textRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        textRenderer.receiveShadows = false;
+        Hd2AmmoReadout.Style(ammoLabel);
         RefreshAmmo();
-    }
-
-    void ApplyAmmoFont()
-    {
-        if (ammoLabel == null)
-            return;
-
-        if (ammoLabel.GetComponent<MeshFilter>() == null)
-            ammoLabel.gameObject.AddComponent<MeshFilter>();
-
-        ammoLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        ammoLabel.color = new Color(0.3f, 0.75f, 1f, 1f);
-        var renderer = ammoLabel.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.enabled = true;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            if (ammoLabel.font != null)
-                renderer.sharedMaterial = ammoLabel.font.material;
-        }
-
-        string text = ammoLabel.text;
-        ammoLabel.text = string.IsNullOrEmpty(text) ? magazineSize.ToString() : text;
     }
 
     void RefreshAmmo()
     {
-        if (ammoLabel == null)
-            return;
-
-        ammoLabel.text = reloading ? "R" : rounds.ToString();
+        Hd2AmmoReadout.Show(ammoLabel, rounds, reloading);
     }
 
     void Pulse(float amplitude, float duration)

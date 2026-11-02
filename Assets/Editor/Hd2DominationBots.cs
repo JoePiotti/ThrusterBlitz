@@ -18,7 +18,7 @@ public static class Hd2DominationBots
     const string RequestName = "domination_bots.requested";
     const string ReportName = "domination_bots_report.txt";
     const string RobotPath = "Assets/Models/Bot/HumanoidRobot.fbx";
-    const string PistolPath = "Assets/Models/Pistol/GripPistolRight.fbx";
+    const string PistolPath = "Assets/Prefabs/GripPistol.prefab";
 
     static readonly Color Red = new Color(0.85f, 0.12f, 0.12f, 1f);
     static readonly Color Blue = new Color(0.16f, 0.38f, 0.95f, 1f);

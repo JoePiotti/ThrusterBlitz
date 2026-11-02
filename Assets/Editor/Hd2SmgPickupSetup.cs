@@ -2,14 +2,14 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Points the SMG pickup prefab at the grip models. Scene instances keep their own transforms.
+/// Points the SMG pickup at the reduced model and the gripped prefab.
+/// Scene instances keep their own transforms.
 /// </summary>
 [InitializeOnLoad]
 public static class Hd2SmgPickupSetup
 {
     const string ModelPath = "Assets/Models/SMG/Smg.fbx";
-    const string GripLeftPath = "Assets/Models/SMG/GripSmgLeft.fbx";
-    const string GripRightPath = "Assets/Models/SMG/GripSmgRight.fbx";
+    const string GripPath = "Assets/Prefabs/GripSmg.prefab";
     const string PrefabPath = "Assets/Prefabs/Pickups/SmgPickup.prefab";
 
     static Hd2SmgPickupSetup()
@@ -26,10 +26,13 @@ public static class Hd2SmgPickupSetup
         }
 
         var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
-        var left = AssetDatabase.LoadAssetAtPath<GameObject>(GripLeftPath);
-        var right = AssetDatabase.LoadAssetAtPath<GameObject>(GripRightPath);
-        if (model == null || AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) == null)
+        var grip = AssetDatabase.LoadAssetAtPath<GameObject>(GripPath);
+        if (model == null || grip == null || AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) == null)
+        {
+            if (model != null && AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) != null && grip == null)
+                EditorApplication.delayCall += AssignModel;
             return;
+        }
 
         var root = PrefabUtility.LoadPrefabContents(PrefabPath);
         try
@@ -45,15 +48,21 @@ public static class Hd2SmgPickupSetup
                 changed = true;
             }
 
-            if (left != null && pickup.gripLeft != left)
+            if (pickup.grip != grip)
             {
-                pickup.gripLeft = left;
+                pickup.grip = grip;
                 changed = true;
             }
 
-            if (right != null && pickup.gripRight != right)
+            if (pickup.gripLeft != null)
             {
-                pickup.gripRight = right;
+                pickup.gripLeft = null;
+                changed = true;
+            }
+
+            if (pickup.gripRight != null)
+            {
+                pickup.gripRight = null;
                 changed = true;
             }
 

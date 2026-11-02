@@ -63,6 +63,7 @@ public static class Hd2QuestPlayerSetup
         {
             new EditorBuildSettingsScene("Assets/Scenes/Title.unity", true),
             new EditorBuildSettingsScene("Assets/Scenes/Rome.unity", true),
+            new EditorBuildSettingsScene("Assets/Scenes/Rome CP.unity", true),
             new EditorBuildSettingsScene("Assets/Scenes/Deathmatch.unity", false),
             new EditorBuildSettingsScene("Assets/Scenes/Greybox.unity", false)
         };

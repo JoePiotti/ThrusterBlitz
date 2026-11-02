@@ -5,28 +5,32 @@ using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Title card. Picks one of the two title tracks at random and loops it.
-/// Point at the start button and pull the trigger, or click it.
-/// The left menu button, Enter, or Space also loads Rome.
+/// Point at Domination or Control Point and pull the trigger, or click it.
 /// </summary>
 public class Hd2TitleScreen : MonoBehaviour
 {
-    const string SceneName = "Rome";
     const float PosterDistance = 3.2f;
     const float PosterWidth = 2.6f;
 
-    InputAction startButton;
+    sealed class Choice
+    {
+        public Collider pad;
+        public Material material;
+        public string scene;
+        public Color rest;
+        public Color hot;
+    }
+
     InputAction leftTrigger;
     InputAction rightTrigger;
     InputAction mouseClick;
-    TextMesh prompt;
     Transform leftHand;
     Transform rightHand;
-    Collider startPad;
-    Material padMaterial;
+    Choice[] choices;
+    Choice aimed;
     LineRenderer laser;
     Camera view;
     bool loading;
-    bool aimed;
     readonly RaycastHit[] aimHits = new RaycastHit[8];
 
     void Awake()
@@ -35,11 +39,6 @@ public class Hd2TitleScreen : MonoBehaviour
         BuildPoster(view);
         PlayMusic();
 
-        startButton = new InputAction("Hd2TitleStart", InputActionType.Button);
-        startButton.AddBinding("<XRController>{LeftHand}/menuButton");
-        startButton.AddBinding("<Keyboard>/enter");
-        startButton.AddBinding("<Keyboard>/space");
-        startButton.Enable();
         leftTrigger = new InputAction("Hd2TitleLeft", InputActionType.Button, "<XRController>{LeftHand}/triggerPressed");
         rightTrigger = new InputAction("Hd2TitleRight", InputActionType.Button, "<XRController>{RightHand}/triggerPressed");
         mouseClick = new InputAction("Hd2TitleMouse", InputActionType.Button, "<Mouse>/leftButton");
@@ -52,7 +51,6 @@ public class Hd2TitleScreen : MonoBehaviour
 
     void OnDestroy()
     {
-        Dispose(ref startButton);
         Dispose(ref leftTrigger);
         Dispose(ref rightTrigger);
         Dispose(ref mouseClick);
@@ -71,13 +69,8 @@ public class Hd2TitleScreen : MonoBehaviour
     {
         if (loading)
             return;
-        if (startButton != null && startButton.WasPressedThisFrame())
-        {
-            Begin();
-            return;
-        }
 
-        aimed = false;
+        aimed = null;
         bool hit = TryHand(leftHand, leftTrigger);
         if (!hit)
             hit = TryHand(rightHand, rightTrigger);
@@ -88,52 +81,51 @@ public class Hd2TitleScreen : MonoBehaviour
         }
     }
 
-    void Begin()
+    void Begin(string sceneName)
     {
-        if (loading)
+        if (loading || string.IsNullOrEmpty(sceneName))
             return;
         loading = true;
-        aimed = false;
-        if (prompt != null)
-            prompt.text = "";
+        aimed = null;
         HideLaser();
-        SceneManager.LoadScene(SceneName);
+        SceneManager.LoadScene(sceneName);
     }
 
     bool TryHand(Transform hand, InputAction trigger)
     {
-        if (hand == null || startPad == null)
+        if (hand == null)
             return false;
 
         Vector3 direction = hand.TransformDirection(Vector3.down);
-        if (!HitPad(hand.position, direction, 8f, out Vector3 point))
+        if (!HitChoice(hand.position, direction, 8f, out Choice choice, out Vector3 point))
             return false;
 
-        aimed = true;
+        aimed = choice;
         ShowLaser(hand.position, point);
         if (trigger != null && trigger.WasPressedThisFrame())
-            Begin();
+            Begin(choice.scene);
         return true;
     }
 
     void TryMouse()
     {
-        if (view == null || mouseClick == null || Mouse.current == null || startPad == null)
+        if (view == null || mouseClick == null || Mouse.current == null)
             return;
 
         Ray ray = view.ScreenPointToRay(Mouse.current.position.ReadValue());
-        if (!HitPad(ray.origin, ray.direction, 30f, out _))
+        if (!HitChoice(ray.origin, ray.direction, 30f, out Choice choice, out _))
             return;
 
-        aimed = true;
+        aimed = choice;
         if (mouseClick.WasPressedThisFrame())
-            Begin();
+            Begin(choice.scene);
     }
 
-    bool HitPad(Vector3 origin, Vector3 direction, float distance, out Vector3 point)
+    bool HitChoice(Vector3 origin, Vector3 direction, float distance, out Choice choice, out Vector3 point)
     {
+        choice = null;
         point = default;
-        if (direction.sqrMagnitude < 0.0001f)
+        if (choices == null || direction.sqrMagnitude < 0.0001f)
             return false;
 
         int count = Physics.RaycastNonAlloc(origin, direction, aimHits, distance, ~0, QueryTriggerInteraction.Ignore);
@@ -141,14 +133,29 @@ public class Hd2TitleScreen : MonoBehaviour
         bool found = false;
         for (int i = 0; i < count; i++)
         {
-            if (aimHits[i].collider != startPad || aimHits[i].distance >= best)
+            Choice match = Match(aimHits[i].collider);
+            if (match == null || aimHits[i].distance >= best)
                 continue;
             best = aimHits[i].distance;
             point = aimHits[i].point;
+            choice = match;
             found = true;
         }
 
         return found;
+    }
+
+    Choice Match(Collider collider)
+    {
+        if (collider == null || choices == null)
+            return null;
+        for (int i = 0; i < choices.Length; i++)
+        {
+            if (choices[i] != null && choices[i].pad == collider)
+                return choices[i];
+        }
+
+        return null;
     }
 
     void ShowLaser(Vector3 from, Vector3 to)
@@ -180,17 +187,20 @@ public class Hd2TitleScreen : MonoBehaviour
 
     void LateUpdate()
     {
-        float pulse = 0.65f + 0.35f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 2.4f));
-        if (prompt != null)
-            prompt.color = new Color(0.45f * pulse, 0.92f * pulse, 1f, 1f);
-        if (padMaterial == null)
+        if (choices == null)
             return;
 
-        Color pad = aimed
-            ? new Color(0.28f, 0.62f, 1f, 1f)
-            : new Color(0.08f * pulse, 0.28f * pulse, 0.72f, 1f);
-        padMaterial.color = pad;
-        padMaterial.SetColor("_BaseColor", pad);
+        float pulse = 0.65f + 0.35f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 2.4f));
+        for (int i = 0; i < choices.Length; i++)
+        {
+            Choice choice = choices[i];
+            if (choice == null || choice.material == null)
+                continue;
+            Color pad = choice == aimed ? choice.hot : choice.rest * pulse;
+            pad.a = 1f;
+            choice.material.color = pad;
+            choice.material.SetColor("_BaseColor", pad);
+        }
     }
 
     Transform CreateHand(string name, string positionBinding, string rotationBinding, Vector3 place)
@@ -275,48 +285,64 @@ public class Hd2TitleScreen : MonoBehaviour
         renderer.receiveShadows = false;
         renderer.sharedMaterial = ArtMaterial(art);
 
-        Vector3 buttonCenter = center + new Vector3(0f, -height * 0.5f - 0.36f, 0f);
+        Vector3 first = center + new Vector3(0f, -height * 0.5f - 0.34f, 0f);
+        Vector3 second = first + new Vector3(0f, -0.5f, 0f);
+        choices = new Choice[2];
+        choices[0] = BuildChoice("DOMINATION", "Rome", first, new Color(0.08f, 0.28f, 0.72f, 1f), new Color(0.28f, 0.62f, 1f, 1f));
+        choices[1] = BuildChoice("CONTROL POINT", "Rome CP", second, new Color(0.45f, 0.24f, 0.06f, 1f), new Color(1f, 0.62f, 0.22f, 1f));
+
+        if (view != null && view.transform.position.sqrMagnitude < 0.01f)
+            view.transform.position = new Vector3(0f, 1.6f, 0f);
+    }
+
+    Choice BuildChoice(string label, string sceneName, Vector3 center, Color rest, Color hot)
+    {
         var pad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        pad.name = "StartButton";
+        pad.name = label;
         pad.transform.SetParent(transform, false);
-        pad.transform.position = buttonCenter;
+        pad.transform.position = center;
         pad.transform.rotation = Quaternion.identity;
-        pad.transform.localScale = new Vector3(1.45f, 0.4f, 1f);
+        pad.transform.localScale = new Vector3(1.7f, 0.38f, 1f);
         var padCollider = pad.GetComponent<Collider>();
         if (padCollider != null)
             Destroy(padCollider);
         var box = pad.AddComponent<BoxCollider>();
         box.size = new Vector3(1f, 1f, 0.3f);
-        startPad = box;
         var padRenderer = pad.GetComponent<MeshRenderer>();
         padRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         padRenderer.receiveShadows = false;
-        padMaterial = ColorMaterial(new Color(0.08f, 0.28f, 0.72f, 1f));
-        padRenderer.sharedMaterial = padMaterial;
+        Material material = ColorMaterial(rest);
+        padRenderer.sharedMaterial = material;
 
-        var promptObject = new GameObject("PressStart");
-        promptObject.transform.SetParent(transform, false);
-        promptObject.transform.position = buttonCenter + new Vector3(0f, 0f, -0.04f);
-        promptObject.transform.rotation = Quaternion.identity;
-        prompt = promptObject.AddComponent<TextMesh>();
-        prompt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        prompt.text = "PRESS START";
-        prompt.fontSize = 72;
-        prompt.characterSize = 0.055f;
-        prompt.anchor = TextAnchor.MiddleCenter;
-        prompt.alignment = TextAlignment.Center;
-        prompt.color = new Color(0.45f, 0.92f, 1f, 1f);
-        var textRenderer = prompt.GetComponent<MeshRenderer>();
+        var labelObject = new GameObject(label + " Label");
+        labelObject.transform.SetParent(transform, false);
+        labelObject.transform.position = center + new Vector3(0f, 0f, -0.04f);
+        labelObject.transform.rotation = Quaternion.identity;
+        var text = labelObject.AddComponent<TextMesh>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.text = label;
+        text.fontSize = 64;
+        text.characterSize = 0.04f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = new Color(0.93f, 0.96f, 1f, 1f);
+        var textRenderer = text.GetComponent<MeshRenderer>();
         if (textRenderer != null)
         {
             textRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             textRenderer.receiveShadows = false;
-            if (prompt.font != null)
-                textRenderer.sharedMaterial = prompt.font.material;
+            if (text.font != null)
+                textRenderer.sharedMaterial = text.font.material;
         }
 
-        if (view != null && view.transform.position.sqrMagnitude < 0.01f)
-            view.transform.position = new Vector3(0f, 1.6f, 0f);
+        return new Choice
+        {
+            pad = box,
+            material = material,
+            scene = sceneName,
+            rest = rest,
+            hot = hot
+        };
     }
 
     static Material ArtMaterial(Texture2D art)

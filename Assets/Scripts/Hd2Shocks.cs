@@ -4,9 +4,10 @@ using UnityEngine.InputSystem;
 using UnityEngine.XR;
 
 /// <summary>
-/// Stand-in Shocks. Same gripped pistol, tinted red, until it has its own model.
-/// A trigger tap fires one blue bolt. Holding the trigger for chargeHoldTime, then
-/// releasing, fires a slower blue sphere that bursts.
+/// Shocks on the gripped hand. Same hold as the pistol.
+/// A trigger tap fires one bolt. Holding the trigger for chargeHoldTime, then
+/// releasing, fires a slower sphere that bursts. The charge glow fills the span
+/// between the two glowyChargeUp markers, then stays bright until the shot fires.
 /// </summary>
 public class Hd2Shocks : MonoBehaviour
 {
@@ -18,14 +19,14 @@ public class Hd2Shocks : MonoBehaviour
 
     public float boltSpeed = 140f;
     public float boltDamage = 20f;
-    public float boltThickness = 0.042f;
-    public float boltLength = 4.6f;
-    public float boltMaxLength = 7f;
+    public float boltThickness = 0.084f;
+    public float boltLength = 9.2f;
+    public float boltMaxLength = 14f;
     public Color boltColor = new Color(1f, 0.16f, 0.08f, 1f);
 
     public float chargeHoldTime = 1.25f;
     public float orbSpeed = 35f;
-    public float orbRadius = 0.098f;
+    public float orbRadius = 0.0882f;
     public float innerRadius = 1.5f;
     public float innerDamage = 72f;
     public float outerRadius = 2.75f;
@@ -35,8 +36,6 @@ public class Hd2Shocks : MonoBehaviour
     public float kickReturnSpeed = 18f;
 
     public Transform muzzle;
-
-    static readonly Color BodyColor = new Color(0.78f, 0.08f, 0.07f, 1f);
 
     int rounds;
     float nextFireTime;
@@ -58,9 +57,30 @@ public class Hd2Shocks : MonoBehaviour
     TextMesh ammoLabel;
 
     public int Rounds => rounds;
+    [SerializeField] bool gripMirrored;
+
+    Transform chargeGlow;
+    Transform chargeGlowEnd;
+    Vector3 chargeEndLocal;
+    Light chargeLight;
+    ParticleSystem chargeSparks;
+    Transform chargeCore;
+    Renderer chargeCoreRenderer;
+    Material chargeCoreMaterial;
+    Material chargeSparkMaterial;
+    bool ownSparkMaterial;
+    float chargeShown;
+
+    static readonly Color ChargeRed = new Color(1f, 0.07f, 0.02f, 1f);
 
     void Awake()
     {
+        if (hand == Hd2Pistol.Hand.Right && !gripMirrored && transform.Find("Hand") != null)
+        {
+            Hd2ShotgunPickup.MirrorGrip(transform);
+            gripMirrored = true;
+        }
+
         if (muzzle == null)
         {
             Transform found = transform.Find("Muzzle");
@@ -68,7 +88,6 @@ public class Hd2Shocks : MonoBehaviour
                 muzzle = found;
         }
 
-        TintRed(gameObject);
         restLocalRotation = transform.localRotation;
         rounds = magazineSize;
         voice = AddVoice();
@@ -81,40 +100,12 @@ public class Hd2Shocks : MonoBehaviour
         }
 
         EnsureAmmoLabel();
+        EnsureChargeGlow();
     }
 
     public void SetHand(Hd2Pistol.Hand which)
     {
         hand = which;
-    }
-
-    public static void TintRed(GameObject root)
-    {
-        if (root == null)
-            return;
-
-        var renderers = root.GetComponentsInChildren<Renderer>(true);
-        for (int i = 0; i < renderers.Length; i++)
-        {
-            Renderer renderer = renderers[i];
-            if (renderer == null || renderer is ParticleSystemRenderer)
-                continue;
-            if (renderer.GetComponent<TextMesh>() != null)
-                continue;
-
-            Material source = renderer.sharedMaterial;
-            if (source == null)
-                continue;
-
-            var copy = new Material(source);
-            copy.SetTexture("_BaseMap", null);
-            copy.SetTexture("_MainTex", null);
-            if (copy.HasProperty("_BaseColor"))
-                copy.SetColor("_BaseColor", BodyColor);
-            if (copy.HasProperty("_Color"))
-                copy.SetColor("_Color", BodyColor);
-            renderer.material = copy;
-        }
     }
 
     AudioSource AddVoice()
@@ -165,66 +156,69 @@ public class Hd2Shocks : MonoBehaviour
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
 
-        bool editor = EditorFallback();
-        if (Pressed(hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight, reloadAction)
-            || (editor && editorReloadAction != null && editorReloadAction.WasPressedThisFrame()))
-            Reload();
-
-        bool menuOpen = Map() != null && Map().MenuOpen;
-        if (menuOpen && triggerPressedAt >= 0f)
+        if (GetComponentInParent<Hd2EnemyBot>() == null)
         {
-            triggerPressedAt = -1f;
-            StopCharge();
-        }
+            bool editor = EditorFallback();
+            if (Pressed(hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight, reloadAction)
+                || (editor && editorReloadAction != null && editorReloadAction.WasPressedThisFrame()))
+                Reload();
 
-        bool pressed = !menuOpen && Pressed(hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
-        bool released = !menuOpen && Released(hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
-        if (editor && editorFireAction != null)
-        {
-            pressed = pressed || editorFireAction.WasPressedThisFrame();
-            released = released || editorFireAction.WasReleasedThisFrame();
-        }
-
-        if (waitForTriggerRelease)
-        {
-            pressed = false;
-            released = false;
-            if (!TriggerIsDown(editor))
-                waitForTriggerRelease = false;
-        }
-
-        if (pressed)
-        {
-            triggerPressedAt = Time.time;
-            chargeReadyPulsed = false;
-            nextChargeHapticAt = 0f;
-            PlayCharge();
-        }
-
-        bool charging = triggerPressedAt >= 0f && !chargeReadyPulsed && !reloading && rounds > 0
-            && Time.time - triggerPressedAt < chargeHoldTime;
-        if (charging)
-        {
-            if (Time.time >= nextChargeHapticAt)
+            bool menuOpen = Map() != null && Map().MenuOpen;
+            if (menuOpen && triggerPressedAt >= 0f)
             {
-                chargeRumbling = true;
-                Pulse(0.5f, 0.05f);
-                nextChargeHapticAt = Time.time + 0.05f;
+                triggerPressedAt = -1f;
+                StopCharge();
             }
-        }
-        else if (chargeRumbling)
-            StopChargeRumble();
 
-        if (!chargeReadyPulsed && triggerPressedAt >= 0f && !reloading && rounds > 0
-            && Time.time - triggerPressedAt >= chargeHoldTime)
-            chargeReadyPulsed = true;
+            bool pressed = !menuOpen && Pressed(hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
+            bool released = !menuOpen && Released(hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
+            if (editor && editorFireAction != null)
+            {
+                pressed = pressed || editorFireAction.WasPressedThisFrame();
+                released = released || editorFireAction.WasReleasedThisFrame();
+            }
 
-        if (released)
-        {
-            float held = triggerPressedAt >= 0f ? Time.time - triggerPressedAt : 0f;
-            triggerPressedAt = -1f;
-            StopCharge();
-            TryFire(held >= chargeHoldTime);
+            if (waitForTriggerRelease)
+            {
+                pressed = false;
+                released = false;
+                if (!TriggerIsDown(editor))
+                    waitForTriggerRelease = false;
+            }
+
+            if (pressed)
+            {
+                triggerPressedAt = Time.time;
+                chargeReadyPulsed = false;
+                nextChargeHapticAt = 0f;
+                PlayCharge();
+            }
+
+            bool charging = triggerPressedAt >= 0f && !chargeReadyPulsed && !reloading && rounds > 0
+                && Time.time - triggerPressedAt < chargeHoldTime;
+            if (charging)
+            {
+                if (Time.time >= nextChargeHapticAt)
+                {
+                    chargeRumbling = true;
+                    Pulse(0.5f, 0.05f);
+                    nextChargeHapticAt = Time.time + 0.05f;
+                }
+            }
+            else if (chargeRumbling)
+                StopChargeRumble();
+
+            if (!chargeReadyPulsed && triggerPressedAt >= 0f && !reloading && rounds > 0
+                && Time.time - triggerPressedAt >= chargeHoldTime)
+                chargeReadyPulsed = true;
+
+            if (released)
+            {
+                float held = triggerPressedAt >= 0f ? Time.time - triggerPressedAt : 0f;
+                triggerPressedAt = -1f;
+                StopCharge();
+                TryFire(held >= chargeHoldTime);
+            }
         }
 
         if (kick > 0f)
@@ -232,6 +226,8 @@ public class Hd2Shocks : MonoBehaviour
             kick = Mathf.MoveTowards(kick, 0f, kickReturnSpeed * Time.deltaTime);
             transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
         }
+
+        UpdateChargeGlow();
     }
 
     public void Reload()
@@ -367,10 +363,7 @@ public class Hd2Shocks : MonoBehaviour
 
     void EnsureAmmoLabel()
     {
-        Transform existing = transform.Find("AmmoReadout");
-        if (existing != null)
-            ammoLabel = existing.GetComponent<TextMesh>();
-
+        ammoLabel = Hd2AmmoReadout.Bind(transform);
         if (ammoLabel == null)
         {
             var root = new GameObject("AmmoReadout");
@@ -382,17 +375,7 @@ public class Hd2Shocks : MonoBehaviour
             ammoLabel.characterSize = 0.005f;
             ammoLabel.anchor = TextAnchor.MiddleCenter;
             ammoLabel.alignment = TextAlignment.Center;
-        }
-
-        ammoLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        ammoLabel.color = new Color(0.55f, 0.75f, 1f, 1f);
-        var renderer = ammoLabel.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            if (ammoLabel.font != null)
-                renderer.sharedMaterial = ammoLabel.font.material;
+            Hd2AmmoReadout.Style(ammoLabel);
         }
 
         RefreshAmmo();
@@ -400,8 +383,7 @@ public class Hd2Shocks : MonoBehaviour
 
     void RefreshAmmo()
     {
-        if (ammoLabel != null)
-            ammoLabel.text = reloading ? "R" : rounds.ToString();
+        Hd2AmmoReadout.Show(ammoLabel, rounds, reloading);
     }
 
     static readonly List<UnityEngine.XR.InputDevice> hapticDevices = new List<UnityEngine.XR.InputDevice>();
@@ -491,6 +473,306 @@ public class Hd2Shocks : MonoBehaviour
         var collider = target.GetComponent<Collider>();
         if (collider != null)
             Destroy(collider);
+    }
+
+    void EnsureChargeGlow()
+    {
+        chargeGlow = FindNamed(transform, "glowyChargeUp");
+        if (chargeGlow == null)
+            return;
+
+        chargeGlowEnd = FindGlowEnd(transform, chargeGlow);
+        chargeEndLocal = chargeGlowEnd != null
+            ? chargeGlow.InverseTransformPoint(chargeGlowEnd.position)
+            : Vector3.zero;
+
+        chargeSparks = chargeGlow.GetComponent<ParticleSystem>();
+        if (chargeSparks == null)
+            chargeSparks = chargeGlow.gameObject.AddComponent<ParticleSystem>();
+        ConfigureChargeSparks(chargeSparks);
+
+        Transform core = chargeGlow.Find("GlowCore");
+        if (core == null)
+        {
+            var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            sphere.name = "GlowCore";
+            sphere.transform.SetParent(chargeGlow, false);
+            StripCollider(sphere);
+            core = sphere.transform;
+        }
+
+        chargeCore = core;
+        chargeCore.localPosition = chargeEndLocal * 0.5f;
+        chargeCore.localRotation = chargeEndLocal.sqrMagnitude > 0.0001f
+            ? Quaternion.FromToRotation(Vector3.up, chargeEndLocal)
+            : Quaternion.identity;
+        chargeCore.localScale = Vector3.zero;
+        chargeCoreRenderer = chargeCore.GetComponent<Renderer>();
+        if (chargeCoreRenderer != null)
+        {
+            chargeCoreMaterial = ChargeGlowMaterial();
+            if (chargeCoreMaterial != null)
+                chargeCoreRenderer.sharedMaterial = chargeCoreMaterial;
+            chargeCoreRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            chargeCoreRenderer.receiveShadows = false;
+            chargeCoreRenderer.enabled = false;
+        }
+
+        chargeLight = chargeCore.GetComponent<Light>();
+        if (chargeLight == null)
+            chargeLight = chargeCore.gameObject.AddComponent<Light>();
+        chargeLight.type = LightType.Point;
+        chargeLight.color = ChargeRed;
+        chargeLight.shadows = LightShadows.None;
+        chargeLight.bounceIntensity = 0f;
+        chargeLight.renderMode = LightRenderMode.ForcePixel;
+        chargeLight.renderingLayerMask = (int)GlowLightMask();
+        chargeLight.cullingMask = ~0;
+        chargeLight.range = 0.6f;
+        chargeLight.intensity = 0f;
+        chargeLight.enabled = false;
+    }
+
+    static Material ChargeGlowMaterial()
+    {
+        Material source = Resources.Load<Material>("ShockOrbGlow");
+        Material material = source != null ? new Material(source) : null;
+        if (material == null)
+        {
+            Shader shader = Shader.Find("HD2/ShockOrbGlow");
+            if (shader == null)
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null)
+                return null;
+            material = new Material(shader);
+        }
+
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", ChargeRed);
+        if (material.HasProperty("_Core"))
+            material.SetColor("_Core", Color.white);
+        return material;
+    }
+
+    uint GlowLightMask()
+    {
+        Transform barrel = FindNamed(transform, "Barrel");
+        Renderer renderer = barrel != null ? barrel.GetComponent<Renderer>() : null;
+        if (renderer != null && renderer.renderingLayerMask != 0)
+            return renderer.renderingLayerMask;
+        return 1;
+    }
+
+    static Transform FindGlowEnd(Transform root, Transform first)
+    {
+        if (root != first && root.name.StartsWith("glowyChargeUp"))
+            return root;
+
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindGlowEnd(root.GetChild(i), first);
+            if (found != null)
+                return found;
+        }
+
+        return null;
+    }
+
+    float GlowLocalSize(float worldSize)
+    {
+        float unit = chargeGlow != null ? Mathf.Abs(chargeGlow.lossyScale.x) : 1f;
+        if (unit < 0.0001f)
+            unit = 1f;
+        return worldSize / unit;
+    }
+
+    void ConfigureChargeSparks(ParticleSystem sparks)
+    {
+        sparks.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = sparks.main;
+        main.playOnAwake = false;
+        main.loop = true;
+        main.duration = 1f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.08f, 0.2f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.35f, 0.9f);
+        main.startSize = new ParticleSystem.MinMaxCurve(GlowLocalSize(0.0035f), GlowLocalSize(0.007f));
+        main.startColor = Color.white;
+        main.gravityModifier = 0.15f;
+        main.maxParticles = 36;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+
+        var emission = sparks.emission;
+        emission.rateOverTime = 0f;
+
+        var shape = sparks.shape;
+        shape.shapeType = ParticleSystemShapeType.Box;
+        shape.position = chargeEndLocal * 0.5f;
+        shape.rotation = chargeEndLocal.sqrMagnitude > 0.0001f
+            ? Quaternion.FromToRotation(Vector3.right, chargeEndLocal.normalized).eulerAngles
+            : Vector3.zero;
+        shape.scale = new Vector3(Mathf.Max(0.001f, chargeEndLocal.magnitude), 0.004f, 0.004f);
+        shape.randomDirectionAmount = 1f;
+
+        var velocity = sparks.velocityOverLifetime;
+        velocity.enabled = true;
+        velocity.space = ParticleSystemSimulationSpace.World;
+        velocity.x = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
+        velocity.y = new ParticleSystem.MinMaxCurve(0.15f, 0.45f);
+        velocity.z = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
+
+        var color = sparks.colorOverLifetime;
+        color.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(Color.white, 0f),
+                new GradientColorKey(Color.white, 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(1f, 0f),
+                new GradientAlphaKey(1f, 0.35f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        color.color = gradient;
+
+        var size = sparks.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+            new Keyframe(0f, 0.35f),
+            new Keyframe(0.12f, 1f),
+            new Keyframe(1f, 0f)));
+
+        var custom = sparks.customData;
+        custom.SetMode(ParticleSystemCustomData.Custom1, ParticleSystemCustomDataMode.Vector);
+        custom.SetVectorComponentCount(ParticleSystemCustomData.Custom1, 1);
+        custom.SetVector(ParticleSystemCustomData.Custom1, 0, new ParticleSystem.MinMaxCurve(0f, 1f));
+
+        var renderer = sparks.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        renderer.maxParticleSize = 0.012f;
+        renderer.minParticleSize = 0f;
+        var streams = new System.Collections.Generic.List<ParticleSystemVertexStream>(4);
+        streams.Add(ParticleSystemVertexStream.Position);
+        streams.Add(ParticleSystemVertexStream.Color);
+        streams.Add(ParticleSystemVertexStream.UV);
+        streams.Add(ParticleSystemVertexStream.Custom1X);
+        renderer.SetActiveVertexStreams(streams);
+        chargeSparkMaterial = ChargeSparkMaterial(out ownSparkMaterial);
+        if (chargeSparkMaterial != null)
+            renderer.sharedMaterial = chargeSparkMaterial;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+    }
+
+    static Material ChargeSparkMaterial(out bool owned)
+    {
+        owned = false;
+        Material source = Resources.Load<Material>("ChargeSpark");
+        if (source != null)
+            return source;
+
+        Shader shader = Shader.Find("HD2/ChargeSpark");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null)
+            return null;
+
+        owned = true;
+        var material = new Material(shader);
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", Color.white);
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", Color.white);
+        return material;
+    }
+
+    void UpdateChargeGlow()
+    {
+        if (chargeGlow == null)
+            return;
+
+        float amount = ChargeGlowAmount();
+        if (amount <= 0f && chargeShown <= 0f)
+            return;
+
+        chargeShown = amount;
+        // Ease out so the glow is readable during the hold, and still peaks when the shot is ready.
+        float hot = amount * (2f - amount);
+        bool on = hot > 0.001f;
+        float span = chargeEndLocal.magnitude;
+        if (span < 0.001f)
+            span = 0.04f;
+        float reach = span * hot;
+        Vector3 mid = chargeEndLocal * 0.5f;
+        if (chargeLight != null)
+        {
+            chargeLight.enabled = on;
+            chargeLight.intensity = 70f * hot;
+        }
+
+        if (chargeCore != null)
+        {
+            chargeCore.localPosition = mid;
+            float thick = reach * 0.55f;
+            chargeCore.localScale = new Vector3(thick, reach, thick);
+            if (chargeCoreRenderer != null)
+                chargeCoreRenderer.enabled = on;
+            if (chargeCoreMaterial != null)
+            {
+                chargeCoreMaterial.SetColor("_Color", ChargeRed * hot);
+                chargeCoreMaterial.SetColor("_Core", Color.white * hot);
+            }
+        }
+
+        if (chargeSparks == null)
+            return;
+
+        var shape = chargeSparks.shape;
+        shape.position = mid;
+        shape.scale = new Vector3(Mathf.Max(0.001f, reach), 0.004f, 0.004f);
+        var emission = chargeSparks.emission;
+        emission.rateOverTime = 48f * hot;
+        if (on)
+        {
+            if (!chargeSparks.isPlaying)
+                chargeSparks.Play();
+        }
+        else if (chargeSparks.isEmitting)
+            chargeSparks.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+    }
+
+    float ChargeGlowAmount()
+    {
+        if (triggerPressedAt < 0f || reloading || rounds <= 0)
+            return 0f;
+
+        return Mathf.Clamp01((Time.time - triggerPressedAt) / Mathf.Max(0.05f, chargeHoldTime));
+    }
+
+    static Transform FindNamed(Transform root, string name)
+    {
+        if (root.name == name)
+            return root;
+
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindNamed(root.GetChild(i), name);
+            if (found != null)
+                return found;
+        }
+
+        return null;
+    }
+
+    void OnDestroy()
+    {
+        if (chargeCoreMaterial != null)
+            Destroy(chargeCoreMaterial);
+        if (ownSparkMaterial && chargeSparkMaterial != null)
+            Destroy(chargeSparkMaterial);
     }
 }
 

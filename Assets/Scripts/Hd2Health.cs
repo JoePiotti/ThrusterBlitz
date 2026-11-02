@@ -45,7 +45,9 @@ public class Hd2Health : MonoBehaviour
         if (health >= maxHealth)
             return false;
 
+        float before = health;
         health = maxHealth;
+        NoteCritical(before);
         Changed?.Invoke(this);
         return true;
     }
@@ -55,7 +57,9 @@ public class Hd2Health : MonoBehaviour
         if (amount <= 0f || health <= 0f || health >= maxHealth)
             return;
 
+        float before = health;
         health = Mathf.Min(maxHealth, health + amount);
+        NoteCritical(before);
         Changed?.Invoke(this);
     }
 
@@ -93,6 +97,7 @@ public class Hd2Health : MonoBehaviour
         if (headshot)
             amount *= 3f;
 
+        float before = health;
         health = Mathf.Max(0f, health - amount);
         if (health <= 0f && blastArmed)
         {
@@ -103,6 +108,7 @@ public class Hd2Health : MonoBehaviour
         blastArmed = false;
         if (playerShot)
             PlayPlayerHit();
+        NoteCritical(before);
         Changed?.Invoke(this);
         if (health <= 0f)
         {
@@ -248,6 +254,7 @@ public class Hd2Health : MonoBehaviour
 
     public void Respawn()
     {
+        StopCritical();
         health = maxHealth;
         KilledByBlast = false;
         killPathCount = 0;
@@ -264,9 +271,9 @@ public class Hd2Health : MonoBehaviour
 
         Vector3 pos = spawnPosition;
         Quaternion rot = spawnRotation;
-        bool pinned = pinSpawn;
-        pinSpawn = false;
-        if (!pinned && Hd2SpawnDirector.Instance != null)
+        // A team base stays pinned. Clearing it made the next death use a
+        // deathmatch point, which put a switched player back on the old side.
+        if (!pinSpawn && Hd2SpawnDirector.Instance != null)
         {
             var farthest = Hd2SpawnDirector.Instance.PickFarthest(transform);
             if (farthest != null)
@@ -330,5 +337,81 @@ public class Hd2Health : MonoBehaviour
         }
 
         killWhackSource.PlayOneShot(killWhackClip);
+    }
+
+    const float CriticalHealth = 10f;
+    static AudioClip criticalClip;
+    static AudioSource criticalSource;
+
+    void NoteCritical(float before)
+    {
+        if (GetComponent<Hd2Locomotion>() == null)
+            return;
+
+        if (health <= 0f || health > before)
+        {
+            StopCritical();
+            if (health <= 0f)
+                PlayDeath();
+            return;
+        }
+
+        if (before > CriticalHealth && health <= CriticalHealth)
+            PlayCritical();
+    }
+
+    static void PlayCritical()
+    {
+        if (criticalClip == null)
+            criticalClip = Resources.Load<AudioClip>("Audio/CriticalDamage");
+        if (criticalClip == null)
+            return;
+
+        if (criticalSource == null)
+        {
+            var speaker = new GameObject("CriticalDamage");
+            speaker.hideFlags = HideFlags.HideAndDontSave;
+            Object.DontDestroyOnLoad(speaker);
+            criticalSource = speaker.AddComponent<AudioSource>();
+            criticalSource.playOnAwake = false;
+            criticalSource.spatialBlend = 0f;
+            criticalSource.dopplerLevel = 0f;
+        }
+
+        criticalSource.Stop();
+        criticalSource.clip = criticalClip;
+        criticalSource.Play();
+    }
+
+    static void StopCritical()
+    {
+        if (criticalSource != null && criticalSource.isPlaying)
+            criticalSource.Stop();
+    }
+
+    static AudioClip deathClip;
+    static AudioSource deathSource;
+
+    static void PlayDeath()
+    {
+        if (deathClip == null)
+            deathClip = Resources.Load<AudioClip>("Audio/RobotDeath");
+        if (deathClip == null)
+            return;
+
+        if (deathSource == null)
+        {
+            var speaker = new GameObject("RobotDeath");
+            speaker.hideFlags = HideFlags.HideAndDontSave;
+            Object.DontDestroyOnLoad(speaker);
+            deathSource = speaker.AddComponent<AudioSource>();
+            deathSource.playOnAwake = false;
+            deathSource.spatialBlend = 0f;
+            deathSource.dopplerLevel = 0f;
+        }
+
+        deathSource.Stop();
+        deathSource.clip = deathClip;
+        deathSource.Play();
     }
 }

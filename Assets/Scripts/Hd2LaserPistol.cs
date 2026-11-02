@@ -10,6 +10,7 @@ using UnityEngine.XR;
 /// thickens the beam, deals damage once, then the beam lasts beamSeconds and the gun
 /// waits cooldownSeconds. A trigger that is still held when that wait ends starts the
 /// pointer again. Discharge and cooldown clips are optional until they exist.
+/// Blue text on display shows 1 while a shot is ready, or R during cooldown.
 /// </summary>
 public class Hd2LaserPistol : MonoBehaviour
 {
@@ -54,6 +55,7 @@ public class Hd2LaserPistol : MonoBehaviour
     AudioSource voice;
     AudioClip fireClip;
     AudioClip cooldownClip;
+    TextMesh ammoLabel;
     Hd2ControlMap controlMap;
     readonly RaycastHit[] hits = new RaycastHit[32];
 
@@ -87,6 +89,9 @@ public class Hd2LaserPistol : MonoBehaviour
 
         if (fireClip != null || cooldownClip != null)
             voice = AddVoice();
+
+        ammoLabel = Hd2AmmoReadout.Bind(transform);
+        RefreshAmmo();
     }
 
     public void SetHand(Hd2Pistol.Hand value)
@@ -220,7 +225,8 @@ public class Hd2LaserPistol : MonoBehaviour
     void Update()
     {
         bool menuOpen = Map() != null && Map().MenuOpen;
-        float pull = menuOpen ? 0f : ReadPull();
+        bool bot = GetComponentInParent<Hd2EnemyBot>() != null;
+        float pull = bot || menuOpen ? 0f : ReadPull();
         if (botHeld)
             pull = 1f;
         bool full = pull >= fullTrigger;
@@ -249,6 +255,7 @@ public class Hd2LaserPistol : MonoBehaviour
         else if (phase == Phase.Cooling && Time.time >= phaseEndsAt)
         {
             phase = Phase.Ready;
+            RefreshAmmo();
         }
 
         if (phase == Phase.Ready && full)
@@ -328,6 +335,12 @@ public class Hd2LaserPistol : MonoBehaviour
             voice.PlayOneShot(cooldownClip);
         phase = Phase.Cooling;
         phaseEndsAt = Time.time + Mathf.Max(0f, cooldownSeconds);
+        RefreshAmmo();
+    }
+
+    void RefreshAmmo()
+    {
+        Hd2AmmoReadout.Show(ammoLabel, 1, phase == Phase.Cooling);
     }
 
     void AimPointer()

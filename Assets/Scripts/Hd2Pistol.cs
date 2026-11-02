@@ -7,8 +7,8 @@ using UnityEngine.XR;
 /// Holding the trigger past chargeHoldTime, then releasing, fires a charged shot.
 /// The charge sound is muted for now.
 /// Grip starts a timed reload on that gun only. An empty magazine starts the same reload.
-/// Blue text on the back shows the rounds left, or R while reloading.
-/// Move AmmoReadout on each pistol in the VRPlayer prefab. Play mode does not move it.
+/// Blue text on display shows the rounds left, or R while reloading.
+/// Move display on the grip prefab. Play mode does not move it.
 /// </summary>
 public class Hd2Pistol : MonoBehaviour
 {
@@ -56,7 +56,7 @@ public class Hd2Pistol : MonoBehaviour
 
     [Tooltip("Bore tip. Local euler (90, 0, 0) so forward is the pistol's -Y, out the barrel away from the player.")]
     public Transform muzzle;
-    [Tooltip("Rounds text on the back of this pistol. Drag AmmoReadout in the VRPlayer prefab while play mode is off.")]
+    [Tooltip("Rounds text. Uses the display child on the grip when there is one.")]
     public TextMesh ammoLabel;
 
     int rounds;
@@ -91,9 +91,16 @@ public class Hd2Pistol : MonoBehaviour
 
     public int Rounds => rounds;
     public bool IsReloading => reloading;
+    [SerializeField] bool gripMirrored;
 
     void Awake()
     {
+        if (hand == Hand.Right && !gripMirrored && transform.Find("Hand") != null)
+        {
+            Hd2ShotgunPickup.MirrorGrip(transform);
+            gripMirrored = true;
+        }
+
         if (muzzle == null)
         {
             var found = transform.Find("Muzzle");
@@ -197,65 +204,68 @@ public class Hd2Pistol : MonoBehaviour
             nextReloadPulseAt = Time.time + 0.09f;
         }
 
-        bool editorReload = EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
-        if (ActionPressed(hand == Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight, reloadAction) || editorReload)
-            Reload();
-
-        bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
-        if (menuOpen && triggerPressedAt >= 0f)
+        if (GetComponentInParent<Hd2EnemyBot>() == null)
         {
-            triggerPressedAt = -1f;
-            StopCharge();
-        }
+            bool editorReload = EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
+            if (ActionPressed(hand == Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight, reloadAction) || editorReload)
+                Reload();
 
-        bool pressed = !menuOpen && ActionPressed(hand == Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
-        bool released = !menuOpen && ActionReleased(hand == Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
-        if (EditorFallback && editorFireAction != null)
-        {
-            pressed = pressed || editorFireAction.WasPressedThisFrame();
-            released = released || editorFireAction.WasReleasedThisFrame();
-        }
-
-        if (waitForTriggerRelease)
-        {
-            pressed = false;
-            released = false;
-            if (!TriggerIsDown())
-                waitForTriggerRelease = false;
-        }
-
-        if (pressed)
-        {
-            triggerPressedAt = Time.time;
-            chargeReadyPulsed = false;
-            nextChargeHapticAt = 0f;
-            PlayCharge();
-        }
-
-        bool charging = triggerPressedAt >= 0f && !chargeReadyPulsed && !reloading && rounds > 0
-            && Time.time - triggerPressedAt < chargeHoldTime;
-        if (charging)
-        {
-            if (Time.time >= nextChargeHapticAt)
+            bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
+            if (menuOpen && triggerPressedAt >= 0f)
             {
-                chargeRumbling = true;
-                Pulse(chargeReadyHapticAmplitude, 0.05f);
-                nextChargeHapticAt = Time.time + 0.05f;
+                triggerPressedAt = -1f;
+                StopCharge();
             }
-        }
-        else if (chargeRumbling)
-            StopChargeRumble();
 
-        if (!chargeReadyPulsed && triggerPressedAt >= 0f && !reloading && rounds > 0
-            && Time.time - triggerPressedAt >= chargeHoldTime)
-            chargeReadyPulsed = true;
+            bool pressed = !menuOpen && ActionPressed(hand == Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
+            bool released = !menuOpen && ActionReleased(hand == Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight, triggerAction);
+            if (EditorFallback && editorFireAction != null)
+            {
+                pressed = pressed || editorFireAction.WasPressedThisFrame();
+                released = released || editorFireAction.WasReleasedThisFrame();
+            }
 
-        if (released)
-        {
-            float held = triggerPressedAt >= 0f ? Time.time - triggerPressedAt : 0f;
-            triggerPressedAt = -1f;
-            StopCharge();
-            TryFire(held >= chargeHoldTime);
+            if (waitForTriggerRelease)
+            {
+                pressed = false;
+                released = false;
+                if (!TriggerIsDown())
+                    waitForTriggerRelease = false;
+            }
+
+            if (pressed)
+            {
+                triggerPressedAt = Time.time;
+                chargeReadyPulsed = false;
+                nextChargeHapticAt = 0f;
+                PlayCharge();
+            }
+
+            bool charging = triggerPressedAt >= 0f && !chargeReadyPulsed && !reloading && rounds > 0
+                && Time.time - triggerPressedAt < chargeHoldTime;
+            if (charging)
+            {
+                if (Time.time >= nextChargeHapticAt)
+                {
+                    chargeRumbling = true;
+                    Pulse(chargeReadyHapticAmplitude, 0.05f);
+                    nextChargeHapticAt = Time.time + 0.05f;
+                }
+            }
+            else if (chargeRumbling)
+                StopChargeRumble();
+
+            if (!chargeReadyPulsed && triggerPressedAt >= 0f && !reloading && rounds > 0
+                && Time.time - triggerPressedAt >= chargeHoldTime)
+                chargeReadyPulsed = true;
+
+            if (released)
+            {
+                float held = triggerPressedAt >= 0f ? Time.time - triggerPressedAt : 0f;
+                triggerPressedAt = -1f;
+                StopCharge();
+                TryFire(held >= chargeHoldTime);
+            }
         }
 
         if (kick > 0f)
@@ -318,15 +328,11 @@ public class Hd2Pistol : MonoBehaviour
     void EnsureAmmoScreen()
     {
         if (ammoLabel == null)
-        {
-            Transform existing = transform.Find("AmmoReadout");
-            if (existing != null)
-                ammoLabel = existing.GetComponent<TextMesh>() ?? existing.GetComponentInChildren<TextMesh>(true);
-        }
+            ammoLabel = Hd2AmmoReadout.Bind(transform);
 
         if (ammoLabel != null)
         {
-            ApplyAmmoFont();
+            Hd2AmmoReadout.Style(ammoLabel);
             RefreshAmmo();
             return;
         }
@@ -391,48 +397,17 @@ public class Hd2Pistol : MonoBehaviour
         root.transform.localPosition = pos;
         root.transform.localRotation = Quaternion.LookRotation(-back, Vector3.up);
         ammoLabel = root.AddComponent<TextMesh>();
-        ApplyAmmoFont();
         ammoLabel.fontSize = 32;
         ammoLabel.characterSize = 0.005f;
         ammoLabel.anchor = TextAnchor.MiddleCenter;
         ammoLabel.alignment = TextAlignment.Center;
-        ammoLabel.color = new Color(0.3f, 0.75f, 1f, 1f);
-        var textRenderer = ammoLabel.GetComponent<MeshRenderer>();
-        textRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        textRenderer.receiveShadows = false;
+        Hd2AmmoReadout.Style(ammoLabel);
         RefreshAmmo();
-    }
-
-    void ApplyAmmoFont()
-    {
-        if (ammoLabel == null)
-            return;
-
-        if (ammoLabel.GetComponent<MeshFilter>() == null)
-            ammoLabel.gameObject.AddComponent<MeshFilter>();
-
-        ammoLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        ammoLabel.color = new Color(0.3f, 0.75f, 1f, 1f);
-        var renderer = ammoLabel.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.enabled = true;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            if (ammoLabel.font != null)
-                renderer.sharedMaterial = ammoLabel.font.material;
-        }
-
-        string text = ammoLabel.text;
-        ammoLabel.text = string.IsNullOrEmpty(text) ? "16" : text;
     }
 
     void RefreshAmmo()
     {
-        if (ammoLabel == null)
-            return;
-
-        ammoLabel.text = reloading ? "R" : rounds.ToString();
+        Hd2AmmoReadout.Show(ammoLabel, rounds, reloading);
     }
 
     void PlayReload()
@@ -463,7 +438,7 @@ public class Hd2Pistol : MonoBehaviour
         if (clip == null)
             clip = shotClip;
         if (clip != null)
-            shotSource.PlayOneShot(clip);
+            shotSource.PlayOneShot(clip, charged ? 1f : 0.9f);
     }
 
     void SpawnShot(bool charged)

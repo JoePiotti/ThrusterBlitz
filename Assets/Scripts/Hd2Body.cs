@@ -7,8 +7,9 @@ using UnityEngine.XR;
 /// The head follows the headset. The body yaw stays put until the head is more
 /// than bodyFollowAngle degrees off, then it turns to stay at that limit.
 /// Legs walk along the stick direction and stand sideways on a rail.
-/// Standing height stays between 1.67 m and 1.83 m. Ducking keeps that scale,
-/// lowers the chest with the headset, and bends the knees so the feet stay down.
+/// The avatar stands 1.9 m with straight legs and never changes scale.
+/// Knees bend so the head meets the headset, down to 1.7 m for a shorter player,
+/// and farther while the squat button is held, until the butt is just above the feet.
 /// </summary>
 [DefaultExecutionOrder(200)]
 public class Hd2Body : MonoBehaviour
@@ -250,7 +251,7 @@ public class Hd2Body : MonoBehaviour
         var skins = body.GetComponentsInChildren<SkinnedMeshRenderer>();
         for (int i = 0; i < skins.Length; i++)
             skins[i].updateWhenOffscreen = true;
-        if (CrouchAmount() > 0.001f || HeadDrop() > 0.08f)
+        if (CrouchAmount() > 0.001f || HeadDrop() > 0.02f)
             FitCrouchBody();
         else if (scaleWholeBody)
         {
@@ -344,10 +345,13 @@ public class Hd2Body : MonoBehaviour
         if (locomotion == null)
             return;
 
-        if (locomotion.CrouchAmount > 0.001f || HeadDrop() > 0.08f)
+        if (locomotion.CrouchAmount > 0.001f || HeadDrop() > 0.02f)
         {
             ClearHangStretch();
-            gaitWeight = 0f;
+            if (locomotion.IsAirborne || locomotion.IsGrinding)
+                gaitWeight = 0f;
+            else
+                AdvanceWalkGait(out stepStride);
             PoseSquat();
             return;
         }
@@ -370,16 +374,29 @@ public class Hd2Body : MonoBehaviour
 
         ClearHangStretch();
 
+        if (!AdvanceWalkGait(out Vector3 stride))
+        {
+            ResetLegs();
+            return;
+        }
+
+        PoseWalkLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, Mathf.Sin(gait), Mathf.Max(0f, Mathf.Cos(gait)), stride);
+        PoseWalkLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, Mathf.Sin(gait + Mathf.PI), Mathf.Max(0f, Mathf.Cos(gait + Mathf.PI)), stride);
+    }
+
+    Vector3 stepStride;
+
+    bool AdvanceWalkGait(out Vector3 stride)
+    {
+        stride = Vector3.forward;
+        stepStride = Vector3.zero;
         Vector3 move = locomotion.PlanarVelocity;
         move.y = 0f;
         float speed = move.magnitude;
         float target = speed > 0.25f ? 1f : 0f;
         gaitWeight = Mathf.MoveTowards(gaitWeight, target, Time.deltaTime * 5f);
         if (gaitWeight <= 0.001f)
-        {
-            ResetLegs();
-            return;
-        }
+            return false;
 
         Vector3 bodyForward = Vector3.ProjectOnPlane(body.forward, Vector3.up);
         if (bodyForward.sqrMagnitude < 0.0001f)
@@ -390,15 +407,15 @@ public class Hd2Body : MonoBehaviour
         float strafe = Vector3.Dot(move, bodyRight);
         // Backing up plays the forward step in reverse. Feet stay pointed forward.
         bool backward = forward < 0f;
-        Vector3 stride = bodyForward * Mathf.Abs(forward) + bodyRight * strafe;
+        stride = bodyForward * Mathf.Abs(forward) + bodyRight * strafe;
         if (stride.sqrMagnitude < 0.0001f)
             stride = bodyForward;
         else
             stride.Normalize();
 
         gait += (backward ? -speed : speed) * walkStepRate * Time.deltaTime;
-        PoseWalkLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, Mathf.Sin(gait), Mathf.Max(0f, Mathf.Cos(gait)), stride);
-        PoseWalkLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, Mathf.Sin(gait + Mathf.PI), Mathf.Max(0f, Mathf.Cos(gait + Mathf.PI)), stride);
+        stepStride = stride;
+        return true;
     }
 
     bool legsHung;
@@ -792,25 +809,19 @@ public class Hd2Body : MonoBehaviour
         return locomotion != null ? locomotion.CrouchAmount : 0f;
     }
 
-    // How far the headset is below the player's own standing eye height.
+    // How far the headset is below a straight-leg 1.9 m stand.
     float HeadDrop()
     {
-        if (locomotion == null)
-            locomotion = GetComponent<Hd2Locomotion>();
-        if (locomotion == null || head == null)
+        if (head == null)
             return 0f;
 
         float live = head.position.y - transform.position.y;
-        return Mathf.Max(0f, locomotion.StandingEye - live);
+        return Mathf.Max(0f, Hd2Locomotion.MaxStandHeight - live);
     }
 
     float StandingAvatarHeight()
     {
-        if (locomotion == null)
-            locomotion = GetComponent<Hd2Locomotion>();
-        float live = head != null ? head.position.y - transform.position.y : 1.7f;
-        float stand = locomotion != null ? locomotion.StandingEye : live;
-        return Mathf.Clamp(stand, Hd2Locomotion.MinStandHeight, Hd2Locomotion.MaxStandHeight);
+        return Hd2Locomotion.MaxStandHeight;
     }
 
     // Standing scale, then drop the chest onto the lowered headset and fold the legs.
@@ -839,14 +850,13 @@ public class Hd2Body : MonoBehaviour
             desired -= look.normalized * bodyBackOffset;
         float floorY = transform.position.y;
         float live = head.position.y - floorY;
-        float standEye = locomotion != null ? locomotion.StandingEye : live;
-        float drop = Mathf.Max(0f, standEye - live);
-        desired.y = floorY + StandingAvatarHeight() - drop;
+        desired.y = floorY + Mathf.Clamp(live, Hd2Locomotion.MinCrouchEye, Hd2Locomotion.MaxStandHeight);
         body.position += desired - neck.position;
 
         if (thighL != null)
         {
-            float minHip = transform.position.y + 0.2f;
+            float scale = body.localScale.y;
+            float minHip = floorY + (0.156f + 0.02f + 0.08f) * scale;
             if (thighL.position.y < minHip)
                 body.position += Vector3.up * (minHip - thighL.position.y);
         }
@@ -858,8 +868,8 @@ public class Hd2Body : MonoBehaviour
         if (forward.sqrMagnitude < 0.0001f)
             forward = Vector3.forward;
         forward.Normalize();
-        PoseSquatLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, restToeL, forward);
-        PoseSquatLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, restToeR, forward);
+        PoseSquatLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, restToeL, forward, Mathf.Sin(gait));
+        PoseSquatLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, restToeR, forward, Mathf.Sin(gait + Mathf.PI));
     }
 
     void PoseSquatLeg(
@@ -871,7 +881,8 @@ public class Hd2Body : MonoBehaviour
         Quaternion shinRest,
         Quaternion footRest,
         Quaternion toeRest,
-        Vector3 forward)
+        Vector3 forward,
+        float step)
     {
         if (thigh != null)
             thigh.localScale = Vector3.one;
@@ -894,7 +905,11 @@ public class Hd2Body : MonoBehaviour
         float maxReach = Mathf.Max(minReach + 0.01f, upper + lower - 0.02f);
         Vector3 hip = thigh.position;
         float ankle = foot.position.y - body.position.y;
+        float stepWeight = gaitWeight * Mathf.Clamp(step, -1f, 1f);
         Vector3 plant = new Vector3(foot.position.x, transform.position.y + ankle, foot.position.z);
+        plant += stepStride * (0.16f * stepWeight);
+        if (stepWeight > 0f)
+            plant.y += 0.04f * stepWeight;
         Vector3 toPlant = plant - hip;
         float distance = toPlant.magnitude;
         if (distance > maxReach && distance > 0.0001f)
@@ -1166,6 +1181,7 @@ public class Hd2Body : MonoBehaviour
         PointAt(upper, forearm, elbow);
         SeatAgainstBody(upper, forearm, upper == upperArmL);
         PointAt(forearm, hand, wrist);
+        AlignForearmToWrist(forearm, hand, target);
         KeepForearmStraight(hand);
         PlaceHandOnGun(hand, target);
     }
@@ -1277,11 +1293,11 @@ public class Hd2Body : MonoBehaviour
     Vector3 GripPoint(Transform target)
     {
         Transform gun = GunInHand(target);
-        if (gun != null && (gun.GetComponent<Hd2RocketLauncher>() != null || gun.GetComponent<Hd2Shotgun>() != null))
+        if (gun != null && (gun.GetComponent<Hd2RocketLauncher>() != null || gun.GetComponent<Hd2Shotgun>() != null || UsesWristMarker(gun)))
         {
-            Transform rocketWrist = Find(gun, "Wrist");
-            if (rocketWrist != null)
-                return rocketWrist.position;
+            Transform gunWrist = Find(gun, "Wrist");
+            if (gunWrist != null)
+                return gunWrist.position;
         }
 
         Transform pivot = target == rightHand ? gripPivotR : gripPivotL;
@@ -1354,7 +1370,10 @@ public class Hd2Body : MonoBehaviour
                 PullGunTrigger(gun, ReadFinger(hand == handR ? rightTrigger : leftTrigger, true, hand == handR));
             return;
         }
-        if (pistol)
+        Transform wristMarker = gun != null ? Find(gun, "Wrist") : null;
+        if (gun != null && UsesWristMarker(gun) && wristMarker != null)
+            AimHandAtWrist(hand, wristMarker);
+        else if (pistol)
             AimPistolGrip(hand, gun);
         else if (gun != null)
             AimHandAtGun(hand, target, gun);
@@ -1386,7 +1405,15 @@ public class Hd2Body : MonoBehaviour
         if (gun == null)
             return target.position - target.forward * 0.08f;
 
-        if (gun.GetComponent<Hd2Pistol>() != null || gun.GetComponent<Hd2Shocks>() != null || gun.GetComponent<Hd2LaserPistol>() != null)
+        if (UsesWristMarker(gun))
+        {
+            Transform pistolWrist = Find(gun, "Wrist");
+            if (pistolWrist != null)
+                return pistolWrist.position;
+            return PistolWrist(target, gun);
+        }
+
+        if (gun.GetComponent<Hd2LaserPistol>() != null)
             return PistolWrist(target, gun);
 
         if (gun.GetComponent<Hd2Smg>() != null)
@@ -1424,6 +1451,40 @@ public class Hd2Body : MonoBehaviour
         Vector3 wrist = gun.TransformPoint(new Vector3(-0.012f * side, -0.166f, 0.053f));
         Vector3 up = gun.TransformDirection(new Vector3(0f, 0f, 1f));
         return wrist + up * 0.04f;
+    }
+
+    // The grip wrist is aimed like the SMG: up leaves the back of the hand,
+    // forward points down the barrel. The forearm follows that aim.
+    void AlignForearmToWrist(Transform forearm, Transform hand, Transform target)
+    {
+        Transform gun = GunInHand(target);
+        if (gun == null || !UsesWristMarker(gun))
+            return;
+        Transform marker = Find(gun, "Wrist");
+        if (marker == null || forearm == null || hand == null)
+            return;
+
+        Vector3 along = hand.position - forearm.position;
+        Vector3 want = Vector3.ProjectOnPlane(marker.right, along);
+        Vector3 have = Vector3.ProjectOnPlane(forearm.right, along);
+        if (want.sqrMagnitude < 0.0001f || have.sqrMagnitude < 0.0001f)
+            return;
+        forearm.rotation = Quaternion.FromToRotation(have, want) * forearm.rotation;
+    }
+
+    static bool UsesWristMarker(Transform gun)
+    {
+        return gun.GetComponent<Hd2Pistol>() != null || gun.GetComponent<Hd2Shocks>() != null;
+    }
+
+    void AimHandAtWrist(Transform hand, Transform marker)
+    {
+        if (!lengthAxis.TryGetValue(hand, out Vector3 length) || length.sqrMagnitude < 0.0001f)
+            return;
+        if (!indexSpread.TryGetValue(hand, out Vector3 spread) || spread.sqrMagnitude < 0.0001f)
+            return;
+
+        hand.rotation = MapAxes(length, spread, marker.forward, marker.right);
     }
 
     void AimPistolGrip(Transform hand, Transform gun)
@@ -1580,7 +1641,10 @@ public class Hd2Body : MonoBehaviour
             return;
         }
 
-        trigger.localRotation = rest * Quaternion.Euler(gunTriggerDegrees * amount, 0f, 0f);
+        float degrees = gunTriggerDegrees * amount;
+        if (gun.GetComponent<Hd2Smg>() != null)
+            degrees = -degrees;
+        trigger.localRotation = rest * Quaternion.Euler(degrees, 0f, 0f);
     }
 
     static Transform FindTrigger(Transform gun)

@@ -81,12 +81,29 @@ public class Hd2EnemyBot : MonoBehaviour
     Transform leftHand;
     Transform eye;
     readonly List<Transform> seen = new List<Transform>();
-    static readonly RaycastHit[] sightHits = new RaycastHit[16];
+    readonly Transform[] fightChoices = new Transform[12];
+    readonly float[] fightDistance = new float[12];
+    readonly int[] fightShooters = new int[12];
+    readonly bool[] fightOnPoint = new bool[12];
+    int fightCount;
+    static readonly RaycastHit[] sightHits = new RaycastHit[32];
     static readonly RaycastHit[] stepHits = new RaycastHit[8];
+    // Floor, water, and wall probes run one at a time. RaycastAll allocated a new array on every
+    // probe, and a control-point match keeps every bot doing that for the whole clock.
+    static readonly RaycastHit[] probeHits = new RaycastHit[96];
+    readonly List<Hd2Smg> heldSmgs = new List<Hd2Smg>(4);
+    readonly List<Hd2LaserPistol> heldLasers = new List<Hd2LaserPistol>(4);
+    readonly List<Hd2Pistol> heldPistols = new List<Hd2Pistol>(4);
+    readonly List<Hd2Shotgun> heldShotguns = new List<Hd2Shotgun>(2);
+    readonly List<Hd2Shocks> heldShocks = new List<Hd2Shocks>(2);
+    readonly List<Hd2RocketLauncher> heldRockets = new List<Hd2RocketLauncher>(2);
     Mode mode = Mode.Wander;
     WanderKind wander = WanderKind.Walk;
     CombatKind combat = CombatKind.Sprint;
     Transform target;
+    float lostTargetAt = -1f;
+
+    public Transform CombatTarget => mode == Mode.Combat ? target : null;
     Vector3 moveDir = Vector3.forward;
     Vector3 mapCenter;
     float playRadius;
@@ -97,6 +114,8 @@ public class Hd2EnemyBot : MonoBehaviour
     bool jumpBoosting;
     float jumpTime;
     float lastMovedAt;
+    Vector3 stuckAnchor;
+    float stuckSince;
     float nextPump;
     float nextPistolFire;
     float strafeFlipAt;
@@ -163,6 +182,8 @@ public class Hd2EnemyBot : MonoBehaviour
     AudioSource blitzSource;
     AudioSource landSource;
     float airborneTime;
+    ParticleSystem[] jumpExhaust;
+    bool jumpExhaustOn;
 
     void Start()
     {
@@ -191,7 +212,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (pistolModel != null)
         {
             GivePistol(rightHand, pistolModel);
-            GivePistol(leftHand, LeftPistolModel());
+            GivePistol(leftHand, pistolModel);
         }
 
         if (robotPrefab != null)
@@ -229,6 +250,8 @@ public class Hd2EnemyBot : MonoBehaviour
         CreateBodyAudio();
         EnterWander();
         lastMovedAt = Time.time;
+        stuckAnchor = transform.position;
+        stuckSince = Time.time;
     }
 
     void CreateBodyAudio()
@@ -294,6 +317,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         SetLoop(grindLoop, !dead && grinding && grindRail != null);
         SetLoop(thrustLoop, !dead && (traveling || jumpBoosting));
+        SetJumpExhaust(!dead && jumpBoosting);
         if (dead)
         {
             airborneTime = 0f;
@@ -310,6 +334,35 @@ public class Hd2EnemyBot : MonoBehaviour
         if (airborneTime > 0.2f && landSource != null && landSource.clip != null)
             landSource.PlayOneShot(landSource.clip, 0.85f);
         airborneTime = 0f;
+    }
+
+    void SetJumpExhaust(bool playing)
+    {
+        if (playing == jumpExhaustOn && jumpExhaust != null)
+            return;
+
+        if (playing && jumpExhaust == null)
+        {
+            Transform robot = transform.Find("Body");
+            if (robot == null)
+                return;
+            jumpExhaust = Hd2Locomotion.BuildJumpExhaust(robot);
+        }
+
+        if (jumpExhaust == null)
+            return;
+
+        for (int i = 0; i < jumpExhaust.Length; i++)
+        {
+            if (jumpExhaust[i] == null)
+                continue;
+            if (playing)
+                jumpExhaust[i].Play();
+            else
+                jumpExhaust[i].Stop(false, ParticleSystemStopBehavior.StopEmitting);
+        }
+
+        jumpExhaustOn = playing;
     }
 
     static void SetLoop(AudioSource source, bool play)
@@ -386,48 +439,17 @@ public class Hd2EnemyBot : MonoBehaviour
         return hand.transform;
     }
 
-    GameObject LeftPistolModel()
-    {
-        var lasers = FindObjectsByType<Hd2LaserPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        for (int i = 0; i < lasers.Length; i++)
-        {
-            if (lasers[i] != null && lasers[i].gripLeft != null)
-                return lasers[i].gripLeft;
-        }
-
-        var shocks = FindObjectsByType<Hd2ShocksPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        for (int i = 0; i < shocks.Length; i++)
-        {
-            if (shocks[i] != null && shocks[i].gripLeft != null)
-                return shocks[i].gripLeft;
-        }
-
-        var smgs = FindObjectsByType<Hd2SmgPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        for (int i = 0; i < smgs.Length; i++)
-        {
-            if (smgs[i] != null && smgs[i].gripLeft != null)
-                return smgs[i].gripLeft;
-        }
-
-        return pistolModel;
-    }
-
     void GivePistol(Transform hand, GameObject model)
     {
         var gun = Instantiate(model, hand);
         gun.name = "Pistol";
         gun.transform.localPosition = new Vector3(0f, 0.01f, 0.05f);
-        gun.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-        gun.transform.localScale = Vector3.one * 0.65f;
         gun.SetActive(false);
         var pistol = gun.AddComponent<Hd2Pistol>();
         pistol.hand = hand.name == "LeftHand" ? Hd2Pistol.Hand.Left : Hd2Pistol.Hand.Right;
         Transform muzzle = FindNamed(gun.transform, "Muzzle");
         if (muzzle != null)
-        {
-            muzzle.localRotation = Quaternion.Euler(90f, 0f, 0f);
             pistol.muzzle = muzzle;
-        }
 
         gun.SetActive(true);
     }
@@ -458,7 +480,7 @@ public class Hd2EnemyBot : MonoBehaviour
     void Update()
     {
         pressingButton = false;
-        if (Hd2Deathmatch.Over || (domination && Hd2Domination.Decided))
+        if (Hd2Deathmatch.Over || (domination && MatchDecided()))
         {
             RetractPress();
             StopMotion();
@@ -482,16 +504,18 @@ public class Hd2EnemyBot : MonoBehaviour
         {
             body.enabled = true;
             EnterWander();
+            stuckAnchor = transform.position;
+            stuckSince = Time.time;
         }
 
         if (domination)
             TickDominationGate();
 
-        if (!retreating && mode == Mode.Wander)
+        if (!retreating)
         {
-            if (!SeesEnemy(out Transform seen))
-                EnemyAtPoint(out seen);
-            if (seen != null)
+            if (domination)
+                TrackEnemies();
+            else if (mode == Mode.Wander && SeesEnemy(out Transform seen))
                 Engage(seen);
         }
 
@@ -518,6 +542,7 @@ public class Hd2EnemyBot : MonoBehaviour
         TickTravel();
         if (!traveling && !grinding)
             TickWalk();
+        EscapeIfStuck();
         DrownIfOnWater();
         if (!pressingButton)
             RetractPress();
@@ -543,6 +568,7 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         mode = Mode.Wander;
         target = null;
+        lostTargetAt = -1f;
         StopMotion();
         ReleaseGuns();
         if (domination)
@@ -668,8 +694,30 @@ public class Hd2EnemyBot : MonoBehaviour
             pressHand.gameObject.SetActive(false);
     }
 
+    static bool MatchDecided()
+    {
+        if (Hd2ControlPoint.Present)
+            return Hd2ControlPoint.Decided;
+        return Hd2Domination.Decided;
+    }
+
     Hd2TeamButton ChoosePoint()
     {
+        if (Hd2ControlPoint.Present)
+        {
+            if (Hd2ControlPoint.Point != null)
+                return Hd2ControlPoint.Point;
+
+            var buttons = Hd2TeamButton.All;
+            for (int i = 0; i < buttons.Count; i++)
+            {
+                if (buttons[i] != null)
+                    return buttons[i];
+            }
+
+            return null;
+        }
+
         var all = Hd2TeamButton.All;
         Hd2TeamButton best = null;
         float bestScore = float.NegativeInfinity;
@@ -834,14 +882,20 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
         if (domination && Friendly(body))
             return;
-        bool fresh = mode != Mode.Combat || target != body;
+        bool wasFighting = mode == Mode.Combat && target != null;
+        bool same = wasFighting && target == body;
         target = body;
         mode = Mode.Combat;
-        if (!fresh)
+        lostTargetAt = -1f;
+        if (same)
             return;
 
-        attackAt = Time.time + NoticeDelay;
-        modeUntil = attackAt;
+        if (!wasFighting || Time.time < attackAt)
+        {
+            attackAt = Time.time + NoticeDelay;
+            modeUntil = attackAt;
+        }
+
         moveDir = Vector3.zero;
     }
 
@@ -1025,35 +1079,35 @@ public class Hd2EnemyBot : MonoBehaviour
 
     void Shoot(bool combatFire)
     {
-        var smgs = GetComponentsInChildren<Hd2Smg>();
-        for (int i = 0; i < smgs.Length; i++)
-            smgs[i].botHeld = combatFire;
-        var lasers = GetComponentsInChildren<Hd2LaserPistol>();
-        for (int i = 0; i < lasers.Length; i++)
-            lasers[i].botHeld = combatFire;
+        GetComponentsInChildren(heldSmgs);
+        for (int i = 0; i < heldSmgs.Count; i++)
+            heldSmgs[i].botHeld = combatFire;
+        GetComponentsInChildren(heldLasers);
+        for (int i = 0; i < heldLasers.Count; i++)
+            heldLasers[i].botHeld = combatFire;
         if (!combatFire)
             return;
 
         if (Time.time >= nextPistolFire)
         {
             nextPistolFire = Time.time + 0.2f;
-            var pistols = GetComponentsInChildren<Hd2Pistol>();
-            for (int i = 0; i < pistols.Length; i++)
-                pistols[i].BotTap();
+            GetComponentsInChildren(heldPistols);
+            for (int i = 0; i < heldPistols.Count; i++)
+                heldPistols[i].BotTap();
         }
 
         if (Time.time < nextPump)
             return;
         nextPump = Time.time + 0.85f;
-        var shotguns = GetComponentsInChildren<Hd2Shotgun>();
-        for (int i = 0; i < shotguns.Length; i++)
-            shotguns[i].BotTap();
-        var shocks = GetComponentsInChildren<Hd2Shocks>();
-        for (int i = 0; i < shocks.Length; i++)
-            shocks[i].BotTap();
-        var rockets = GetComponentsInChildren<Hd2RocketLauncher>();
-        for (int i = 0; i < rockets.Length; i++)
-            rockets[i].BotTap();
+        GetComponentsInChildren(heldShotguns);
+        for (int i = 0; i < heldShotguns.Count; i++)
+            heldShotguns[i].BotTap();
+        GetComponentsInChildren(heldShocks);
+        for (int i = 0; i < heldShocks.Count; i++)
+            heldShocks[i].BotTap();
+        GetComponentsInChildren(heldRockets);
+        for (int i = 0; i < heldRockets.Count; i++)
+            heldRockets[i].BotTap();
     }
 
     void StopMotion()
@@ -1258,55 +1312,186 @@ public class Hd2EnemyBot : MonoBehaviour
         return enemy != null;
     }
 
-    /// <summary>
-    /// An enemy standing on the same point counts even when this bot is looking at the button.
-    /// </summary>
-    bool EnemyAtPoint(out Transform enemy)
+    void TrackEnemies()
     {
-        enemy = null;
-        if (!domination)
-            return false;
-
-        const float near = 6f;
-        var points = Hd2TeamButton.All;
-        Hd2TeamButton here = null;
-        float nearestPoint = near;
-        for (int i = 0; i < points.Count; i++)
+        if (BestEnemy(out Transform seenEnemy))
         {
-            Hd2TeamButton point = points[i];
-            if (point == null)
-                continue;
-            float gap = Horizontal(point.transform.position);
-            if (gap >= nearestPoint)
-                continue;
-            nearestPoint = gap;
-            here = point;
+            lostTargetAt = -1f;
+            Engage(seenEnemy);
+            return;
         }
 
-        if (here == null)
+        if (mode != Mode.Combat)
+            return;
+        if (lostTargetAt < 0f)
+            lostTargetAt = Time.time;
+        if (Time.time - lostTargetAt > 0.4f)
+            EnterWander();
+    }
+
+    /// <summary>
+    /// Picks a living enemy. People on the button this bot is fighting stay in the list
+    /// even when they stand outside the look cone, and fire spreads across that group
+    /// instead of every bot locking the nearest body.
+    /// </summary>
+    bool BestEnemy(out Transform enemy)
+    {
+        enemy = null;
+        GatherFightChoices();
+        if (fightCount == 0)
             return false;
 
-        Hd2VisionCone.CopyFighters(seen);
-        float best = near;
-        Vector3 at = here.transform.position;
-        for (int i = 0; i < seen.Count; i++)
+        for (int i = 0; i < fightCount; i++)
+            fightShooters[i] = Shooters(fightChoices[i]);
+
+        int openIndex = 0;
+        for (int i = 1; i < fightCount; i++)
         {
-            Transform other = seen[i];
+            if (BetterChoice(i, openIndex))
+                openIndex = i;
+        }
+
+        Transform open = fightChoices[openIndex];
+        int targetIndex = target != null ? ChoiceIndex(target) : -1;
+        if (targetIndex >= 0)
+        {
+            int onTarget = fightShooters[targetIndex];
+            int onOpen = fightShooters[openIndex];
+            bool crowded = open != target && onTarget > onOpen + 1;
+            bool leaveForPoint = open != target && fightOnPoint[openIndex] && !fightOnPoint[targetIndex] && onOpen <= onTarget;
+            if ((!crowded && !leaveForPoint) || !ShouldPeel(target))
+            {
+                enemy = target;
+                return true;
+            }
+        }
+
+        enemy = open;
+        return enemy != null;
+    }
+
+    void GatherFightChoices()
+    {
+        fightCount = 0;
+        if (eye == null)
+            return;
+
+        float cone = Mathf.Cos(70f * Mathf.Deg2Rad);
+        int count = Hd2VisionCone.FighterCount;
+        for (int i = 0; i < count; i++)
+        {
+            Transform other = Hd2VisionCone.FighterAt(i);
             if (other == null || other == transform || Friendly(other))
                 continue;
             var life = other.GetComponent<Hd2Health>();
             if (life != null && life.IsDead)
                 continue;
-            float dx = other.position.x - at.x;
-            float dz = other.position.z - at.z;
-            float gap = Mathf.Sqrt(dx * dx + dz * dz);
-            if (gap >= best)
+
+            Vector3 to = other.position + Vector3.up * 1.1f - eye.position;
+            float distance = to.magnitude;
+            if (distance < 0.4f || distance > 32f)
                 continue;
-            best = gap;
-            enemy = other;
+
+            bool onPoint = OnFoughtPoint(other);
+            if (!onPoint && Vector3.Dot(transform.forward, to / distance) < cone)
+                continue;
+            if (Blocked(eye.position, to / distance, distance, other))
+                continue;
+            if (fightCount >= fightChoices.Length)
+                break;
+
+            fightChoices[fightCount] = other;
+            fightDistance[fightCount] = distance;
+            fightOnPoint[fightCount] = onPoint;
+            fightCount++;
+        }
+    }
+
+    bool BetterChoice(int candidate, int best)
+    {
+        if (fightShooters[candidate] != fightShooters[best])
+            return fightShooters[candidate] < fightShooters[best];
+        if (fightOnPoint[candidate] != fightOnPoint[best])
+            return fightOnPoint[candidate];
+        return fightDistance[candidate] < fightDistance[best];
+    }
+
+    int ChoiceIndex(Transform body)
+    {
+        for (int i = 0; i < fightCount; i++)
+        {
+            if (fightChoices[i] == body)
+                return i;
         }
 
-        return enemy != null;
+        return -1;
+    }
+
+    bool OnFoughtPoint(Transform other)
+    {
+        var points = Hd2TeamButton.All;
+        float ox = other.position.x;
+        float oz = other.position.z;
+        for (int i = 0; i < points.Count; i++)
+        {
+            Hd2TeamButton point = points[i];
+            if (point == null)
+                continue;
+            Vector3 at = point.transform.position;
+            float dx = ox - at.x;
+            float dz = oz - at.z;
+            if (dx * dx + dz * dz > 56.25f)
+                continue;
+
+            float mine = Horizontal(at);
+            if (point == objective && mine <= 26f)
+                return true;
+            if (mine <= 12f)
+                return true;
+        }
+
+        return false;
+    }
+
+    int Shooters(Transform victim)
+    {
+        if (victim == null)
+            return 0;
+
+        int count = 0;
+        int fighters = Hd2VisionCone.FighterCount;
+        for (int i = 0; i < fighters; i++)
+        {
+            Transform body = Hd2VisionCone.FighterAt(i);
+            if (body == null || body == transform)
+                continue;
+            Hd2EnemyBot bot = body.GetComponent<Hd2EnemyBot>();
+            if (bot == null || bot.team != team || bot.CombatTarget != victim)
+                continue;
+            count++;
+        }
+
+        return count;
+    }
+
+    bool ShouldPeel(Transform victim)
+    {
+        int mine = spawnSlot;
+        int id = GetInstanceID();
+        int fighters = Hd2VisionCone.FighterCount;
+        for (int i = 0; i < fighters; i++)
+        {
+            Transform body = Hd2VisionCone.FighterAt(i);
+            if (body == null || body == transform)
+                continue;
+            Hd2EnemyBot bot = body.GetComponent<Hd2EnemyBot>();
+            if (bot == null || bot.team != team || bot.CombatTarget != victim)
+                continue;
+            if (bot.spawnSlot > mine || (bot.spawnSlot == mine && bot.GetInstanceID() > id))
+                return false;
+        }
+
+        return true;
     }
 
     bool Blocked(Vector3 origin, Vector3 dir, float distance, Transform root)
@@ -1319,7 +1504,11 @@ public class Hd2EnemyBot : MonoBehaviour
             if (sightHits[i].collider.GetComponentInParent<Hd2TeamButton>() != null)
                 continue;
             Transform hit = sightHits[i].collider.transform;
-            if (hit.root == transform || hit.root == root)
+            if (hit == transform || hit.IsChildOf(transform))
+                continue;
+            if (root != null && (hit == root || hit.IsChildOf(root)))
+                continue;
+            if (FriendlyBody(hit))
                 continue;
             if (sightHits[i].distance < nearest)
             {
@@ -1329,6 +1518,19 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         return wall;
+    }
+
+    bool FriendlyBody(Transform hit)
+    {
+        if (team == Hd2Team.None)
+            return false;
+
+        Hd2EnemyBot bot = hit.GetComponentInParent<Hd2EnemyBot>();
+        if (bot != null)
+            return bot.team == team;
+
+        Hd2Locomotion player = hit.GetComponentInParent<Hd2Locomotion>();
+        return player != null && player.team == team;
     }
 
     Vector3 WanderDirection()
@@ -1463,6 +1665,12 @@ public class Hd2EnemyBot : MonoBehaviour
         if (meter != null && !meter.TrySpend())
             return false;
 
+        BeginTravel(landing, rail, sign);
+        return true;
+    }
+
+    void BeginTravel(Vector3 landing, Hd2GrindRail rail, float sign)
+    {
         grinding = false;
         grindRail = null;
         traveling = true;
@@ -1479,8 +1687,73 @@ public class Hd2EnemyBot : MonoBehaviour
             grindSign = sign;
             grindDistance = rail.DistanceAlong(landing);
         }
+    }
 
-        return true;
+    const float StuckSeconds = 8f;
+
+    void EscapeIfStuck()
+    {
+        const float still = 0.4f;
+        if (traveling || grinding)
+        {
+            stuckAnchor = transform.position;
+            stuckSince = Time.time;
+            return;
+        }
+
+        Vector3 flat = transform.position - stuckAnchor;
+        flat.y = 0f;
+        if (flat.sqrMagnitude > still * still)
+        {
+            stuckAnchor = transform.position;
+            stuckSince = Time.time;
+            return;
+        }
+
+        if (Time.time - stuckSince < StuckSeconds)
+            return;
+
+        stuckSince = Time.time;
+        BlitzRandom();
+    }
+
+    void BlitzRandom()
+    {
+        for (int attempt = 0; attempt < 6; attempt++)
+        {
+            Vector3 dir = Random.insideUnitSphere;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f)
+                continue;
+            dir.Normalize();
+            Vector3 landing = BlitzLanding(dir, false);
+            Vector3 flat = landing - transform.position;
+            flat.y = 0f;
+            if (flat.magnitude < 0.8f)
+            {
+                Vector3 probe = transform.position + dir * 6f;
+                if (!FloorBelow(probe, out landing))
+                    landing = probe;
+            }
+
+            flat = landing - transform.position;
+            flat.y = 0f;
+            if (flat.magnitude < 0.8f || flat.magnitude > BlitzRange || StandingOnWater(landing) || OutsidePlay(landing))
+                continue;
+
+            if (meter != null && meter.Charges < 1f)
+            {
+                BeginTravel(landing, null, 1f);
+                moveDir = flat.normalized;
+                return;
+            }
+
+            if (TryBlitz(landing, null, 1f))
+            {
+                moveDir = flat.normalized;
+                return;
+            }
+        }
     }
 
     void TickTravel()
@@ -1807,22 +2080,27 @@ public class Hd2EnemyBot : MonoBehaviour
         return true;
     }
 
+    static int Probe(Vector3 origin, Vector3 direction, float distance)
+    {
+        return Physics.RaycastNonAlloc(origin, direction, probeHits, distance, ~0, QueryTriggerInteraction.Ignore);
+    }
+
     bool FloorBelow(Vector3 around, out Vector3 point)
     {
         point = around;
-        RaycastHit[] hits = Physics.RaycastAll(around + Vector3.up * 4f, Vector3.down, 12f, ~0, QueryTriggerInteraction.Ignore);
+        int count = Probe(around + Vector3.up * 4f, Vector3.down, 12f);
         float best = float.MaxValue;
         bool found = false;
-        for (int i = 0; i < hits.Length; i++)
+        for (int i = 0; i < count; i++)
         {
-            if (hits[i].collider.transform.root == transform)
+            if (probeHits[i].collider.transform.root == transform)
                 continue;
-            if (hits[i].collider.GetComponentInParent<Hd2Water>() != null)
+            if (probeHits[i].collider.GetComponentInParent<Hd2Water>() != null)
                 continue;
-            if (hits[i].normal.y < 0.55f || hits[i].distance >= best)
+            if (probeHits[i].normal.y < 0.55f || probeHits[i].distance >= best)
                 continue;
-            best = hits[i].distance;
-            point = hits[i].point;
+            best = probeHits[i].distance;
+            point = probeHits[i].point;
             found = true;
         }
 
@@ -1858,19 +2136,19 @@ public class Hd2EnemyBot : MonoBehaviour
     bool DropsToWater(Vector3 feet)
     {
         Vector3 origin = feet + Vector3.up * 2.5f;
-        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 16f, ~0, QueryTriggerInteraction.Ignore);
+        int count = Probe(origin, Vector3.down, 16f);
         float nearest = float.MaxValue;
         bool water = false;
         bool found = false;
-        for (int i = 0; i < hits.Length; i++)
+        for (int i = 0; i < count; i++)
         {
-            if (hits[i].collider == null || hits[i].collider.transform.root == transform)
+            if (probeHits[i].collider == null || probeHits[i].collider.transform.root == transform)
                 continue;
-            if (hits[i].normal.y < 0.45f || hits[i].distance >= nearest)
+            if (probeHits[i].normal.y < 0.45f || probeHits[i].distance >= nearest)
                 continue;
-            nearest = hits[i].distance;
+            nearest = probeHits[i].distance;
             found = true;
-            water = hits[i].collider.GetComponentInParent<Hd2Water>() != null;
+            water = probeHits[i].collider.GetComponentInParent<Hd2Water>() != null;
         }
 
         return !found || water;
@@ -1909,17 +2187,17 @@ public class Hd2EnemyBot : MonoBehaviour
     bool StandingOnWater(Vector3 point)
     {
         Vector3 origin = point + Vector3.up * 0.35f;
-        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 0.8f, ~0, QueryTriggerInteraction.Ignore);
+        int count = Probe(origin, Vector3.down, 0.8f);
         float nearest = float.MaxValue;
         bool water = false;
-        for (int i = 0; i < hits.Length; i++)
+        for (int i = 0; i < count; i++)
         {
-            if (hits[i].collider == null || hits[i].collider.transform.root == transform)
+            if (probeHits[i].collider == null || probeHits[i].collider.transform.root == transform)
                 continue;
-            if (hits[i].distance >= nearest)
+            if (probeHits[i].distance >= nearest)
                 continue;
-            nearest = hits[i].distance;
-            water = hits[i].collider.GetComponentInParent<Hd2Water>() != null;
+            nearest = probeHits[i].distance;
+            water = probeHits[i].collider.GetComponentInParent<Hd2Water>() != null;
         }
 
         return water;
@@ -1935,17 +2213,17 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         away = Vector3.zero;
         Vector3 origin = transform.position + Vector3.up * 0.9f;
-        RaycastHit[] hits = Physics.RaycastAll(origin, dir, distance, ~0, QueryTriggerInteraction.Ignore);
+        int count = Probe(origin, dir, distance);
         float best = distance;
         bool found = false;
-        for (int i = 0; i < hits.Length; i++)
+        for (int i = 0; i < count; i++)
         {
-            if (hits[i].collider.transform.root == transform)
+            if (probeHits[i].collider.transform.root == transform)
                 continue;
-            if (hits[i].normal.y > 0.45f || hits[i].distance >= best)
+            if (probeHits[i].normal.y > 0.45f || probeHits[i].distance >= best)
                 continue;
-            best = hits[i].distance;
-            away = hits[i].normal;
+            best = probeHits[i].distance;
+            away = probeHits[i].normal;
             away.y = 0f;
             found = away.sqrMagnitude > 0.0001f;
         }
@@ -2272,19 +2550,19 @@ public class Hd2EnemyBot : MonoBehaviour
         if (health == null || health.IsDead)
             return;
         Vector3 origin = transform.position + Vector3.up * 0.35f;
-        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 0.7f, ~0, QueryTriggerInteraction.Ignore);
+        int count = Probe(origin, Vector3.down, 0.7f);
         float nearest = float.MaxValue;
         bool water = false;
         Vector3 surface = transform.position;
-        for (int i = 0; i < hits.Length; i++)
+        for (int i = 0; i < count; i++)
         {
-            if (hits[i].collider == null || hits[i].collider.transform.root == transform)
+            if (probeHits[i].collider == null || probeHits[i].collider.transform.root == transform)
                 continue;
-            if (hits[i].distance >= nearest)
+            if (probeHits[i].distance >= nearest)
                 continue;
-            nearest = hits[i].distance;
-            surface = hits[i].point;
-            water = hits[i].collider.GetComponentInParent<Hd2Water>() != null;
+            nearest = probeHits[i].distance;
+            surface = probeHits[i].point;
+            water = probeHits[i].collider.GetComponentInParent<Hd2Water>() != null;
         }
 
         if (!water)

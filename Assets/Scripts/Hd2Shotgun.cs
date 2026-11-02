@@ -8,6 +8,7 @@ using UnityEngine.XR;
 /// Two shots, then a reload. A pellet stops at maxRangeMeters.
 /// Close pellets deal closeBodyDamage, or closeHeadDamage on a head.
 /// Past closeRangeMeters the damage is multiplied by farDamageMultiplier.
+/// Blue text on display shows the shells left, or R while reloading.
 /// </summary>
 public class Hd2Shotgun : MonoBehaviour
 {
@@ -74,6 +75,7 @@ public class Hd2Shotgun : MonoBehaviour
     AudioSource voice;
     AudioClip shotClip;
     AudioClip reloadClip;
+    TextMesh ammoLabel;
     Hd2ControlMap controlMap;
 
     static readonly List<XRDisplaySubsystem> displays = new List<XRDisplaySubsystem>();
@@ -92,6 +94,9 @@ public class Hd2Shotgun : MonoBehaviour
         reloadClip = Resources.Load<AudioClip>("Audio/ShotgunReload");
         if (shotClip != null || reloadClip != null)
             voice = AddVoice();
+
+        ammoLabel = Hd2AmmoReadout.Bind(transform);
+        RefreshAmmo();
     }
 
     public void SetHand(Hd2Pistol.Hand value)
@@ -144,26 +149,29 @@ public class Hd2Shotgun : MonoBehaviour
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
 
-        bool editor = EditorFallback;
-        var fire = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight;
-        var reload = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight;
-        if (Pressed(reload, reloadAction) || (editor && editorReloadAction != null && editorReloadAction.WasPressedThisFrame()))
-            Reload();
-
-        bool menuOpen = Map() != null && Map().MenuOpen;
-        bool pressed = !menuOpen && Pressed(fire, triggerAction);
-        if (editor && editorFireAction != null)
-            pressed = pressed || editorFireAction.WasPressedThisFrame();
-
-        if (waitForTriggerRelease)
+        if (GetComponentInParent<Hd2EnemyBot>() == null)
         {
-            pressed = false;
-            if (!TriggerIsDown(editor))
-                waitForTriggerRelease = false;
-        }
+            bool editor = EditorFallback;
+            var fire = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight;
+            var reload = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.ReloadLeft : Hd2ControlMap.Action.ReloadRight;
+            if (Pressed(reload, reloadAction) || (editor && editorReloadAction != null && editorReloadAction.WasPressedThisFrame()))
+                Reload();
 
-        if (pressed)
-            TryFire();
+            bool menuOpen = Map() != null && Map().MenuOpen;
+            bool pressed = !menuOpen && Pressed(fire, triggerAction);
+            if (editor && editorFireAction != null)
+                pressed = pressed || editorFireAction.WasPressedThisFrame();
+
+            if (waitForTriggerRelease)
+            {
+                pressed = false;
+                if (!TriggerIsDown(editor))
+                    waitForTriggerRelease = false;
+            }
+
+            if (pressed)
+                TryFire();
+        }
 
         if (kick > 0f)
         {
@@ -192,6 +200,7 @@ public class Hd2Shotgun : MonoBehaviour
         loaded--;
         if (loaded <= 0)
             Reload();
+        RefreshAmmo();
     }
 
     /// <summary>
@@ -283,12 +292,19 @@ public class Hd2Shotgun : MonoBehaviour
         reloadEndsAt = Time.time + Mathf.Max(0f, reloadSeconds);
         if (voice != null && reloadClip != null)
             voice.PlayOneShot(reloadClip);
+        RefreshAmmo();
     }
 
     void FinishReload()
     {
         reloading = false;
         loaded = Mathf.Max(1, rounds);
+        RefreshAmmo();
+    }
+
+    void RefreshAmmo()
+    {
+        Hd2AmmoReadout.Show(ammoLabel, loaded, reloading);
     }
 
     AudioSource AddVoice()

@@ -335,7 +335,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 1, g: 1, b: 1, a: 1}
   useBodyColor: 0
 --- !u!1 &90584457
@@ -1816,7 +1816,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 1, g: 1, b: 1, a: 1}
   useBodyColor: 0
 --- !u!1001 &262621337
@@ -3814,7 +3814,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 1, g: 1, b: 1, a: 1}
   useBodyColor: 0
 --- !u!1 &590664991
@@ -3988,7 +3988,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 1, g: 1, b: 1, a: 1}
   useBodyColor: 0
 --- !u!1 &623458994
@@ -7815,7 +7815,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 1, g: 1, b: 1, a: 1}
   useBodyColor: 0
 --- !u!1 &1175527280
@@ -8362,7 +8362,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 1, g: 1, b: 1, a: 1}
   useBodyColor: 0
 --- !u!1 &1250572772
@@ -13175,7 +13175,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 1, g: 1, b: 1, a: 1}
   useBodyColor: 0
 --- !u!1 &2109412040

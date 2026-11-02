@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR;
 
@@ -431,6 +432,17 @@ public class Hd2UserMenu : MonoBehaviour
         Place(quit.rectTransform, 0f, -96f, 320f, 72f);
         Stretch(MakeText(quit.rectTransform, "Quit", 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
         clicks.Add(new Click { rect = quit.rectTransform, action = QuitMatch });
+
+        var home = MakeImage(page, new Color(0.2f, 0.5f, 0.78f, 1f));
+        Place(home.rectTransform, 0f, -184f, 320f, 72f);
+        Stretch(MakeText(home.rectTransform, "Return to start", 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
+        clicks.Add(new Click { rect = home.rectTransform, action = ReturnToStart });
+    }
+
+    void ReturnToStart()
+    {
+        SetOpen(false);
+        SceneManager.LoadScene("Title");
     }
 
     void QuitMatch()

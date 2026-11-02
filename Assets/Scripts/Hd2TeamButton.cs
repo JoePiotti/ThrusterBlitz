@@ -92,6 +92,13 @@ public class Hd2TeamButton : MonoBehaviour
     /// </summary>
     public Color MarkerColor => owner == Hd2Team.None ? Color.white : glow;
 
+    static bool ButtonLive()
+    {
+        if (Hd2ControlPoint.Present)
+            return !Hd2ControlPoint.Decided;
+        return !Hd2Domination.Decided;
+    }
+
     void OnEnable()
     {
         if (!All.Contains(this))
@@ -147,7 +154,7 @@ public class Hd2TeamButton : MonoBehaviour
             return;
 
         bool held = false;
-        if (!Hd2Domination.Decided)
+        if (ButtonLive())
         {
             Collect();
             if (offeredTouch != null)

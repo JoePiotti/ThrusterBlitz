@@ -1110,7 +1110,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.85, g: 0.12, b: 0.12, a: 1}
   team: 1
   displayName: red one
@@ -2246,7 +2246,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.85, g: 0.12, b: 0.12, a: 1}
   team: 1
   displayName: red five
@@ -2302,7 +2302,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.85, g: 0.12, b: 0.12, a: 1}
   team: 1
   displayName: red four
@@ -12842,7 +12842,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.85, g: 0.12, b: 0.12, a: 1}
   team: 1
   displayName: red two
@@ -13765,7 +13765,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.16, g: 0.38, b: 0.95, a: 1}
   team: 2
   displayName: blue four
@@ -13821,7 +13821,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.85, g: 0.12, b: 0.12, a: 1}
   team: 1
   displayName: red three
@@ -14176,7 +14176,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.16, g: 0.38, b: 0.95, a: 1}
   team: 2
   displayName: blue two
@@ -21322,7 +21322,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.16, g: 0.38, b: 0.95, a: 1}
   team: 2
   displayName: blue three
@@ -62850,7 +62850,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2EnemyBot
   robotPrefab: {fileID: 919132149155446097, guid: 983bdc332dafeb94eaca1297584f669a, type: 3}
-  pistolModel: {fileID: 919132149155446097, guid: a7bdf197eb9e14d46b90b27fc95aca79, type: 3}
+  pistolModel: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
   bodyColor: {r: 0.16, g: 0.38, b: 0.95, a: 1}
   team: 2
   displayName: blue one

@@ -45,6 +45,40 @@ public static class Hd2GripRocketSkin
         SkinNow();
     }
 
+    [MenuItem("HD2/Reskin Rocket Gun")]
+    public static void ReskinGun()
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            return;
+
+        var root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            Transform gun = FindExact(root.transform, "Gun");
+            if (gun == null)
+            {
+                Debug.LogWarning("HD2 grip rocket gun skin skipped. Gun was missing.");
+                return;
+            }
+
+            Renderer[] extras = gun.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < extras.Length; i++)
+            {
+                if (extras[i].gameObject.name == "Laser" || extras[i].gameObject.name == "LaserDot")
+                    extras[i].enabled = true;
+            }
+
+            int gunBones = SkinGroup(gun, shader, false);
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+            Debug.Log("HD2 grip rocket gun skinned. Bones " + gunBones + ".");
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+    }
+
     public static void SkinNow()
     {
         if (AlreadySkinned())
@@ -112,6 +146,8 @@ public static class Hd2GripRocketSkin
         {
             var filter = renderers[i].GetComponent<MeshFilter>();
             if (filter == null || filter.sharedMesh == null)
+                continue;
+            if (renderers[i].gameObject.name == "Laser" || renderers[i].gameObject.name == "LaserDot")
                 continue;
             if (!renderers[i].gameObject.activeInHierarchy)
                 continue;
@@ -417,16 +453,22 @@ public static class Hd2GripRocketSkin
 
         string prefix = hand ? "hand_" : "rocket_";
         string needle = key + "_basecolor";
+        string exact = prefix + needle;
         string[] guids = AssetDatabase.FindAssets("t:Texture2D", new[] { TextureFolder });
+        string fallback = null;
         for (int i = 0; i < guids.Length; i++)
         {
             string path = AssetDatabase.GUIDToAssetPath(guids[i]);
             string file = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
-            if (file.StartsWith(prefix) && file.Contains(needle))
+            if (!file.StartsWith(prefix) || !file.Contains(needle))
+                continue;
+            if (file == exact)
                 return path;
+            if (fallback == null)
+                fallback = path;
         }
 
-        return null;
+        return fallback;
     }
 
     static Material PartMaterial(string side, string key, bool hand, Shader shader)

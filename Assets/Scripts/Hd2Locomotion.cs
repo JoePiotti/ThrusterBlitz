@@ -37,7 +37,8 @@ using UnityEngine.XR;
 ///   The arc, landing wireframe, and charge marks render only for this player's camera.
 /// - Grind: only by thrusting onto an Hd2GrindRail. Stay on until the rail ends (then gravity)
 ///   or until the next thrust starts. Walking onto a rail steps up onto it or over it.
-///   Grip is not grind.
+///   Grip is not grind. A sprint press while grinding raises speed by 20% for 2 seconds.
+///   Another press during that burst does nothing. It does not stack.
 /// - Jump: hold B. Smoke vents from the two backpack nozzles. While the button is
 ///   held, thrust remains, and 0.3 seconds have not passed, vertical speed accelerates
 ///   upward at 3 times gravity. That change is added to the current vertical speed, so
@@ -48,9 +49,13 @@ using UnityEngine.XR;
 ///   falling, or while grinding. Grinding ends and the rail's horizontal speed is
 ///   dropped. A second jump in the air does not start.
 ///   Walk, sprint, and a blitz still work in the air and on a rail. There is no double jump.
-/// - Crouch: right stick click. The view and the capsule ease down to two thirds of
-///   standing eye height, and the robot squats with them. Walk speed is halved.
+/// - Crouch: right stick click. The view eases down until the avatar's butt is just
+///   above its feet, and the knees bend with it. Walk speed is halved.
 ///   Jump does not start while crouched. Standing back up waits if the ceiling is too low.
+///   A player shorter than 1.7 m, including someone seated, is lifted so the floor stays
+///   1.7 m below the headset. A player taller than 1.9 m is lowered so the floor stays
+///   1.9 m below. The avatar is 1.9 m with straight legs and only bends its knees
+///   below that. It does not grow or shrink.
 ///
 /// Editor fallback when no headset is running: WASD / arrows walk, Left Shift sprint,
 /// Q snap left, E snap right (one snap per key press),
@@ -109,6 +114,8 @@ public class Hd2Locomotion : MonoBehaviour
 
     [Header("Grind")]
     public float grindSpeed = 8f;
+    const float GrindBoostScale = 1.2f;
+    const float GrindBoostSeconds = 2f;
 
     [Header("Jump")]
     [Tooltip("Upward acceleration while the jump burn is held, in multiples of gravity.")]
@@ -126,7 +133,7 @@ public class Hd2Locomotion : MonoBehaviour
 
     [Header("Body")]
     public float bodyRadius = 0.25f;
-    [Tooltip("Capsule height. Play mode sets this from the headset, and crouch shortens it to two thirds.")]
+    [Tooltip("Capsule height. Play mode sets this from the headset above the floor.")]
     public float bodyHeight = 1.7f;
     public float gravity = 15f;
     public float terminalVelocity = 25f;
@@ -176,8 +183,6 @@ public class Hd2Locomotion : MonoBehaviour
     float jumpOriginY;
     float jumpTime;
     ParticleSystem[] jumpExhaust;
-    Vector3[] jumpNozzles;
-    bool jumpNozzlesReady;
     AudioSource jumpThrustSource;
     float jumpThrustFade;
     const float JumpThrustFadeTime = 0.75f;
@@ -189,6 +194,7 @@ public class Hd2Locomotion : MonoBehaviour
         thrusting = false;
         grinding = false;
         grindRail = null;
+        grindBoostUntil = -1f;
         thrustRail = null;
         verticalVelocity = 0f;
         fallTime = 0f;
@@ -200,6 +206,7 @@ public class Hd2Locomotion : MonoBehaviour
     }
     float grindSign = 1f;
     float grindDistance;
+    float grindBoostUntil = -1f;
 
     AimSource aimSource = AimSource.None;
     AimKind aimKind = AimKind.None;
@@ -265,8 +272,13 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
     public bool IsThrusting => thrusting;
-    public const float MinStandHeight = 1.67f;
-    public const float MaxStandHeight = 1.83f;
+    public const float MinStandHeight = 1.7f;
+    public const float MaxStandHeight = 1.9f;
+    // Deepest squat. Robot at scale 1: head bone 1.580, hips 0.920, butt 0.080 below
+    // the hips, foot mesh top 0.156. Standing scale puts the head bone on a 1.9 m
+    // headset. The butt then sits 2 cm above the foot top.
+    // 1.9 * (0.156 + 0.02 + 0.08 + 1.580 - 0.920) / 1.580 = 1.10
+    public const float MinCrouchEye = 1.10f;
 
     bool crouched;
     float crouchBlend;
@@ -274,7 +286,6 @@ public class Hd2Locomotion : MonoBehaviour
     bool stanceReady;
     Transform crouchRig;
     Transform roomRig;
-    const float CrouchHeightScale = 2f / 3f;
     public bool IsAirborne => jumpBoosting || jumpSpent;
 
     public bool IsCrouching => crouched;
@@ -417,7 +428,7 @@ public class Hd2Locomotion : MonoBehaviour
             bot.retreatFraction = template.retreatFraction;
             bot.retreatHealPerSecond = template.retreatHealPerSecond;
         }
-        else if (FindFirstObjectByType<Hd2Domination>() != null)
+        else if (FindFirstObjectByType<Hd2Domination>() != null || FindFirstObjectByType<Hd2ControlPoint>() != null)
             bot.domination = true;
 
         bot.team = team;
@@ -913,6 +924,8 @@ public class Hd2Locomotion : MonoBehaviour
 
         if (grinding && grindRail != null && !jumpBoosting)
         {
+            if (SprintPressed() && Time.time >= grindBoostUntil)
+                grindBoostUntil = Time.time + GrindBoostSeconds;
             if (TickGrind(dt))
             {
                 UpdateGrindAudio();
@@ -1057,6 +1070,14 @@ public class Hd2Locomotion : MonoBehaviour
             return true;
         var map = Controls();
         return map != null && map.Held(Hd2ControlMap.Action.Sprint);
+    }
+
+    bool SprintPressed()
+    {
+        if (sprintAction != null && sprintAction.WasPressedThisFrame())
+            return true;
+        var map = Controls();
+        return map != null && map.Pressed(Hd2ControlMap.Action.Sprint);
     }
 
     bool CrouchPressed()
@@ -1772,6 +1793,13 @@ public class Hd2Locomotion : MonoBehaviour
         return collider != null && (collider.transform == transform || collider.transform.IsChildOf(transform));
     }
 
+    // The button is narrower than the body. A blitz lands inside it, and the mesh
+    // then blocks every step. Hands still press it. The body walks through.
+    static bool IsButton(Collider collider)
+    {
+        return collider != null && collider.GetComponentInParent<Hd2TeamButton>() != null;
+    }
+
     bool NearestBodyHit(int count, out RaycastHit hit)
     {
         hit = default;
@@ -1780,7 +1808,7 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider collider = bodyHits[i].collider;
-            if (IsSelf(collider))
+            if (IsSelf(collider) || IsButton(collider))
                 continue;
             Hd2SpawnField field = collider != null ? collider.GetComponentInParent<Hd2SpawnField>() : null;
             if (field != null && field.Allows(this))
@@ -2050,6 +2078,7 @@ public class Hd2Locomotion : MonoBehaviour
         EndJumpBoost();
         grinding = false;
         grindRail = null;
+        grindBoostUntil = -1f;
         thrusting = true;
         wasOffGround = false;
         thrustElapsed = 0f;
@@ -2196,10 +2225,12 @@ public class Hd2Locomotion : MonoBehaviour
         if (grindRail == null)
         {
             grinding = false;
+            grindBoostUntil = -1f;
             return false;
         }
 
-        float next = grindDistance + grindSign * grindSpeed * dt;
+        float speed = Time.time < grindBoostUntil ? grindSpeed * GrindBoostScale : grindSpeed;
+        float next = grindDistance + grindSign * speed * dt;
         if (next < 0f || next > grindRail.length)
         {
             float end = Mathf.Clamp(grindDistance, 0f, grindRail.length);
@@ -2207,6 +2238,7 @@ public class Hd2Locomotion : MonoBehaviour
             transform.position = grindRail.PointAlong(end) + grindRail.PlanarTangent(end) * grindSign * clearance;
             grinding = false;
             grindRail = null;
+            grindBoostUntil = -1f;
             verticalVelocity = 0f;
             return false;
         }
@@ -2373,7 +2405,7 @@ public class Hd2Locomotion : MonoBehaviour
         Hd2SpawnField field = collider.GetComponentInParent<Hd2SpawnField>();
         if (field != null && field.Allows(this))
             return false;
-        if (collider.GetComponentInParent<Hd2GrindRail>() != null)
+        if (collider.GetComponentInParent<Hd2GrindRail>() != null || IsButton(collider))
             return false;
 
         Vector3 mid = (bottom + top) * 0.5f;
@@ -2558,7 +2590,7 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider collider = bodyHits[i].collider;
-            if (IsSelf(collider))
+            if (IsSelf(collider) || IsButton(collider))
                 continue;
             Hd2SpawnField field = collider != null ? collider.GetComponentInParent<Hd2SpawnField>() : null;
             if (field != null && field.Allows(this))
@@ -2597,7 +2629,7 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider collider = bodyHits[i].collider;
-            if (IsSelf(collider))
+            if (IsSelf(collider) || IsButton(collider))
                 continue;
             if (bodyHits[i].normal.y < 0.45f || bodyHits[i].distance >= best)
                 continue;
@@ -2660,6 +2692,7 @@ public class Hd2Locomotion : MonoBehaviour
         jumpSpent = true;
         grinding = false;
         grindRail = null;
+        grindBoostUntil = -1f;
         jumpOriginY = transform.position.y;
         jumpTime = 0f;
         fallTime = 0f;
@@ -2735,30 +2768,38 @@ public class Hd2Locomotion : MonoBehaviour
 
         var avatar = GetComponent<Hd2Body>();
         Transform root = avatar != null && avatar.body != null ? avatar.body : transform;
+        jumpExhaust = BuildJumpExhaust(root);
+    }
+
+    public static ParticleSystem[] BuildJumpExhaust(Transform root)
+    {
+        if (root == null)
+            return new ParticleSystem[0];
+
         Transform leftNozzle = FindNamed(root, "JumpNozzleL");
         Transform rightNozzle = FindNamed(root, "JumpNozzleR");
         if (leftNozzle != null && rightNozzle != null)
         {
-            jumpExhaust = new ParticleSystem[2];
-            jumpExhaust[0] = CreateJumpExhaust(AttachVent(leftNozzle, "JumpExhaustL"));
-            jumpExhaust[1] = CreateJumpExhaust(AttachVent(rightNozzle, "JumpExhaustR"));
-            return;
+            return new[]
+            {
+                CreateJumpExhaust(AttachVent(leftNozzle, "JumpExhaustL")),
+                CreateJumpExhaust(AttachVent(rightNozzle, "JumpExhaustR"))
+            };
         }
 
-        if (!jumpNozzlesReady)
-            jumpNozzles = FindJumpNozzles(root);
-        jumpNozzlesReady = true;
-
-        jumpExhaust = new ParticleSystem[jumpNozzles.Length];
-        for (int i = 0; i < jumpNozzles.Length; i++)
+        Vector3[] nozzles = FindJumpNozzles(root);
+        var exhaust = new ParticleSystem[nozzles.Length];
+        for (int i = 0; i < nozzles.Length; i++)
         {
             var vent = new GameObject(i == 0 ? "JumpExhaustL" : "JumpExhaustR");
             vent.hideFlags = HideFlags.DontSave;
             vent.transform.SetParent(root, false);
-            vent.transform.localPosition = jumpNozzles[i];
+            vent.transform.localPosition = nozzles[i];
             vent.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            jumpExhaust[i] = CreateJumpExhaust(vent);
+            exhaust[i] = CreateJumpExhaust(vent);
         }
+
+        return exhaust;
     }
 
     static GameObject AttachVent(Transform nozzle, string name)
@@ -3077,10 +3118,15 @@ public class Hd2Locomotion : MonoBehaviour
 
         crouchBlend = Mathf.MoveTowards(crouchBlend, crouched ? 1f : 0f, dt / 0.16f);
         PlaceCrouchRig();
-        float stand = Mathf.Clamp(standingEye, MinStandHeight, MaxStandHeight);
-        float live = head != null ? head.position.y - transform.position.y : stand;
-        float drop = Mathf.Max(0f, standingEye - live);
-        bodyHeight = Mathf.Clamp(stand - drop, 0.8f, stand);
+        float live = head != null ? head.position.y - transform.position.y : VirtualStand();
+        bodyHeight = Mathf.Clamp(live, 0.8f, MaxStandHeight);
+    }
+
+    float VirtualStand()
+    {
+        if (!stanceReady)
+            return MinStandHeight;
+        return Mathf.Clamp(standingEye, MinStandHeight, MaxStandHeight);
     }
 
     void PlaceCrouchRig()
@@ -3088,8 +3134,18 @@ public class Hd2Locomotion : MonoBehaviour
         if (crouchRig == null)
             return;
 
-        float drop = EyeAboveRig() > 0.75f ? standingEye * (1f - CrouchHeightScale) * crouchBlend : 0f;
-        crouchRig.position = transform.position + Vector3.down * drop;
+        float lift = 0f;
+        float squatDrop = 0f;
+        float real = EyeAboveRig();
+        if (real > 0.75f && stanceReady)
+        {
+            float stand = VirtualStand();
+            lift = stand - standingEye;
+            float sink = Mathf.Max(0f, stand - MinCrouchEye);
+            squatDrop = sink * crouchBlend;
+        }
+
+        crouchRig.position = transform.position + Vector3.up * (lift - squatDrop);
         crouchRig.localRotation = Quaternion.identity;
         crouchRig.localScale = Vector3.one;
     }
@@ -3190,8 +3246,8 @@ public class Hd2Locomotion : MonoBehaviour
     bool RoomToStand()
     {
         float radius = Mathf.Max(0.05f, bodyRadius);
-        float stand = Mathf.Clamp(standingEye, MinStandHeight, MaxStandHeight);
-        float low = stand * CrouchHeightScale;
+        float stand = VirtualStand();
+        float low = MinCrouchEye;
         float extra = stand - low;
         if (extra <= 0.02f)
             return true;

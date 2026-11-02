@@ -31,9 +31,12 @@ public class Hd2SmgImporter : AssetPostprocessor
         if (material == null)
             return;
 
+        var trigger = AssetDatabase.LoadAssetAtPath<Material>(Hd2SmgSetup.TriggerMaterialPath);
         var renderers = root.GetComponentsInChildren<Renderer>(true);
         for (int i = 0; i < renderers.Length; i++)
-            renderers[i].sharedMaterial = material;
+            renderers[i].sharedMaterial = renderers[i].gameObject.name == "Trigger" && trigger != null
+                ? trigger
+                : material;
     }
 }
 
@@ -45,6 +48,8 @@ public static class Hd2SmgSetup
     public const string NormalPath = "Assets/Models/SMG/Smg_Normal.png";
     public const string MetalPath = "Assets/Models/SMG/Smg_Metallic.png";
     public const string MaterialPath = "Assets/Models/SMG/Smg.mat";
+    public const string TriggerColorPath = "Assets/Models/SMG/Smg_Trigger_BaseColor.png";
+    public const string TriggerMaterialPath = "Assets/Models/SMG/SmgTrigger.mat";
 
     static Hd2SmgSetup()
     {
@@ -66,9 +71,6 @@ public static class Hd2SmgSetup
         if (shader == null)
             return;
 
-        ForceLinear(NormalPath, true);
-        ForceLinear(MetalPath, false);
-
         var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
         if (material == null)
         {
@@ -77,58 +79,63 @@ public static class Hd2SmgSetup
         }
 
         var color = AssetDatabase.LoadAssetAtPath<Texture2D>(ColorPath);
-        var normal = AssetDatabase.LoadAssetAtPath<Texture2D>(NormalPath);
-        var metal = AssetDatabase.LoadAssetAtPath<Texture2D>(MetalPath);
         if (color != null)
         {
             material.SetTexture("_BaseMap", color);
             material.SetTexture("_MainTex", color);
         }
 
-        if (normal != null)
-        {
-            material.SetTexture("_BumpMap", normal);
-            material.SetFloat("_BumpScale", 1f);
-            material.EnableKeyword("_NORMALMAP");
-        }
-
-        if (metal != null)
-        {
-            material.SetTexture("_MetallicGlossMap", metal);
-            material.SetFloat("_Metallic", 1f);
-            material.EnableKeyword("_METALLICSPECGLOSSMAP");
-        }
+        // The new SMG only has a base color. A flat normal and metal map hide that paint.
+        material.SetTexture("_BumpMap", null);
+        material.SetTexture("_MetallicGlossMap", null);
+        material.SetFloat("_Metallic", 0f);
+        material.SetFloat("_Smoothness", 0.5f);
+        material.DisableKeyword("_NORMALMAP");
+        material.DisableKeyword("_METALLICSPECGLOSSMAP");
 
         EditorUtility.SetDirty(material);
+        var triggerMaterial = EnsureTrigger(shader);
 
         var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
-        var renderer = model.GetComponentInChildren<Renderer>(true);
-        if (renderer != null && renderer.sharedMaterial == material)
+        if (model != null && MaterialsMatch(model, material, triggerMaterial))
             return;
 
         AssetDatabase.ImportAsset(ModelPath);
     }
 
-    static void ForceLinear(string path, bool normalMap)
+    static Material EnsureTrigger(Shader shader)
     {
-        var importer = AssetImporter.GetAtPath(path) as TextureImporter;
-        if (importer == null)
-            return;
-
-        bool changed = false;
-        if (normalMap && importer.textureType != TextureImporterType.NormalMap)
+        var material = AssetDatabase.LoadAssetAtPath<Material>(TriggerMaterialPath);
+        if (material == null)
         {
-            importer.textureType = TextureImporterType.NormalMap;
-            changed = true;
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, TriggerMaterialPath);
         }
 
-        if (importer.sRGBTexture)
+        var color = AssetDatabase.LoadAssetAtPath<Texture2D>(TriggerColorPath);
+        if (color != null)
         {
-            importer.sRGBTexture = false;
-            changed = true;
+            material.SetTexture("_BaseMap", color);
+            material.SetTexture("_MainTex", color);
         }
 
-        if (changed)
-            importer.SaveAndReimport();
+        EditorUtility.SetDirty(material);
+        return material;
+    }
+
+    static bool MaterialsMatch(GameObject model, Material body, Material trigger)
+    {
+        var renderers = model.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0)
+            return false;
+
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Material expected = renderers[i].gameObject.name == "Trigger" ? trigger : body;
+            if (renderers[i].sharedMaterial != expected)
+                return false;
+        }
+
+        return true;
     }
 }

@@ -21,7 +21,6 @@ Shader "HD2/ShotScoreMark"
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
             Cull Off
-            Offset -2, -2
 
             HLSLPROGRAM
             #pragma vertex vert

@@ -3,6 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Visible projectile. A normal shot stops on the first collider that is not the shooter.
 /// A charged shot bounces off walls and floors, and stops on players, bots, practice targets, and water.
+/// A hit on a player, bot, or their ragdoll sparks and does not leave a burn mark.
 /// Hd2SpawnField is one-way: a shot from the room side passes through. A shot from the map side stops.
 /// </summary>
 public class Hd2Shot : MonoBehaviour
@@ -235,7 +236,7 @@ public class Hd2Shot : MonoBehaviour
         if (!found)
             return false;
 
-        if (TryHitBody(hit))
+        if (TryHitBody(hit) || OnPerson(hit.collider))
         {
             Recycle();
             MetalSparks(hit.point, hit.normal);
@@ -266,12 +267,13 @@ public class Hd2Shot : MonoBehaviour
         }
 
         bool rail = hit.collider.GetComponentInParent<Hd2GrindRail>() != null;
+        bool stamp = !rail && !MarkSitsOnPerson(hit.point);
         if (bouncesRemaining > 0)
         {
-            if (rail)
-                MetalSparks(hit.point, hit.normal);
-            else
+            if (stamp)
                 ScoreMark(hit.point, hit.normal);
+            else
+                MetalSparks(hit.point, hit.normal);
             bouncesRemaining--;
             velocity = Vector3.Reflect(velocity, hit.normal);
             Vector3 contact = hit.point + hit.normal * 0.04f;
@@ -284,15 +286,60 @@ public class Hd2Shot : MonoBehaviour
         }
 
         Recycle();
-        if (rail)
-            MetalSparks(hit.point, hit.normal);
-        else
+        if (stamp)
         {
             ScoreMark(hit.point, hit.normal);
             if (gravel)
                 GravelBurst(hit.point, hit.normal);
         }
+        else
+            MetalSparks(hit.point, hit.normal);
         return true;
+    }
+
+    static readonly Collider[] personOverlap = new Collider[24];
+
+    /// <summary>
+    /// A living fighter, or the player's unparented ragdoll. Those surfaces spark.
+    /// </summary>
+    static bool OnPerson(Collider collider)
+    {
+        if (collider == null)
+            return false;
+
+        Transform node = collider.transform;
+        while (node != null)
+        {
+            if (node.GetComponent<Hd2Health>() != null
+                || node.GetComponent<Hd2Locomotion>() != null
+                || node.GetComponent<Hd2EnemyBot>() != null
+                || node.GetComponent<Hd2PracticeBot>() != null
+                || node.name == "Ragdoll")
+                return true;
+            node = node.parent;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The burn quad is 8 cm across and sits 5 cm off the surface. Skip it when that disc overlaps a person.
+    /// </summary>
+    static bool MarkSitsOnPerson(Vector3 point)
+    {
+        const float reach = 0.09f;
+        int count = Physics.OverlapSphereNonAlloc(point, reach, personOverlap, ~0, QueryTriggerInteraction.Ignore);
+        float limit = reach * reach;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = personOverlap[i];
+            if (!OnPerson(collider))
+                continue;
+            if ((collider.ClosestPoint(point) - point).sqrMagnitude <= limit)
+                return true;
+        }
+
+        return false;
     }
 
     static Material sparkMaterial;
@@ -343,7 +390,7 @@ public class Hd2Shot : MonoBehaviour
         Quaternion face = Quaternion.LookRotation(normal, up);
         face = Quaternion.AngleAxis(Random.Range(0f, 360f), normal) * face;
         mark.transform.SetPositionAndRotation(point + normal * 0.05f, face);
-        mark.transform.localScale = Vector3.one * 0.16f;
+        mark.transform.localScale = Vector3.one * 0.08f;
         mark.SetActive(true);
     }
 

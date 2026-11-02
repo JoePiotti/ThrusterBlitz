@@ -6,6 +6,7 @@ using UnityEngine.XR;
 /// One-handed laser-guided rocket launcher. A slight trigger pull shows the laser.
 /// A full pull fires one rocket, which steers toward the live dot.
 /// Releasing the trigger turns the laser off and leaves the rocket on its last point.
+/// Blue text on display shows 1 while a rocket is loaded, or R while the next one chambers.
 /// </summary>
 public class Hd2RocketLauncher : MonoBehaviour
 {
@@ -69,6 +70,7 @@ public class Hd2RocketLauncher : MonoBehaviour
     AudioClip reloadClip;
     AudioSource launchSource;
     AudioClip launchClip;
+    TextMesh ammoLabel;
 
     static readonly System.Collections.Generic.List<XRDisplaySubsystem> displays =
         new System.Collections.Generic.List<XRDisplaySubsystem>();
@@ -111,6 +113,9 @@ public class Hd2RocketLauncher : MonoBehaviour
             launchSource.minDistance = 2f;
             launchSource.maxDistance = 40f;
         }
+
+        ammoLabel = Hd2AmmoReadout.Bind(transform);
+        RefreshAmmo();
     }
 
     void Start()
@@ -161,7 +166,8 @@ public class Hd2RocketLauncher : MonoBehaviour
     void Update()
     {
         bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
-        float pull = menuOpen ? 0f : ReadPull();
+        bool bot = GetComponentInParent<Hd2EnemyBot>() != null;
+        float pull = bot || menuOpen ? 0f : ReadPull();
         if (botPull)
         {
             botPull = false;
@@ -289,6 +295,12 @@ public class Hd2RocketLauncher : MonoBehaviour
         AttachRocketMesh(chamberRocket.transform, Quaternion.identity, size);
         if (reloadSource != null && reloadClip != null)
             reloadSource.PlayOneShot(reloadClip, 0.25f);
+        RefreshAmmo();
+    }
+
+    void RefreshAmmo()
+    {
+        Hd2AmmoReadout.Show(ammoLabel, 1, chambering);
     }
 
     void AdvanceChamber()
@@ -319,6 +331,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         if (chamberRocket != null)
             Destroy(chamberRocket);
         chamberRocket = null;
+        RefreshAmmo();
     }
 
     void AttachRocketMesh(Transform body, Quaternion localRotation, Vector3 size)

@@ -11,6 +11,7 @@ using UnityEngine.UI;
 /// It follows the button mapped to the microphone.
 /// During domination, A B C sit just above that stack. Each letter is white, blue, or red
 /// with the matching point. The round score and match clock sit above those letters.
+/// Control point shows the score and the clock, and leaves those letters off.
 /// A shot flashes translucent red around the edges of this view. Left and right
 /// follow the side the shot came from. The top strengthens from the front, the bottom from behind.
 /// </summary>
@@ -297,9 +298,15 @@ public class Hd2Hud : MonoBehaviour
                 return;
 
             Transform parent = view != null ? view : transform;
-            pointA = MakePoint(parent, new Vector3(-0.40f, -0.145f, 0.9f), "A");
-            pointB = MakePoint(parent, new Vector3(-0.33f, -0.145f, 0.9f), "B");
-            pointC = MakePoint(parent, new Vector3(-0.26f, -0.145f, 0.9f), "C");
+            if (!Hd2ControlPoint.Present)
+            {
+                if (buttonA != null)
+                    pointA = MakePoint(parent, new Vector3(-0.40f, -0.145f, 0.9f), "A");
+                if (buttonB != null)
+                    pointB = MakePoint(parent, new Vector3(-0.33f, -0.145f, 0.9f), "B");
+                if (buttonC != null)
+                    pointC = MakePoint(parent, new Vector3(-0.26f, -0.145f, 0.9f), "C");
+            }
             EnsureClocks();
             redScore = MakeReadout(parent, new Vector3(-0.35f, -0.46f, 0.9f), scoreRed, TextAnchor.MiddleLeft);
             redScore.text = redLines[0];
@@ -323,30 +330,32 @@ public class Hd2Hud : MonoBehaviour
         if (!dominationReady || clockReadout == null)
             return;
 
-        int red = Hd2Domination.RedPoints;
-        int blue = Hd2Domination.BluePoints;
+        bool control = Hd2ControlPoint.Present;
+        int red = control ? Hd2ControlPoint.RedPoints : Hd2Domination.RedPoints;
+        int blue = control ? Hd2ControlPoint.BluePoints : Hd2Domination.BluePoints;
+        int cap = control ? Hd2ControlPoint.PointsToWin : 3;
         if (red < 0)
             red = 0;
-        if (red > 3)
-            red = 3;
+        if (red > cap)
+            red = cap;
         if (blue < 0)
             blue = 0;
-        if (blue > 3)
-            blue = 3;
-        float left = Hd2Domination.TimeLeft;
+        if (blue > cap)
+            blue = cap;
+        float left = control ? Hd2ControlPoint.TimeLeft : Hd2Domination.TimeLeft;
         int second = left <= 0f ? 0 : Mathf.CeilToInt(left);
         if (second > 900)
             second = 900;
         if (red != shownRed)
         {
             shownRed = red;
-            redScore.text = redLines[red];
+            redScore.text = control ? ControlLine(true, red) : redLines[red];
         }
 
         if (blue != shownBlue)
         {
             shownBlue = blue;
-            blueScore.text = blueLines[blue];
+            blueScore.text = control ? ControlLine(false, blue) : blueLines[blue];
         }
 
         if (second != shownClock)
@@ -354,6 +363,31 @@ public class Hd2Hud : MonoBehaviour
             shownClock = second;
             clockReadout.text = clocks[second];
         }
+    }
+
+    static string[] controlRed;
+    static string[] controlBlue;
+
+    static string ControlLine(bool red, int score)
+    {
+        if (controlRed == null)
+        {
+            int count = Hd2ControlPoint.PointsToWin + 1;
+            controlRed = new string[count];
+            controlBlue = new string[count];
+            for (int i = 0; i < count; i++)
+            {
+                string number = i.ToString();
+                controlRed[i] = "Red " + number;
+                controlBlue[i] = "Blue " + number;
+            }
+        }
+
+        if (score < 0)
+            score = 0;
+        if (score >= controlRed.Length)
+            score = controlRed.Length - 1;
+        return red ? controlRed[score] : controlBlue[score];
     }
 
     static void EnsureClocks()
