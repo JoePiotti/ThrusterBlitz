@@ -15,7 +15,6 @@ public class Hd2LaserPickup : MonoBehaviour
 
     static readonly Color pickupColor = new Color(0.886f, 0.969f, 0.941f, 1f);
     static readonly Vector3 equippedPosition = new Vector3(0f, 0.01f, 0.05f);
-    const float equippedScale = 0.65f;
 
     Transform sphere;
     Transform iconQuad;
@@ -182,18 +181,15 @@ public class Hd2LaserPickup : MonoBehaviour
         var gun = Instantiate(model, hand);
         gun.name = "LaserPistol";
         gun.transform.localPosition = equippedPosition;
-        gun.transform.localRotation = Quaternion.identity;
-        gun.transform.localScale = Vector3.one * equippedScale;
+        gun.SetActive(false);
         StripColliders(gun);
 
         var laser = gun.AddComponent<Hd2LaserPistol>();
         laser.SetHand(hand.name == "LeftHand" ? Hd2Pistol.Hand.Left : Hd2Pistol.Hand.Right);
         Transform muzzle = gun.transform.Find("Muzzle");
         if (muzzle != null)
-        {
-            muzzle.localRotation = Quaternion.Euler(90f, 0f, 0f);
             laser.muzzle = muzzle;
-        }
+        gun.SetActive(true);
 
         Hd2Pistol.PulseEquip(hand);
         return true;

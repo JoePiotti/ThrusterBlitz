@@ -134,7 +134,9 @@ public class Hd2TeleportArrive : MonoBehaviour
         var velocity = particles.velocityOverLifetime;
         velocity.enabled = true;
         velocity.space = ParticleSystemSimulationSpace.Local;
-        velocity.y = new ParticleSystem.MinMaxCurve(0.4f, 1.1f);
+        velocity.x = new ParticleSystem.MinMaxCurve(0f);
+        velocity.y = new ParticleSystem.MinMaxCurve(0.75f);
+        velocity.z = new ParticleSystem.MinMaxCurve(0f);
 
         Fade(particles);
     }

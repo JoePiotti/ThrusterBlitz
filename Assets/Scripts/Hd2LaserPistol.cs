@@ -4,8 +4,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.XR;
 
 /// <summary>
-/// Stand-in laser pistol. Same gripped pistol, tinted green, until it has its own model.
-/// A full trigger pull draws a solid green beam to the hit and starts the pistol charge.
+/// Grip laser. A full trigger pull draws a solid green beam to the hit and starts the charge.
 /// Letting go before chargeSeconds cancels with no cooldown. Holding through that second
 /// thickens the beam, deals damage once, then the beam lasts beamSeconds and the gun
 /// waits cooldownSeconds. A trigger that is still held when that wait ends starts the
@@ -36,6 +35,7 @@ public class Hd2LaserPistol : MonoBehaviour
     public float kickReturnSpeed = 18f;
 
     public Transform muzzle;
+    [SerializeField] bool gripMirrored;
 
     static readonly Color BodyColor = new Color(0.1f, 0.55f, 0.18f, 1f);
     static readonly Color BeamColor = new Color(0.3f, 1f, 0.35f, 1f);
@@ -65,6 +65,12 @@ public class Hd2LaserPistol : MonoBehaviour
 
     void Awake()
     {
+        if (hand == Hd2Pistol.Hand.Right && !gripMirrored && transform.Find("Hand") != null)
+        {
+            Hd2ShotgunPickup.MirrorGrip(transform);
+            gripMirrored = true;
+        }
+
         if (muzzle == null)
         {
             Transform found = transform.Find("Muzzle");
@@ -72,7 +78,8 @@ public class Hd2LaserPistol : MonoBehaviour
                 muzzle = found;
         }
 
-        TintGreen(gameObject);
+        if (transform.Find("Hand") == null)
+            TintGreen(gameObject);
         restLocalRotation = transform.localRotation;
         pointer = CreateBeam("LaserPointer", false);
         shot = CreateBeam("LaserShot", true);

@@ -617,9 +617,11 @@ public class Hd2Shocks : MonoBehaviour
         var velocity = sparks.velocityOverLifetime;
         velocity.enabled = true;
         velocity.space = ParticleSystemSimulationSpace.World;
-        velocity.x = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
-        velocity.y = new ParticleSystem.MinMaxCurve(0.15f, 0.45f);
-        velocity.z = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
+        // All three axes stay on one constant. A two-constant range on any axis
+        // makes Unity reject the velocity until every axis matches.
+        velocity.x = new ParticleSystem.MinMaxCurve(0f);
+        velocity.y = new ParticleSystem.MinMaxCurve(0.3f);
+        velocity.z = new ParticleSystem.MinMaxCurve(0f);
 
         var color = sparks.colorOverLifetime;
         color.enabled = true;

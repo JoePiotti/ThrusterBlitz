@@ -16,11 +16,11 @@ public class Hd2Shotgun : MonoBehaviour
 
     public int rounds = 2;
     public int pelletsPerShot = 8;
-    public float closeRangeMeters = 3f;
+    public float closeRangeMeters = 10f;
     public float closeBodyDamage = 8f;
     public float closeHeadDamage = 12f;
     public float farDamageMultiplier = 0.5f;
-    public float maxRangeMeters = 10f;
+    public float maxRangeMeters = 16f;
     public float reloadSeconds = 1.67f;
     [Tooltip("Full width of the pellet cone, in degrees.")]
     public float spreadAngle = 16f;
