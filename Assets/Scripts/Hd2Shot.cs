@@ -28,6 +28,11 @@ public class Hd2Shot : MonoBehaviour
     [Tooltip("Past this distance from the muzzle, damage is multiplied. 0 leaves damage flat.")]
     public float rangeFalloffStart;
     public float rangeFalloffMultiplier = 1f;
+    [Tooltip("Each this many meters, starting at rangeFalloffStart, removes falloffBodyLoss. 0 keeps the single multiplier.")]
+    public float falloffInterval;
+    public float falloffBodyLoss;
+    [Tooltip("Body damage does not fall below this. A head hit uses this times the head multiplier.")]
+    public float falloffMinDamage;
 
     float age;
     float traveled;
@@ -36,6 +41,9 @@ public class Hd2Shot : MonoBehaviour
     Vector3 firedFrom;
     bool hasFiredFrom;
     static Material plasmaMaterial;
+    static Material blasterMaterial;
+    static Mesh blasterMesh;
+    static Mesh plasmaMesh;
     MaterialPropertyBlock plasmaBlock;
     Vector3 previous;
     bool hasPrevious;
@@ -125,6 +133,76 @@ public class Hd2Shot : MonoBehaviour
         return boltMesh;
     }
 
+    public static Mesh PlasmaMesh()
+    {
+        if (plasmaMesh != null)
+            return plasmaMesh;
+
+        var temp = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        plasmaMesh = temp.GetComponent<MeshFilter>().sharedMesh;
+        if (Application.isPlaying)
+            Destroy(temp);
+        else
+            DestroyImmediate(temp);
+        return plasmaMesh;
+    }
+
+    public static Mesh BlasterMesh()
+    {
+        if (blasterMesh != null)
+            return blasterMesh;
+
+        const int sides = 8;
+        var verts = new Vector3[sides * 2 + 2];
+        var normals = new Vector3[sides * 2 + 2];
+        var tris = new int[sides * 12];
+        for (int i = 0; i < sides; i++)
+        {
+            float angle = i * Mathf.PI * 2f / sides;
+            float x = Mathf.Cos(angle) * 0.5f;
+            float y = Mathf.Sin(angle) * 0.5f;
+            var normal = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f);
+            verts[i] = new Vector3(x, y, -0.5f);
+            verts[sides + i] = new Vector3(x, y, 0.5f);
+            normals[i] = normal;
+            normals[sides + i] = normal;
+        }
+
+        int tail = sides * 2;
+        int head = tail + 1;
+        verts[tail] = new Vector3(0f, 0f, -0.5f);
+        verts[head] = new Vector3(0f, 0f, 0.5f);
+        normals[tail] = Vector3.back;
+        normals[head] = Vector3.forward;
+
+        int t = 0;
+        for (int i = 0; i < sides; i++)
+        {
+            int next = (i + 1) % sides;
+            tris[t++] = i;
+            tris[t++] = sides + i;
+            tris[t++] = next;
+            tris[t++] = next;
+            tris[t++] = sides + i;
+            tris[t++] = sides + next;
+            tris[t++] = tail;
+            tris[t++] = next;
+            tris[t++] = i;
+            tris[t++] = head;
+            tris[t++] = sides + i;
+            tris[t++] = sides + next;
+        }
+
+        blasterMesh = new Mesh();
+        blasterMesh.name = "BlasterBolt";
+        blasterMesh.hideFlags = HideFlags.DontSave;
+        blasterMesh.vertices = verts;
+        blasterMesh.normals = normals;
+        blasterMesh.triangles = tris;
+        blasterMesh.RecalculateBounds();
+        return blasterMesh;
+    }
+
     public static Hd2Shot Rent()
     {
         Hd2Shot shot;
@@ -154,6 +232,9 @@ public class Hd2Shot : MonoBehaviour
         shot.maxTravel = 0f;
         shot.rangeFalloffStart = 0f;
         shot.rangeFalloffMultiplier = 1f;
+        shot.falloffInterval = 0f;
+        shot.falloffBodyLoss = 0f;
+        shot.falloffMinDamage = 0f;
         shot.bouncesRemaining = 0;
         shot.gravel = true;
         shot.plasma = false;
@@ -727,7 +808,49 @@ public class Hd2Shot : MonoBehaviour
             }
         }
 
+        var plasmaFilter = GetComponent<MeshFilter>();
+        if (plasmaFilter != null)
+            plasmaFilter.sharedMesh = PlasmaMesh();
         renderer.sharedMaterial = plasmaMaterial;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        if (plasmaBlock == null)
+            plasmaBlock = new MaterialPropertyBlock();
+        plasmaBlock.SetColor("_Color", boltColor);
+        plasmaBlock.SetColor("_Core", Color.white);
+        renderer.SetPropertyBlock(plasmaBlock);
+        PoseBolt(0.016f);
+    }
+
+    public void UseBlaster(Color color, float thickness)
+    {
+        plasma = true;
+        boltColor = color;
+        boltThickness = thickness;
+        var renderer = GetComponent<MeshRenderer>();
+        if (renderer == null)
+            return;
+
+        if (blasterMaterial == null)
+        {
+            blasterMaterial = Resources.Load<Material>("BlasterBolt");
+            if (blasterMaterial == null)
+            {
+                Shader shader = Shader.Find("HD2/BlasterBolt");
+                if (shader == null)
+                {
+                    UsePlasma(color, thickness);
+                    return;
+                }
+
+                blasterMaterial = new Material(shader);
+            }
+        }
+
+        var blasterFilter = GetComponent<MeshFilter>();
+        if (blasterFilter != null)
+            blasterFilter.sharedMesh = BlasterMesh();
+        renderer.sharedMaterial = blasterMaterial;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         if (plasmaBlock == null)
@@ -754,10 +877,26 @@ public class Hd2Shot : MonoBehaviour
             from = hit.point - velocity.normalized * 8f;
         health.MarkKillLine(from, hit.point);
         float dealt = damage;
-        if (IsHeadshot(hit))
+        bool headshot = IsHeadshot(hit);
+        if (headshot)
             dealt *= headMultiplier;
-        if (rangeFalloffStart > 0f && hasRangeOrigin && Vector3.Distance(rangeOrigin, hit.point) > rangeFalloffStart)
-            dealt *= rangeFalloffMultiplier;
+        if (hasRangeOrigin)
+        {
+            float distance = Vector3.Distance(rangeOrigin, hit.point);
+            if (falloffInterval > 0.01f && distance >= rangeFalloffStart)
+            {
+                int steps = Mathf.FloorToInt(distance / falloffInterval);
+                float loss = falloffBodyLoss * steps;
+                if (headshot)
+                    loss *= headMultiplier;
+                float floorDamage = falloffMinDamage;
+                if (headshot)
+                    floorDamage *= headMultiplier;
+                dealt = Mathf.Max(floorDamage, dealt - loss);
+            }
+            else if (rangeFalloffStart > 0f && distance > rangeFalloffStart)
+                dealt *= rangeFalloffMultiplier;
+        }
         health.MarkHit(hit.point);
         health.ApplyHit(dealt, false, true);
         if (owner != null && owner.GetComponent<Hd2Locomotion>() != null

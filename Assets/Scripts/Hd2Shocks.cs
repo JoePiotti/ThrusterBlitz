@@ -6,7 +6,8 @@ using UnityEngine.XR;
 /// <summary>
 /// Shocks on the gripped hand. Same hold as the pistol.
 /// A trigger tap fires one bolt. Holding the trigger for chargeHoldTime, then
-/// releasing, fires a slower sphere that bursts. The charge glow fills the span
+/// releasing, fires a slower sphere that bursts. A trigger already held at
+/// pickup starts that charge instead of firing a tap. The charge glow fills the span
 /// between the two glowyChargeUp markers, then stays bright until the shot fires.
 /// </summary>
 public class Hd2Shocks : MonoBehaviour
@@ -14,15 +15,17 @@ public class Hd2Shocks : MonoBehaviour
     public Hd2Pistol.Hand hand = Hd2Pistol.Hand.Right;
 
     public int magazineSize = 10;
-    public float shotsPerSecond = 2f;
+    public float shotsPerSecond = 1f / 0.3f;
     public float reloadDuration = 1f;
 
     public float boltSpeed = 140f;
     public float boltDamage = 20f;
-    public float boltThickness = 0.084f;
-    public float boltLength = 9.2f;
-    public float boltMaxLength = 14f;
-    public Color boltColor = new Color(1f, 0.16f, 0.08f, 1f);
+    [Tooltip("Visible diameter of the bolt, in meters. 0.04 is a 2 cm radius.")]
+    public float boltThickness = 0.04f;
+    [Tooltip("Visible length of the bolt, in meters.")]
+    public float boltLength = 0.5f;
+    public float boltMaxLength = 0.5f;
+    public Color boltColor = new Color(1f, 0.08f, 0.03f, 1f);
 
     public float chargeHoldTime = 1.25f;
     public float orbSpeed = 35f;
@@ -257,6 +260,22 @@ public class Hd2Shocks : MonoBehaviour
         TryFire(false);
     }
 
+    /// <summary>
+    /// The trigger was already down when this gun was picked up. Charge from now.
+    /// A short release is a normal bolt. A full hold fires the charged shot on release.
+    /// </summary>
+    public void BeginHeldCharge()
+    {
+        if (reloading || rounds <= 0 || !TriggerIsDown(EditorFallback()))
+            return;
+
+        waitForTriggerRelease = false;
+        triggerPressedAt = Time.time;
+        chargeReadyPulsed = false;
+        nextChargeHapticAt = 0f;
+        PlayCharge();
+    }
+
     void TryFire(bool charged)
     {
         if (reloading || rounds <= 0 || Time.time < nextFireTime)
@@ -291,9 +310,9 @@ public class Hd2Shocks : MonoBehaviour
         projectile.damage = boltDamage;
         projectile.headMultiplier = 1.5f;
         projectile.gravel = true;
-        projectile.UsePlasma(boltColor, boltThickness);
         projectile.minBoltLength = boltLength;
         projectile.maxBoltLength = boltMaxLength;
+        projectile.UseBlaster(boltColor, boltThickness);
         projectile.ReleaseFromMuzzle(origin.position, direction);
         SpawnFlash(origin);
     }

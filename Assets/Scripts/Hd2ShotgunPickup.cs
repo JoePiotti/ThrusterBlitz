@@ -175,6 +175,7 @@ public class Hd2ShotgunPickup : MonoBehaviour
         DestroyGuns<Hd2Shocks>(hand);
         DestroyGuns<Hd2LaserPistol>(hand);
         DestroyGuns<Hd2Shotgun>(hand);
+        DestroyGuns<Hd2BurstPistol>(hand);
 
         var gun = Instantiate(shotgunModel, hand);
         gun.name = "Shotgun";

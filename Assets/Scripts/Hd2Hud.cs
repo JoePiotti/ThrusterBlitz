@@ -4,7 +4,7 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Player-only readout, low in the view. The controls menu puts it on the left, the right, or hides it.
-/// Left is the default. More rows can be added later.
+/// K/D and the current life's kill streak sit under the microphone.
 /// Health is a whole percent, such as 84%. Below 10 health that number turns red and blinks.
 /// Thrust is whole charges out of the current maximum, such as 2/3 or 2/5.
 /// The microphone is green while open and gray while closed, with an On or Off label beside the icon.
@@ -49,6 +49,9 @@ public class Hd2Hud : MonoBehaviour
     TextMesh scoreReadout;
     int kills;
     int deaths;
+    int streak;
+    int bestStreak;
+    bool scoreDirty = true;
     string killText;
     string deathText;
     float killUntil;
@@ -172,25 +175,40 @@ public class Hd2Hud : MonoBehaviour
         RefreshScore();
     }
 
+    public int BestKillStreak => bestStreak;
+
     public void AddKill()
     {
         kills++;
+        streak++;
+        if (streak > bestStreak)
+            bestStreak = streak;
+        scoreDirty = true;
         RefreshScore();
     }
 
     public void AddDeath()
     {
         deaths++;
+        scoreDirty = true;
+        RefreshScore();
+    }
+
+    public void BeginLife()
+    {
+        if (streak == 0)
+            return;
+        streak = 0;
+        scoreDirty = true;
         RefreshScore();
     }
 
     void RefreshScore()
     {
-        if (scoreReadout == null)
+        if (!scoreDirty || scoreReadout == null)
             return;
-        string line = "K/D " + kills + "/" + deaths;
-        if (scoreReadout.text != line)
-            scoreReadout.text = line;
+        scoreDirty = false;
+        scoreReadout.text = "K/D " + kills + "/" + deaths + "  KS " + streak;
     }
 
     public void ShowKill(string enemyName)
@@ -497,7 +515,7 @@ public class Hd2Hud : MonoBehaviour
         banner = MakeReadout(view, new Vector3(0.36f, -0.2f, 0.9f), Color.white, TextAnchor.MiddleRight);
         banner.gameObject.SetActive(false);
         scoreReadout = MakeReadout(view, new Vector3(-0.35f, -0.4f, 0.9f), Color.white, TextAnchor.MiddleLeft);
-        scoreReadout.text = "K/D 0/0";
+        scoreReadout.text = "K/D 0/0  KS 0";
         BuildHitFrame();
         ApplyPlacement();
     }

@@ -55,15 +55,26 @@ Shader "HD2/PlasmaBolt"
                 Varyings output;
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
-                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
-                output.positionOS = input.positionOS.xyz;
+
+                // One quad, turned toward this view. Each eye and each client
+                // gets its own camera, so the disc faces that player.
+                float3 center = TransformObjectToWorld(float3(0, 0, 0.5));
+                float3x3 viewToWorld = (float3x3)GetViewToWorldMatrix();
+                float3 camRight = normalize(mul(viewToWorld, float3(1, 0, 0)));
+                float3 camUp = normalize(mul(viewToWorld, float3(0, 1, 0)));
+                float width = length(GetObjectToWorldMatrix()._m00_m10_m20);
+                float height = length(GetObjectToWorldMatrix()._m01_m11_m21);
+                float3 world = center
+                    + camRight * (input.positionOS.x * width)
+                    + camUp * (input.positionOS.y * height);
+                output.positionCS = TransformWorldToHClip(world);
+                output.positionOS = float3(input.positionOS.xy, 0.5);
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-                // Unity sphere is 1 unit across. Z runs from the tail to the head.
                 float radial = saturate(length(input.positionOS.xy) * 2.0);
                 float along = saturate(input.positionOS.z + 0.5);
                 float edge = saturate(1.0 - radial);

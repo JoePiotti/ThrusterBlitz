@@ -161,6 +161,7 @@ public class Hd2ShocksPickup : MonoBehaviour
         DestroyGuns<Hd2Shocks>(hand);
         DestroyGuns<Hd2LaserPistol>(hand);
         DestroyGuns<Hd2Shotgun>(hand);
+        DestroyGuns<Hd2BurstPistol>(hand);
 
         var gun = Instantiate(model, hand);
         gun.name = "Shocks";
@@ -174,6 +175,7 @@ public class Hd2ShocksPickup : MonoBehaviour
         if (muzzle != null)
             shocks.muzzle = muzzle;
         gun.SetActive(true);
+        shocks.BeginHeldCharge();
 
         Hd2Pistol.PulseEquip(hand);
         return true;

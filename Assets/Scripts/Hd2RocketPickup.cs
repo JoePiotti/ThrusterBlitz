@@ -168,6 +168,7 @@ public class Hd2RocketPickup : MonoBehaviour
         DestroyAll<Hd2Shocks>(hand);
         DestroyAll<Hd2LaserPistol>(hand);
         DestroyAll<Hd2Shotgun>(hand);
+        DestroyAll<Hd2BurstPistol>(hand);
 
         var gun = Instantiate(rocketModel, hand);
         gun.name = "RocketLauncher";

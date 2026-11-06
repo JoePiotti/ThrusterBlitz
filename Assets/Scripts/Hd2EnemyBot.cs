@@ -42,7 +42,7 @@ public class Hd2EnemyBot : MonoBehaviour
     const float GrindSpeed = 8f;
     const float SeeRange = 20f;
     const float SeeHalfAngle = 15f;
-    const float AimError = 2.4f;
+    const float AimError = 6.5f;
     const float NoticeDelay = 0.25f;
     const float DropCombatRange = 30f;
     const float RagdollSeconds = 5f;
@@ -96,6 +96,7 @@ public class Hd2EnemyBot : MonoBehaviour
     readonly List<Hd2Pistol> heldPistols = new List<Hd2Pistol>(4);
     readonly List<Hd2Shotgun> heldShotguns = new List<Hd2Shotgun>(2);
     readonly List<Hd2Shocks> heldShocks = new List<Hd2Shocks>(2);
+    readonly List<Hd2BurstPistol> heldBursts = new List<Hd2BurstPistol>(2);
     readonly List<Hd2RocketLauncher> heldRockets = new List<Hd2RocketLauncher>(2);
     Mode mode = Mode.Wander;
     WanderKind wander = WanderKind.Walk;
@@ -352,16 +353,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (jumpExhaust == null)
             return;
 
-        for (int i = 0; i < jumpExhaust.Length; i++)
-        {
-            if (jumpExhaust[i] == null)
-                continue;
-            if (playing)
-                jumpExhaust[i].Play();
-            else
-                jumpExhaust[i].Stop(false, ParticleSystemStopBehavior.StopEmitting);
-        }
-
+        Hd2Locomotion.DriveJumpExhaust(jumpExhaust, playing);
         jumpExhaustOn = playing;
     }
 
@@ -1082,6 +1074,9 @@ public class Hd2EnemyBot : MonoBehaviour
         GetComponentsInChildren(heldSmgs);
         for (int i = 0; i < heldSmgs.Count; i++)
             heldSmgs[i].botHeld = combatFire;
+        GetComponentsInChildren(heldBursts);
+        for (int i = 0; i < heldBursts.Count; i++)
+            heldBursts[i].botHeld = combatFire;
         GetComponentsInChildren(heldLasers);
         for (int i = 0; i < heldLasers.Count; i++)
             heldLasers[i].botHeld = combatFire;
@@ -1133,8 +1128,8 @@ public class Hd2EnemyBot : MonoBehaviour
         Vector3 fromBody = point - transform.position;
         if (shake && fromBody.sqrMagnitude > 0.01f)
         {
-            float yaw = Mathf.Sin(Time.time * 0.55f) * AimError;
-            float pitch = Mathf.Sin(Time.time * 0.37f + 1.7f) * AimError * 0.65f;
+            float yaw = Mathf.Sin(Time.time * 1.9f) * AimError;
+            float pitch = Mathf.Sin(Time.time * 2.5f + 1.7f) * AimError * 0.55f;
             aim = transform.position + Quaternion.Euler(pitch, yaw, 0f) * fromBody;
         }
 
@@ -1184,10 +1179,7 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
 
         if (pistol && bone != null)
-        {
-            hand.localPosition = bone == handR ? tipLocalR : tipLocalL;
             hand.localRotation = Quaternion.identity;
-        }
         else
             hand.localPosition = Vector3.zero;
 
@@ -1206,7 +1198,8 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         return gun.GetComponent<Hd2Pistol>() != null
             || gun.GetComponent<Hd2Shocks>() != null
-            || gun.GetComponent<Hd2LaserPistol>() != null;
+            || gun.GetComponent<Hd2LaserPistol>() != null
+            || gun.GetComponent<Hd2BurstPistol>() != null;
     }
 
     static void StraightenHand(Transform fore, Transform bone)
@@ -1266,6 +1259,9 @@ public class Hd2EnemyBot : MonoBehaviour
         if (gun != null)
             return gun;
         gun = GunChild<Hd2LaserPistol>(hand);
+        if (gun != null)
+            return gun;
+        gun = GunChild<Hd2BurstPistol>(hand);
         if (gun != null)
             return gun;
         return GunChild<Hd2Pistol>(hand);
@@ -2244,6 +2240,7 @@ public class Hd2EnemyBot : MonoBehaviour
         Scan<Hd2ShocksPickup>(ref found, ref best);
         Scan<Hd2LaserPickup>(ref found, ref best);
         Scan<Hd2ShotgunPickup>(ref found, ref best);
+        Scan<Hd2BurstPickup>(ref found, ref best);
         return found != null;
     }
 
@@ -2277,6 +2274,9 @@ public class Hd2EnemyBot : MonoBehaviour
             laser.BotTake(hand);
         else if (source is Hd2ShotgunPickup shotgun)
             shotgun.BotTake(hand);
+        else if (source is Hd2BurstPickup burst)
+            burst.BotTake(hand);
+        SeatOneHand(hand);
     }
 
     Transform PistolHand()
@@ -2440,19 +2440,113 @@ public class Hd2EnemyBot : MonoBehaviour
 
     void SeatHands()
     {
-        if (handR != null && rightHand != null)
+        PlaceHolder(rightHand, handR);
+        PlaceHolder(leftHand, handL);
+        SeatOneHand(rightHand);
+        SeatOneHand(leftHand);
+    }
+
+    void SeatOneHand(Transform holder)
+    {
+        if (holder == rightHand)
+            AimGripAlongArm(holder, foreR, handR, -1f);
+        else if (holder == leftHand)
+            AimGripAlongArm(holder, foreL, handL, 1f);
+    }
+
+    static void PlaceHolder(Transform holder, Transform bone)
+    {
+        if (holder == null || bone == null)
+            return;
+
+        holder.SetParent(bone, false);
+        holder.localPosition = Vector3.zero;
+        holder.localRotation = Quaternion.identity;
+    }
+
+    void AimGripAlongArm(Transform holder, Transform fore, Transform bone, float side)
+    {
+        if (holder == null || fore == null || bone == null)
+            return;
+
+        Transform gun = GunOn(holder);
+        if (gun == null && holder.childCount > 0)
+            gun = holder.GetChild(0);
+        if (gun == null)
+            return;
+        Transform muzzle = FindNamed(gun, "Muzzle");
+        if (muzzle == null)
+            return;
+
+        Vector3 outDir = bone.position - fore.position;
+        if (outDir.sqrMagnitude < 0.0001f)
+            return;
+        outDir.Normalize();
+
+        Vector3 muzzleLocal = gun.InverseTransformDirection(muzzle.forward);
+        if (muzzleLocal.sqrMagnitude < 0.0001f)
+            return;
+        gun.rotation = Quaternion.FromToRotation(muzzleLocal.normalized, outDir);
+
+        Vector3 palm = Vector3.ProjectOnPlane(gun.forward, outDir);
+        Vector3 wantPalm = Vector3.ProjectOnPlane(transform.up, outDir);
+        if (palm.sqrMagnitude > 0.0001f && wantPalm.sqrMagnitude > 0.0001f)
+            gun.rotation = Quaternion.FromToRotation(palm.normalized, wantPalm.normalized) * gun.rotation;
+
+        float scale = Mathf.Abs(gun.lossyScale.x);
+        if (scale < 0.0001f)
+            scale = 1f;
+        Vector3 wristLocal = new Vector3(0.014f * side, 0.101f, 0.048f);
+        gun.position = bone.position - gun.rotation * (wristLocal * scale);
+        // The robot arm ends at the wrist bone. The grip fist starts behind that
+        // cut, so slide the whole gun out until the hand sits past the stump.
+        PushHandPastWrist(gun, bone.position, outDir);
+
+        Transform hand = FindNamed(gun, "Hand");
+        if (hand != null)
+            hand.gameObject.SetActive(true);
+        SkinnedMeshRenderer[] skins = gun.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < skins.Length; i++)
         {
-            rightHand.SetParent(handR, false);
-            rightHand.localPosition = Vector3.zero;
-            rightHand.localRotation = Quaternion.identity;
+            if (skins[i] == null)
+                continue;
+            skins[i].enabled = true;
+            skins[i].updateWhenOffscreen = true;
+            skins[i].gameObject.SetActive(true);
+        }
+    }
+
+    static void PushHandPastWrist(Transform gun, Vector3 wrist, Vector3 outDir)
+    {
+        SkinnedMeshRenderer skin = null;
+        SkinnedMeshRenderer[] skins = gun.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < skins.Length; i++)
+        {
+            if (skins[i] != null && skins[i].name == "HandSkin")
+                skin = skins[i];
         }
 
-        if (handL != null && leftHand != null)
+        if (skin == null || skin.sharedMesh == null)
+            return;
+
+        var baked = new UnityEngine.Mesh();
+        skin.BakeMesh(baked);
+        Vector3[] verts = baked.vertices;
+        float minAlong = float.MaxValue;
+        for (int i = 0; i < verts.Length; i++)
         {
-            leftHand.SetParent(handL, false);
-            leftHand.localPosition = Vector3.zero;
-            leftHand.localRotation = Quaternion.identity;
+            float along = Vector3.Dot(skin.transform.TransformPoint(verts[i]) - wrist, outDir);
+            if (along < minAlong)
+                minAlong = along;
         }
+
+        UnityEngine.Object.Destroy(baked);
+        float push = 0.03f - minAlong;
+        if (push < 0.001f)
+            return;
+        if (push > 0.25f)
+            push = 0.25f;
+        gun.position += outDir * push;
     }
 
     void PoseLegs()
@@ -2946,7 +3040,8 @@ public class Hd2EnemyBot : MonoBehaviour
             || bone.GetComponentInParent<Hd2Shotgun>(true) != null
             || bone.GetComponentInParent<Hd2Shocks>(true) != null
             || bone.GetComponentInParent<Hd2LaserPistol>(true) != null
-            || bone.GetComponentInParent<Hd2RocketLauncher>(true) != null;
+            || bone.GetComponentInParent<Hd2RocketLauncher>(true) != null
+            || bone.GetComponentInParent<Hd2BurstPistol>(true) != null;
     }
 
     void EnableRagdoll()

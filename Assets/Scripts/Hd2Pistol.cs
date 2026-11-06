@@ -5,6 +5,7 @@ using UnityEngine.XR;
 /// <summary>
 /// One pistol on one hand. A quick trigger release fires a normal shot.
 /// Holding the trigger past chargeHoldTime, then releasing, fires a charged shot.
+/// A future pickup should call BeginHeldCharge when the trigger is already down.
 /// The charge sound is muted for now.
 /// Grip starts a timed reload on that gun only. An empty magazine starts the same reload.
 /// Blue text on display shows the rounds left, or R while reloading.
@@ -281,6 +282,23 @@ public class Hd2Pistol : MonoBehaviour
         StopCharge();
         triggerPressedAt = -1f;
         TryFire(false);
+    }
+
+    /// <summary>
+    /// The trigger was already down when this gun was picked up. Charge from now.
+    /// A short release is a normal shot. A full hold fires the charged shot on release.
+    /// Starting pistols do not call this.
+    /// </summary>
+    public void BeginHeldCharge()
+    {
+        if (reloading || rounds <= 0 || !TriggerIsDown())
+            return;
+
+        waitForTriggerRelease = false;
+        triggerPressedAt = Time.time;
+        chargeReadyPulsed = false;
+        nextChargeHapticAt = 0f;
+        PlayCharge();
     }
 
     public void Reload()

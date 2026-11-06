@@ -169,6 +169,7 @@ public class Hd2Health : MonoBehaviour
         if (killerHud != null)
             killerHud.AddKill();
         PlayKillWhack();
+        Hd2KillStreak.NoteKill();
     }
 
     public void MarkBlast(Vector3 origin)
@@ -413,5 +414,86 @@ public class Hd2Health : MonoBehaviour
         deathSource.Stop();
         deathSource.clip = deathClip;
         deathSource.Play();
+    }
+}
+
+/// <summary>
+/// Kills chained within a second of each other. One second after the chain stops,
+/// the matching call plays in the player's ears.
+/// </summary>
+public class Hd2KillStreak : MonoBehaviour
+{
+    const float ChainSeconds = 1f;
+    static Hd2KillStreak ear;
+    AudioSource voice;
+    AudioClip[] clips;
+    int streak;
+    float lastKill = -10f;
+    float playAt = -1f;
+
+    public static void NoteKill()
+    {
+        Ear().CountKill();
+    }
+
+    static Hd2KillStreak Ear()
+    {
+        if (ear != null)
+            return ear;
+
+        var speaker = new GameObject("KillStreak");
+        speaker.hideFlags = HideFlags.HideAndDontSave;
+        DontDestroyOnLoad(speaker);
+        ear = speaker.AddComponent<Hd2KillStreak>();
+        return ear;
+    }
+
+    void Awake()
+    {
+        voice = gameObject.AddComponent<AudioSource>();
+        voice.playOnAwake = false;
+        voice.spatialBlend = 0f;
+        voice.dopplerLevel = 0f;
+        voice.loop = false;
+        clips = new AudioClip[6];
+        clips[2] = Resources.Load<AudioClip>("Audio/2Kills");
+        clips[3] = Resources.Load<AudioClip>("Audio/3Kills");
+        clips[4] = Resources.Load<AudioClip>("Audio/4Kills");
+        clips[5] = Resources.Load<AudioClip>("Audio/5Kills");
+    }
+
+    void CountKill()
+    {
+        float now = Time.time;
+        if (playAt >= 0f && now - lastKill > ChainSeconds)
+            PlayPending();
+
+        if (now - lastKill <= ChainSeconds)
+            streak++;
+        else
+            streak = 1;
+        lastKill = now;
+        playAt = streak >= 2 ? now + ChainSeconds : -1f;
+    }
+
+    void LateUpdate()
+    {
+        if (playAt < 0f || Time.time < playAt)
+            return;
+
+        PlayPending();
+    }
+
+    void PlayPending()
+    {
+        int count = streak;
+        playAt = -1f;
+        if (count < 2 || voice == null)
+            return;
+        if (count > 5)
+            count = 5;
+        AudioClip clip = clips[count];
+        if (clip != null)
+            voice.PlayOneShot(clip);
     }
 }

@@ -6,11 +6,15 @@ using UnityEngine.SceneManagement;
 /// <summary>
 /// Title card. Picks one of the two title tracks at random and loops it.
 /// Point at Domination or Control Point and pull the trigger, or click it.
+/// If the player looks away from the card for a few seconds, it swings in front of them.
 /// </summary>
 public class Hd2TitleScreen : MonoBehaviour
 {
     const float PosterDistance = 3.2f;
     const float PosterWidth = 2.6f;
+    const float FaceAngle = 45f;
+    const float LookAwaySeconds = 5f;
+    const float SwingDegreesPerSecond = 140f;
 
     sealed class Choice
     {
@@ -30,6 +34,9 @@ public class Hd2TitleScreen : MonoBehaviour
     Choice aimed;
     LineRenderer laser;
     Camera view;
+    Transform board;
+    Vector3 boardFocus;
+    float lookedAwayFor;
     bool loading;
     readonly RaycastHit[] aimHits = new RaycastHit[8];
 
@@ -79,6 +86,36 @@ public class Hd2TitleScreen : MonoBehaviour
             HideLaser();
             TryMouse();
         }
+
+        KeepBoardInView();
+    }
+
+    void KeepBoardInView()
+    {
+        if (view == null || board == null)
+            return;
+
+        Vector3 toBoard = board.TransformPoint(boardFocus) - view.transform.position;
+        Vector3 flatTo = toBoard;
+        flatTo.y = 0f;
+        Vector3 flatForward = view.transform.forward;
+        flatForward.y = 0f;
+        if (flatTo.sqrMagnitude < 0.0001f || flatForward.sqrMagnitude < 0.0001f)
+            return;
+
+        float yaw = Vector3.SignedAngle(flatTo, flatForward, Vector3.up);
+        if (Mathf.Abs(yaw) <= FaceAngle)
+        {
+            lookedAwayFor = 0f;
+            return;
+        }
+
+        lookedAwayFor += Time.deltaTime;
+        if (lookedAwayFor < LookAwaySeconds)
+            return;
+
+        float step = Mathf.Min(Mathf.Abs(yaw), SwingDegreesPerSecond * Time.deltaTime);
+        board.RotateAround(view.transform.position, Vector3.up, Mathf.Sign(yaw) * step);
     }
 
     void Begin(string sceneName)
@@ -88,6 +125,12 @@ public class Hd2TitleScreen : MonoBehaviour
         loading = true;
         aimed = null;
         HideLaser();
+        if (sceneName == Hd2Session.JoinMarker)
+        {
+            Hd2Session.Join();
+            return;
+        }
+
         SceneManager.LoadScene(sceneName);
     }
 
@@ -270,9 +313,14 @@ public class Hd2TitleScreen : MonoBehaviour
         float height = PosterWidth / aspect;
         Vector3 center = new Vector3(0f, 1.5f, PosterDistance);
 
+        var boardObject = new GameObject("TitleBoard");
+        boardObject.transform.SetParent(transform, false);
+        board = boardObject.transform;
+        boardFocus = board.InverseTransformPoint(center);
+
         var poster = GameObject.CreatePrimitive(PrimitiveType.Quad);
         poster.name = "TitleArt";
-        poster.transform.SetParent(transform, false);
+        poster.transform.SetParent(board, false);
         poster.transform.position = center;
         poster.transform.rotation = Quaternion.identity;
         poster.transform.localScale = new Vector3(PosterWidth, height, 1f);
@@ -287,9 +335,11 @@ public class Hd2TitleScreen : MonoBehaviour
 
         Vector3 first = center + new Vector3(0f, -height * 0.5f - 0.34f, 0f);
         Vector3 second = first + new Vector3(0f, -0.5f, 0f);
-        choices = new Choice[2];
+        Vector3 third = second + new Vector3(0f, -0.5f, 0f);
+        choices = new Choice[3];
         choices[0] = BuildChoice("DOMINATION", "Rome", first, new Color(0.08f, 0.28f, 0.72f, 1f), new Color(0.28f, 0.62f, 1f, 1f));
         choices[1] = BuildChoice("CONTROL POINT", "Rome CP", second, new Color(0.45f, 0.24f, 0.06f, 1f), new Color(1f, 0.62f, 0.22f, 1f));
+        choices[2] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, third, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
 
         if (view != null && view.transform.position.sqrMagnitude < 0.01f)
             view.transform.position = new Vector3(0f, 1.6f, 0f);
@@ -299,7 +349,7 @@ public class Hd2TitleScreen : MonoBehaviour
     {
         var pad = GameObject.CreatePrimitive(PrimitiveType.Quad);
         pad.name = label;
-        pad.transform.SetParent(transform, false);
+        pad.transform.SetParent(board, false);
         pad.transform.position = center;
         pad.transform.rotation = Quaternion.identity;
         pad.transform.localScale = new Vector3(1.7f, 0.38f, 1f);
@@ -315,7 +365,7 @@ public class Hd2TitleScreen : MonoBehaviour
         padRenderer.sharedMaterial = material;
 
         var labelObject = new GameObject(label + " Label");
-        labelObject.transform.SetParent(transform, false);
+        labelObject.transform.SetParent(board, false);
         labelObject.transform.position = center + new Vector3(0f, 0f, -0.04f);
         labelObject.transform.rotation = Quaternion.identity;
         var text = labelObject.AddComponent<TextMesh>();

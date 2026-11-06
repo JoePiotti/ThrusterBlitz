@@ -195,6 +195,7 @@ public class Hd2PlayerDeath : MonoBehaviour
             killLine.enabled = false;
         if (health != null)
             health.Respawn();
+        BeginLife();
         RestoreStartingPistols();
     }
 
@@ -218,6 +219,7 @@ public class Hd2PlayerDeath : MonoBehaviour
             killLine.enabled = false;
         if (health != null)
             health.Respawn();
+        BeginLife();
         RestoreStartingPistols();
         quietDeath = false;
     }
@@ -246,6 +248,7 @@ public class Hd2PlayerDeath : MonoBehaviour
             locomotion.MovementLocked = false;
         if (health != null)
             health.Respawn();
+        BeginLife();
         RestoreStartingPistols();
         downed = false;
     }
@@ -310,6 +313,13 @@ public class Hd2PlayerDeath : MonoBehaviour
         return saved;
     }
 
+    void BeginLife()
+    {
+        var hud = GetComponent<Hd2Hud>();
+        if (hud != null)
+            hud.BeginLife();
+    }
+
     void RestoreStartingPistols()
     {
         RestoreHand(Hand("RightHand"), rightPistol);
@@ -340,6 +350,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         DestroyGuns<Hd2Shocks>(hand);
         DestroyGuns<Hd2LaserPistol>(hand);
         DestroyGuns<Hd2Shotgun>(hand);
+        DestroyGuns<Hd2BurstPistol>(hand);
         DestroyGuns<Hd2Pistol>(hand);
     }
 
@@ -410,6 +421,9 @@ public class Hd2PlayerDeath : MonoBehaviour
         var shocks = hand.GetComponentInChildren<Hd2Shocks>(true);
         if (shocks != null)
             return shocks.transform;
+        var burst = hand.GetComponentInChildren<Hd2BurstPistol>(true);
+        if (burst != null)
+            return burst.transform;
         var laser = hand.GetComponentInChildren<Hd2LaserPistol>(true);
         if (laser != null)
             return laser.transform;

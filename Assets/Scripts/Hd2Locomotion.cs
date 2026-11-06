@@ -2735,7 +2735,7 @@ public class Hd2Locomotion : MonoBehaviour
     void EndJumpBoost()
     {
         bool wasBoosting = jumpBoosting;
-        if (!wasBoosting && (jumpExhaust == null || !jumpExhaust[0].isPlaying))
+        if (!wasBoosting)
             return;
 
         jumpBoosting = false;
@@ -2747,17 +2747,27 @@ public class Hd2Locomotion : MonoBehaviour
     void SetJumpExhaust(bool playing)
     {
         EnsureJumpExhaust();
-        if (jumpExhaust == null)
+        DriveJumpExhaust(jumpExhaust, playing);
+    }
+
+    public static void DriveJumpExhaust(ParticleSystem[] exhaust, bool playing)
+    {
+        if (exhaust == null)
             return;
 
-        for (int i = 0; i < jumpExhaust.Length; i++)
+        for (int i = 0; i < exhaust.Length; i++)
         {
-            if (jumpExhaust[i] == null)
+            ParticleSystem particles = exhaust[i];
+            if (particles == null)
                 continue;
-            if (playing)
-                jumpExhaust[i].Play();
-            else
-                jumpExhaust[i].Stop(false, ParticleSystemStopBehavior.StopEmitting);
+
+            var emission = particles.emission;
+            emission.enabled = playing;
+            if (!playing)
+                continue;
+            if (!particles.isPlaying)
+                particles.Play();
+            particles.Emit(56);
         }
     }
 
@@ -2917,29 +2927,31 @@ public class Hd2Locomotion : MonoBehaviour
         main.playOnAwake = false;
         main.loop = true;
         main.duration = 1f;
-        main.startLifetime = new ParticleSystem.MinMaxCurve(0.28f, 0.55f);
-        main.startSpeed = new ParticleSystem.MinMaxCurve(1.4f, 2.6f);
-        main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.08f);
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.55f, 1f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(1.8f, 3.4f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.1f, 0.22f);
+        main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
         main.startColor = new ParticleSystem.MinMaxGradient(
-            new Color(0.55f, 0.58f, 0.6f, 0.45f),
-            new Color(0.82f, 0.84f, 0.86f, 0.7f));
-        main.gravityModifier = 0.15f;
-        main.maxParticles = 48;
+            new Color(0.62f, 0.64f, 0.66f, 1f),
+            new Color(0.86f, 0.88f, 0.9f, 1f));
+        main.gravityModifier = 0.08f;
+        main.maxParticles = 150;
         main.simulationSpace = ParticleSystemSimulationSpace.World;
 
         var emission = particles.emission;
-        emission.rateOverTime = 36f;
+        emission.rateOverTime = 240f;
 
         var shape = particles.shape;
         shape.shapeType = ParticleSystemShapeType.Cone;
-        shape.angle = 14f;
-        shape.radius = 0.015f;
+        shape.angle = 36f;
+        shape.radius = 0.035f;
 
         var size = particles.sizeOverLifetime;
         size.enabled = true;
         size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
-            new Keyframe(0f, 0.45f),
-            new Keyframe(1f, 1.5f)));
+            new Keyframe(0f, 0.7f),
+            new Keyframe(0.35f, 1.6f),
+            new Keyframe(1f, 2.4f)));
 
         var color = particles.colorOverLifetime;
         color.enabled = true;
@@ -2947,20 +2959,24 @@ public class Hd2Locomotion : MonoBehaviour
         gradient.SetKeys(
             new[]
             {
-                new GradientColorKey(new Color(0.75f, 0.78f, 0.8f), 0f),
-                new GradientColorKey(new Color(0.45f, 0.48f, 0.5f), 1f)
+                new GradientColorKey(new Color(0.88f, 0.9f, 0.92f), 0f),
+                new GradientColorKey(new Color(0.55f, 0.58f, 0.6f), 1f)
             },
             new[]
             {
-                new GradientAlphaKey(0.65f, 0f),
+                new GradientAlphaKey(0.7f, 0f),
+                new GradientAlphaKey(0.5f, 0.25f),
+                new GradientAlphaKey(0.16f, 0.7f),
                 new GradientAlphaKey(0f, 1f)
             });
         color.color = gradient;
 
         var renderer = vent.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        renderer.enableGPUInstancing = false;
         Material exhaustMaterial = JumpExhaustMaterial();
         if (exhaustMaterial != null)
-            renderer.material = exhaustMaterial;
+            renderer.sharedMaterial = exhaustMaterial;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         return particles;
@@ -2972,6 +2988,18 @@ public class Hd2Locomotion : MonoBehaviour
     {
         if (jumpExhaustMaterial != null)
             return jumpExhaustMaterial;
+
+        jumpExhaustMaterial = Resources.Load<Material>("SoftSmoke");
+        if (jumpExhaustMaterial != null)
+            return jumpExhaustMaterial;
+
+        Shader shader = Shader.Find("HD2/SoftSmoke");
+        if (shader != null)
+        {
+            jumpExhaustMaterial = new Material(shader);
+            jumpExhaustMaterial.SetColor("_Color", Color.white);
+            return jumpExhaustMaterial;
+        }
 
         jumpExhaustMaterial = Hd2Shot.ParticleMaterial();
         return jumpExhaustMaterial;

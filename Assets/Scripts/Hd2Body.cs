@@ -103,6 +103,7 @@ public class Hd2Body : MonoBehaviour
     readonly Dictionary<Transform, Vector3> fingerHinge = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Quaternion> triggerRest = new Dictionary<Transform, Quaternion>();
     readonly Dictionary<Transform, Vector3> triggerRestPos = new Dictionary<Transform, Vector3>();
+    readonly Dictionary<Transform, Vector3> triggerHinge = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> fingerAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> palmAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> lengthAxis = new Dictionary<Transform, Vector3>();
@@ -1644,7 +1645,55 @@ public class Hd2Body : MonoBehaviour
         float degrees = gunTriggerDegrees * amount;
         if (gun.GetComponent<Hd2Smg>() != null)
             degrees = -degrees;
+        if (gun.GetComponent<Hd2Pistol>() != null)
+        {
+            if (!triggerRestPos.TryGetValue(trigger, out Vector3 restPos))
+            {
+                restPos = trigger.localPosition;
+                triggerRestPos[trigger] = restPos;
+            }
+
+            if (!triggerHinge.TryGetValue(trigger, out Vector3 hinge))
+            {
+                hinge = PistolTriggerHinge(trigger);
+                triggerHinge[trigger] = hinge;
+            }
+
+            Quaternion spin = Quaternion.Euler(degrees, 0f, 0f);
+            trigger.localRotation = rest * spin;
+            trigger.localPosition = restPos + hinge - spin * hinge;
+            return;
+        }
+
         trigger.localRotation = rest * Quaternion.Euler(degrees, 0f, 0f);
+    }
+
+    static Vector3 PistolTriggerHinge(Transform trigger)
+    {
+        var filter = trigger.GetComponent<MeshFilter>();
+        if (filter == null || filter.sharedMesh == null)
+            return Vector3.zero;
+
+        Vector3[] verts = filter.sharedMesh.vertices;
+        float top = float.NegativeInfinity;
+        for (int i = 0; i < verts.Length; i++)
+        {
+            if (verts[i].z > top)
+                top = verts[i].z;
+        }
+
+        Vector3 sum = Vector3.zero;
+        int count = 0;
+        float cutoff = top - 0.002f;
+        for (int i = 0; i < verts.Length; i++)
+        {
+            if (verts[i].z < cutoff)
+                continue;
+            sum += verts[i];
+            count++;
+        }
+
+        return count > 0 ? sum / count : Vector3.zero;
     }
 
     static Transform FindTrigger(Transform gun)
