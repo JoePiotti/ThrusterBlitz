@@ -189,6 +189,41 @@ public class Hd2Locomotion : MonoBehaviour
 
     public bool MovementLocked { get; set; }
 
+    static readonly List<Hd2Locomotion> active = new List<Hd2Locomotion>();
+
+    public static int ActiveCount => active.Count;
+
+    public static Hd2Locomotion ActiveAt(int index)
+    {
+        return active[index];
+    }
+
+    public bool OnRail(Hd2GrindRail rail)
+    {
+        return grinding && grindRail == rail;
+    }
+
+    public float RailDistance => grindDistance;
+
+    public float RailDirection => grindSign;
+
+    /// <summary>
+    /// Leaves the rail and stands at a deck point, as if the rider stepped off the back.
+    /// </summary>
+    public void StepOffRail(Vector3 feet)
+    {
+        grinding = false;
+        grindRail = null;
+        grindBoostUntil = -1f;
+        thrusting = false;
+        thrustRail = null;
+        verticalVelocity = 0f;
+        fallTime = 0f;
+        wasOffGround = false;
+        transform.position = feet;
+        UpdateGrindAudio();
+    }
+
     public void HaltTravel()
     {
         thrusting = false;
@@ -272,6 +307,121 @@ public class Hd2Locomotion : MonoBehaviour
         }
     }
     public bool IsThrusting => thrusting;
+    public bool PassingFront { get; set; }
+
+    /// <summary>
+    /// Guns stay quiet through a payload shield, while an arm or the gun is touching a shield,
+    /// or while the shooter is inside a wall.
+    /// </summary>
+    public static bool ShotBlocked(Component gun, Vector3 muzzle)
+    {
+        if (Hd2PayloadShield.BlocksShot(gun, muzzle))
+            return true;
+        if (TouchesShield(gun, muzzle))
+            return true;
+
+        Transform owner = Hd2SpawnField.FighterBody(gun);
+        if (owner == null)
+            return false;
+        Hd2Locomotion locomotion = owner.GetComponent<Hd2Locomotion>();
+        if (locomotion == null)
+            return false;
+        return locomotion.EmbeddedInWall() || locomotion.PointPastWall(muzzle);
+    }
+
+    const float ShieldTouchRadius = 0.05f;
+    static readonly Vector3[] shieldPoints = new Vector3[64];
+    static readonly List<Renderer> shieldGunRenderers = new List<Renderer>(12);
+
+    static bool TouchesShield(Component gun, Vector3 muzzle)
+    {
+        int count = AddShieldPoint(shieldPoints, 0, muzzle);
+        if (gun != null)
+        {
+            count = AddShieldPoint(shieldPoints, count, gun.transform.position);
+            shieldGunRenderers.Clear();
+            gun.GetComponentsInChildren(false, shieldGunRenderers);
+            for (int i = 0; i < shieldGunRenderers.Count; i++)
+            {
+                Renderer renderer = shieldGunRenderers[i];
+                if (renderer == null || renderer is LineRenderer || renderer is ParticleSystemRenderer || !renderer.enabled)
+                    continue;
+                count = AddBounds(renderer.bounds, shieldPoints, count);
+            }
+
+            Transform owner = Hd2SpawnField.FighterBody(gun);
+            if (owner != null)
+            {
+                Hd2Body avatar = owner.GetComponent<Hd2Body>();
+                if (avatar != null)
+                {
+                    count = AddArm(avatar.upperArmL, avatar.forearmL, shieldPoints, count);
+                    count = AddArm(avatar.forearmL, avatar.handL, shieldPoints, count);
+                    count = AddArm(avatar.upperArmR, avatar.forearmR, shieldPoints, count);
+                    count = AddArm(avatar.forearmR, avatar.handR, shieldPoints, count);
+                }
+
+                Hd2EnemyBot bot = owner.GetComponent<Hd2EnemyBot>();
+                if (bot != null)
+                    count = bot.CopyArmPoints(shieldPoints, count);
+
+                Hd2Locomotion locomotion = owner.GetComponent<Hd2Locomotion>();
+                if (locomotion != null)
+                {
+                    if (locomotion.leftHand != null)
+                        count = AddShieldPoint(shieldPoints, count, locomotion.leftHand.position);
+                    if (locomotion.rightHand != null)
+                        count = AddShieldPoint(shieldPoints, count, locomotion.rightHand.position);
+                }
+            }
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            if (Hd2SpawnField.Touches(shieldPoints[i], ShieldTouchRadius))
+                return true;
+            if (Hd2PayloadShield.Touches(shieldPoints[i], ShieldTouchRadius))
+                return true;
+        }
+
+        return false;
+    }
+
+    static int AddArm(Transform from, Transform to, Vector3[] points, int count)
+    {
+        if (from == null || to == null || count >= points.Length - 2)
+            return count;
+        points[count++] = from.position;
+        points[count++] = Vector3.Lerp(from.position, to.position, 0.5f);
+        if (count < points.Length)
+            points[count++] = to.position;
+        return count;
+    }
+
+    static int AddBounds(Bounds bounds, Vector3[] points, int count)
+    {
+        count = AddShieldPoint(points, count, bounds.center);
+        Vector3 c = bounds.center;
+        Vector3 e = bounds.extents;
+        for (int x = -1; x <= 1; x += 2)
+        {
+            for (int y = -1; y <= 1; y += 2)
+            {
+                for (int z = -1; z <= 1; z += 2)
+                    count = AddShieldPoint(points, count, c + Vector3.Scale(e, new Vector3(x, y, z)));
+            }
+        }
+
+        return count;
+    }
+
+    static int AddShieldPoint(Vector3[] points, int count, Vector3 point)
+    {
+        if (count >= points.Length)
+            return count;
+        points[count] = point;
+        return count + 1;
+    }
     public const float MinStandHeight = 1.7f;
     public const float MaxStandHeight = 1.9f;
     // Deepest squat. Robot at scale 1: head bone 1.580, hips 0.920, butt 0.080 below
@@ -331,11 +481,12 @@ public class Hd2Locomotion : MonoBehaviour
         if (FindFirstObjectByType<Hd2Deathmatch>() != null)
             return;
 
-        team = Hd2Team.Blue;
-        teamColor = BlueArmor;
-        var avatar = GetComponent<Hd2Body>();
-        if (avatar != null)
-            avatar.SetArmorColor(teamColor);
+        if (!Hd2Shootout.Present)
+        {
+            team = Hd2Team.Blue;
+            teamColor = BlueArmor;
+            PaintTeamRoster();
+        }
 
         PlantOnFloor();
         var health = GetComponent<Hd2Health>();
@@ -347,19 +498,144 @@ public class Hd2Locomotion : MonoBehaviour
     public static readonly Color BlueArmor = new Color(0.16f, 0.38f, 0.95f, 1f);
     public static readonly Color RedArmor = new Color(0.82f, 0.1f, 0.08f, 1f);
 
+    static readonly Color[] BlueShades =
+    {
+        new Color(0.16f, 0.38f, 0.95f, 1f),
+        new Color(0.25f, 0.88f, 1.00f, 1f),
+        new Color(0.05f, 0.12f, 0.42f, 1f),
+        new Color(0.42f, 0.28f, 0.98f, 1f),
+        new Color(0.62f, 0.84f, 1.00f, 1f),
+        new Color(0.05f, 0.55f, 0.68f, 1f)
+    };
+
+    static readonly Color[] RedShades =
+    {
+        new Color(0.92f, 0.08f, 0.06f, 1f),
+        new Color(1.00f, 0.48f, 0.05f, 1f),
+        new Color(0.38f, 0.02f, 0.04f, 1f),
+        new Color(0.95f, 0.12f, 0.48f, 1f),
+        new Color(0.70f, 0.28f, 0.08f, 1f),
+        new Color(1.00f, 0.42f, 0.38f, 1f)
+    };
+
     public static Color ArmorOf(Hd2Team side)
     {
         return side == Hd2Team.Red ? RedArmor : BlueArmor;
     }
 
-    public bool OtherTeamHasBot()
+    public static Color BlueShade(int index)
     {
-        return BotOn(OtherTeam(team)) != null;
+        return Shade(BlueShades, index);
+    }
+
+    public static Color RedShade(int index)
+    {
+        return Shade(RedShades, index);
+    }
+
+    static Color Shade(Color[] shades, int index)
+    {
+        int slot = index % shades.Length;
+        if (slot < 0)
+            slot += shades.Length;
+        return shades[slot];
+    }
+
+    /// <summary>
+    /// Gives each teammate their own shade of the team color. A shade already chosen
+    /// is left alone, so a respawn keeps the color from the start of the match.
+    /// </summary>
+    public static void PaintTeamRoster()
+    {
+        if (FindFirstObjectByType<Hd2Deathmatch>() != null)
+            return;
+
+        PaintSide(Hd2Team.Blue);
+        PaintSide(Hd2Team.Red);
+    }
+
+    static void PaintSide(Hd2Team side)
+    {
+        Color armor = ArmorOf(side);
+        int next = 0;
+        var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        System.Array.Sort(players, (a, b) => string.CompareOrdinal(a.name, b.name));
+        for (int i = 0; i < players.Length; i++)
+        {
+            Hd2Locomotion player = players[i];
+            if (player == null || player.team != side)
+                continue;
+            if (IsBaseColor(player.teamColor, armor))
+                player.teamColor = TeamShade(side, next);
+            var avatar = player.GetComponent<Hd2Body>();
+            if (avatar != null)
+                avatar.SetArmorColor(player.teamColor);
+            next++;
+        }
+
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        System.Array.Sort(bots, (a, b) =>
+        {
+            int slot = a.spawnSlot.CompareTo(b.spawnSlot);
+            if (slot != 0)
+                return slot;
+            return string.CompareOrdinal(a.name, b.name);
+        });
+        for (int i = 0; i < bots.Length; i++)
+        {
+            Hd2EnemyBot bot = bots[i];
+            if (bot == null || bot.team != side)
+                continue;
+            if (IsBaseColor(bot.bodyColor, armor))
+            {
+                bot.bodyColor = TeamShade(side, next);
+                bot.useBodyColor = true;
+            }
+
+            bot.ApplyBodyColor();
+            next++;
+        }
+    }
+
+    static Color TeamShade(Hd2Team side, int index)
+    {
+        return side == Hd2Team.Red ? RedShade(index) : BlueShade(index);
+    }
+
+    static bool IsBaseColor(Color color, Color armor)
+    {
+        return Mathf.Abs(color.r - armor.r) < 0.02f
+            && Mathf.Abs(color.g - armor.g) < 0.02f
+            && Mathf.Abs(color.b - armor.b) < 0.02f;
+    }
+
+    public bool CanSwitchTeam()
+    {
+        if (FindFirstObjectByType<Hd2Deathmatch>() != null)
+            return false;
+
+        Hd2Team next = OtherTeam(team);
+        if (Hd2Shootout.Present && HumanCount(next) >= Hd2Shootout.RosterSize)
+            return false;
+        return BotOn(next) != null;
+    }
+
+    public static int HumanCount(Hd2Team side)
+    {
+        var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        int count = 0;
+        for (int i = 0; i < players.Length; i++)
+        {
+            if (players[i] != null && players[i].team == side)
+                count++;
+        }
+
+        return count;
     }
 
     public void SwitchTeam()
     {
-        if (FindFirstObjectByType<Hd2Deathmatch>() != null)
+        if (!CanSwitchTeam())
             return;
 
         Hd2Team next = OtherTeam(team);
@@ -368,16 +644,17 @@ public class Hd2Locomotion : MonoBehaviour
             return;
 
         Hd2Team previous = team;
-        Transform mySpawn = NearestSpawn(previous);
+        Transform mySpawn = HomeSpawn(previous);
         int mySlot = SpawnSlot(mySpawn, previous);
         Transform theirSpawn = bot.Home;
         if (theirSpawn == null)
             theirSpawn = bot.transform;
 
-        bot.TakePlace(previous, ArmorOf(previous), mySlot, mySpawn);
+        Color botColor = TeamShade(previous, bot.spawnSlot + 1);
+        bot.TakePlace(previous, botColor, mySlot, mySpawn);
 
         team = next;
-        teamColor = ArmorOf(next);
+        teamColor = TeamShade(next, 0);
         var avatar = GetComponent<Hd2Body>();
         if (avatar != null)
             avatar.SetArmorColor(teamColor);
@@ -394,7 +671,7 @@ public class Hd2Locomotion : MonoBehaviour
     }
 
     /// <summary>
-    /// Leave the match. The last person returns to the title. Anyone else is replaced by a bot on their team.
+    /// Leave the match. A bot respawns on the vacated base. The last human ends the match.
     /// </summary>
     public void LeaveMatch()
     {
@@ -407,16 +684,27 @@ public class Hd2Locomotion : MonoBehaviour
             return;
         }
 
-        SceneManager.LoadScene("Title");
+        EndMatch();
+    }
+
+    public static void EndMatch()
+    {
+        var shootout = FindFirstObjectByType<Hd2Shootout>();
+        if (shootout != null)
+            shootout.StopMatch();
+
+        Hd2Session.CloseRoom();
     }
 
     void SpawnReplacement()
     {
         Hd2EnemyBot template = FindFirstObjectByType<Hd2EnemyBot>();
+        Transform spot = HomeSpawn(team);
         var go = new GameObject(team == Hd2Team.Red ? "Red bot" : team == Hd2Team.Blue ? "Blue bot" : "Bot");
         if (template != null && template.transform.parent != null)
             go.transform.SetParent(template.transform.parent, false);
-        go.transform.SetPositionAndRotation(transform.position, transform.rotation);
+        if (spot != null)
+            go.transform.SetPositionAndRotation(spot.position, spot.rotation);
 
         var bot = go.AddComponent<Hd2EnemyBot>();
         if (template != null)
@@ -434,28 +722,23 @@ public class Hd2Locomotion : MonoBehaviour
         bot.team = team;
         bot.bodyColor = teamColor;
         bot.useBodyColor = true;
-        bot.spawnSlot = SpawnSlot(SpawnNear(transform.position, team), team);
+        bot.spawnSlot = SpawnSlot(spot, team);
         bot.displayName = team == Hd2Team.Red ? "red bot" : team == Hd2Team.Blue ? "blue bot" : "bot";
+        if (spot != null)
+            bot.TakePlace(team, teamColor, bot.spawnSlot, spot);
     }
 
-    static Transform SpawnNear(Vector3 from, Hd2Team side)
+    Transform HomeSpawn(Hd2Team side)
     {
-        var points = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        Transform best = null;
-        float bestSqr = float.MaxValue;
-        for (int i = 0; i < points.Length; i++)
+        var life = GetComponent<Hd2Health>();
+        if (life != null && life.TryPinnedSpawn(out Vector3 pinned, out _))
         {
-            Hd2SpawnPoint point = points[i];
-            if (point == null || point.team != side)
-                continue;
-            float sqr = (point.transform.position - from).sqrMagnitude;
-            if (sqr >= bestSqr)
-                continue;
-            bestSqr = sqr;
-            best = point.transform;
+            Transform home = NearestSpawn(side, pinned);
+            if (home != null)
+                return home;
         }
 
-        return best;
+        return NearestSpawn(side, transform.position);
     }
 
     /// <summary>
@@ -463,7 +746,7 @@ public class Hd2Locomotion : MonoBehaviour
     /// </summary>
     public void ReturnToBase()
     {
-        Transform spawn = NearestSpawn(team);
+        Transform spawn = NearestSpawn(team, transform.position);
         var life = GetComponent<Hd2Health>();
         if (spawn != null && life != null)
             life.PinSpawn(spawn.position, spawn.rotation);
@@ -502,15 +785,11 @@ public class Hd2Locomotion : MonoBehaviour
         return waiting;
     }
 
-    static Transform NearestSpawn(Hd2Team side)
+    static Transform NearestSpawn(Hd2Team side, Vector3 from)
     {
         var points = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         Transform best = null;
         float bestSqr = float.MaxValue;
-        Vector3 from = Vector3.zero;
-        var player = FindFirstObjectByType<Hd2Locomotion>();
-        if (player != null)
-            from = player.transform.position;
         for (int i = 0; i < points.Length; i++)
         {
             Hd2SpawnPoint point = points[i];
@@ -757,6 +1036,9 @@ public class Hd2Locomotion : MonoBehaviour
 
     void OnEnable()
     {
+        if (!active.Contains(this))
+            active.Add(this);
+
         moveAction = new InputAction("Hd2Move", InputActionType.Value, expectedControlType: "Vector2");
         moveAction.AddBinding("<XRController>{LeftHand}/thumbstick");
         moveAction.AddCompositeBinding("2DVector")
@@ -804,6 +1086,7 @@ public class Hd2Locomotion : MonoBehaviour
 
     void OnDisable()
     {
+        active.Remove(this);
         if (editorTiltApplied)
         {
             transform.rotation = Quaternion.Euler(0f, editorYaw, 0f);
@@ -1250,6 +1533,11 @@ public class Hd2Locomotion : MonoBehaviour
             : source == AimSource.Left ? leftHand
             : head;
         Vector3 point = aim != null ? aim.position : transform.position + Vector3.up;
+        return PointPastWall(point);
+    }
+
+    bool PointPastWall(Vector3 point)
+    {
         if (InsideSolidVolume(point))
             return true;
 
@@ -1387,9 +1675,7 @@ public class Hd2Locomotion : MonoBehaviour
                 if (arcPointCount < ArcPointCapacity)
                     arcPoints[arcPointCount++] = hit.point;
 
-                Hd2GrindRail rail = hit.collider != null ? hit.collider.GetComponentInParent<Hd2GrindRail>() : null;
-                if (rail == null && !(grinding && hit.normal.y > 0.55f))
-                    rail = RailAtPoint(hit.point);
+                Hd2GrindRail rail = RailFromHit(hit);
                 if (rail != null || hit.normal.y > 0.55f)
                 {
                     AcceptSurfaceHit(hit, player, maxSqr);
@@ -1750,9 +2036,7 @@ public class Hd2Locomotion : MonoBehaviour
     Vector3 LandingFromHit(RaycastHit hit, out Hd2GrindRail rail, out float railSign)
     {
         railSign = 1f;
-        rail = hit.collider != null ? hit.collider.GetComponentInParent<Hd2GrindRail>() : null;
-        if (rail == null && !(grinding && hit.normal.y > 0.55f))
-            rail = RailAtPoint(hit.point);
+        rail = RailFromHit(hit);
         if (rail != null)
         {
             Vector3 point = rail.PointAlong(rail.DistanceAlong(hit.point));
@@ -1775,16 +2059,23 @@ public class Hd2Locomotion : MonoBehaviour
     }
 
     // The spawn field stays solid so outside shots hit it. This body walks through
-    // a shield only when that shield allows this team.
+    // a shield only when that shield allows this team. Other walls are often a
+    // single face, so the cast must hit the back of that face too.
     bool CastBody(Vector3 bottom, Vector3 top, float radius, Vector3 direction, float distance, out RaycastHit hit)
     {
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
         int count = Physics.CapsuleCastNonAlloc(bottom, top, radius, direction, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        Physics.queriesHitBackfaces = previous;
         return NearestBodyHit(count, out hit);
     }
 
     bool RaycastBody(Vector3 origin, Vector3 direction, float distance, out RaycastHit hit)
     {
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
         int count = Physics.RaycastNonAlloc(origin, direction, bodyHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        Physics.queriesHitBackfaces = previous;
         return NearestBodyHit(count, out hit);
     }
 
@@ -1822,6 +2113,20 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         return found;
+    }
+
+    Hd2GrindRail RailFromHit(RaycastHit hit)
+    {
+        Hd2GrindRail rail = hit.collider != null ? hit.collider.GetComponentInParent<Hd2GrindRail>() : null;
+        if (rail == null)
+            rail = RailAtPoint(hit.point);
+        if (rail == null || !grinding || rail != grindRail)
+            return rail;
+
+        Vector3 point = rail.PointAlong(rail.DistanceAlong(hit.point));
+        if ((point - transform.position).sqrMagnitude < 2.25f)
+            return null;
+        return rail;
     }
 
     static Hd2GrindRail RailAtPoint(Vector3 point)
@@ -1965,7 +2270,7 @@ public class Hd2Locomotion : MonoBehaviour
                 continue;
 
             Hd2GrindRail candidate = collider.GetComponentInParent<Hd2GrindRail>();
-            if (candidate == null || (grinding && candidate == grindRail))
+            if (candidate == null)
                 continue;
 
             float candidateT = 1f;
@@ -1989,6 +2294,10 @@ public class Hd2Locomotion : MonoBehaviour
             if (!near || candidateSqr >= limit)
                 continue;
             if ((candidatePoint - player).sqrMagnitude > maxSqr)
+                continue;
+            // The beam under the rider is not a new landing. A point farther
+            // along this rail, or on another rail, still is.
+            if (grinding && candidate == grindRail && (candidatePoint - player).sqrMagnitude < 2.25f)
                 continue;
             if (candidateT > bestT + 0.02f)
                 continue;
@@ -2119,9 +2428,14 @@ public class Hd2Locomotion : MonoBehaviour
             verticalVelocity = 0f;
         }
 
+        if (HitsShield(null))
+            PassingFront = true;
+
         thrustRail = null;
         StopBlitzTrail();
+        thrustLanded = true;
         PopOutOfWalls();
+        thrustLanded = false;
     }
 
     void PlayBlitzTrail()
@@ -2372,9 +2686,20 @@ public class Hd2Locomotion : MonoBehaviour
     }
 
     static readonly Collider[] stuckOverlap = new Collider[16];
+    static readonly RaycastHit[] exitHits = new RaycastHit[8];
+    static readonly Vector3[] exitDirs =
+    {
+        Vector3.forward, Vector3.back, Vector3.left, Vector3.right,
+        new Vector3(1f, 0f, 1f), new Vector3(-1f, 0f, 1f),
+        new Vector3(1f, 0f, -1f), new Vector3(-1f, 0f, -1f)
+    };
+    bool thrustLanded;
 
     void PopOutOfWalls()
     {
+        if (TryPopOntoPayload())
+            return;
+
         for (int pass = 0; pass < 4; pass++)
         {
             CapsuleEnds(out Vector3 bottom, out Vector3 top);
@@ -2391,8 +2716,82 @@ public class Hd2Locomotion : MonoBehaviour
             }
 
             if (!moved)
-                return;
+                break;
         }
+
+        if (thrustLanded && EmbeddedInWall())
+            StepBackFromBlitz();
+    }
+
+    void StepBackFromBlitz()
+    {
+        Vector3 back = thrustStart - transform.position;
+        back.y = 0f;
+        if (back.sqrMagnitude < 0.04f)
+            return;
+        back.Normalize();
+        for (int i = 0; i < 8 && EmbeddedInWall(); i++)
+            transform.position += back * 0.2f;
+    }
+
+    bool EmbeddedInWall()
+    {
+        CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        float radius = Mathf.Max(0.05f, bodyRadius) * 0.9f;
+        int count = Physics.OverlapCapsuleNonAlloc(bottom, top, radius, stuckOverlap, ~0, QueryTriggerInteraction.Ignore);
+        Vector3 mid = (bottom + top) * 0.5f;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stuckOverlap[i];
+            if (!BlocksBody(collider))
+                continue;
+            if (SidePenetration(collider, mid, radius))
+                return true;
+        }
+
+        return false;
+    }
+
+    bool BlocksBody(Collider collider)
+    {
+        if (collider == null || collider.isTrigger || IsSelf(collider) || IsButton(collider))
+            return false;
+        if (collider.GetComponentInParent<Hd2GrindRail>() != null)
+            return false;
+        if (collider.GetComponentInParent<Hd2Water>() != null)
+            return false;
+        Hd2SpawnField field = collider.GetComponentInParent<Hd2SpawnField>();
+        return field == null || !field.Allows(this);
+    }
+
+    bool SidePenetration(Collider collider, Vector3 sample, float radius)
+    {
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        bool inside = false;
+        float reach = radius + 0.6f;
+        for (int d = 0; d < exitDirs.Length && !inside; d++)
+        {
+            Vector3 dir = exitDirs[d];
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                continue;
+            dir.Normalize();
+            int count = Physics.RaycastNonAlloc(sample, dir, exitHits, reach, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                if (exitHits[i].collider != collider)
+                    continue;
+                bool back = Vector3.Dot(exitHits[i].normal, dir) > 0.05f;
+                if (back && exitHits[i].distance < radius + 0.35f)
+                    inside = true;
+                else if (!back && exitHits[i].distance < radius * 0.65f)
+                    inside = true;
+            }
+        }
+
+        Physics.queriesHitBackfaces = previous;
+        return inside;
     }
 
     bool TryWallPush(Collider collider, Vector3 bottom, Vector3 top, float radius, out Vector3 push)
@@ -2410,30 +2809,169 @@ public class Hd2Locomotion : MonoBehaviour
 
         Vector3 mid = (bottom + top) * 0.5f;
         Vector3[] samples = { bottom, mid, top };
+        Vector3 meshExit = Vector3.zero;
+        float meshBest = float.MaxValue;
         for (int i = 0; i < samples.Length; i++)
         {
             Vector3 sample = samples[i];
-            if (collider is BoxCollider box && TryBoxExit(box, sample, radius, out Vector3 exit))
+            if (collider is BoxCollider box && TryBoxExit(box, sample, radius, out Vector3 boxExit))
             {
-                if (Vector3.Dot(exit, Vector3.up) > 0.45f * exit.magnitude)
+                if (Vector3.Dot(boxExit, Vector3.up) > 0.45f * boxExit.magnitude)
                     continue;
-                push += exit;
+                push += boxExit;
                 continue;
             }
 
             Vector3 closest = collider.ClosestPoint(sample);
-            Vector3 away = sample - closest;
-            float distance = away.magnitude;
-            if (distance >= radius || distance < 0.0001f)
+            float distance = (sample - closest).magnitude;
+            if (distance < 0.0001f)
+            {
+                if (MeshExit(collider, sample, radius, out Vector3 buried) && buried.sqrMagnitude < meshBest)
+                {
+                    meshBest = buried.sqrMagnitude;
+                    meshExit = buried;
+                }
+
                 continue;
-            Vector3 step = away / distance * (radius - distance + skinWidth);
+            }
+
+            if (distance >= radius)
+                continue;
+            Vector3 away = (sample - closest) / distance;
+            Vector3 step = away * (radius - distance + skinWidth);
             if (Vector3.Dot(step, Vector3.up) > 0.45f * step.magnitude)
                 continue;
             push += step;
         }
 
+        if (meshExit.sqrMagnitude > 0.0000001f)
+            push += meshExit;
         return push.sqrMagnitude > 0.0000001f;
     }
+
+    bool MeshExit(Collider collider, Vector3 sample, float radius, out Vector3 exit)
+    {
+        exit = Vector3.zero;
+        float best = float.MaxValue;
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        float reach = radius + 1.5f;
+        for (int d = 0; d < exitDirs.Length; d++)
+        {
+            Vector3 dir = exitDirs[d];
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                continue;
+            dir.Normalize();
+            int count = Physics.RaycastNonAlloc(sample, dir, exitHits, reach, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                if (exitHits[i].collider != collider)
+                    continue;
+                bool back = Vector3.Dot(exitHits[i].normal, dir) > 0.05f;
+                if (!back && exitHits[i].distance >= radius)
+                    continue;
+                float travel = back
+                    ? exitHits[i].distance + radius + skinWidth
+                    : radius - exitHits[i].distance + skinWidth;
+                if (travel < best)
+                {
+                    best = travel;
+                    exit = dir * travel;
+                }
+            }
+        }
+
+        Physics.queriesHitBackfaces = previous;
+        return best < 20f;
+    }
+
+    // A blitz onto the ground under the cart leaves the deck in the player's
+    // legs. Put them on the Floor instead of leaving them stuck inside it.
+    bool TryPopOntoPayload()
+    {
+        CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        float radius = Mathf.Max(0.05f, bodyRadius) * 0.9f;
+        int count = Physics.OverlapCapsuleNonAlloc(bottom, top, radius, stuckOverlap, ~0, QueryTriggerInteraction.Ignore);
+        Hd2Payload payload = null;
+        bool shield = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stuckOverlap[i];
+            if (collider == null || collider.isTrigger)
+                continue;
+            if (collider.transform == transform || collider.transform.IsChildOf(transform))
+                continue;
+            if (collider.GetComponentInParent<Hd2PayloadShield>() != null)
+                shield = true;
+            if (payload == null)
+                payload = collider.GetComponentInParent<Hd2Payload>();
+        }
+
+        if (payload == null)
+            return false;
+
+        Vector3 feet = transform.position;
+        if (shield && !payload.DeckUnder(feet, feet.y, 1.75f, out _))
+            return false;
+        if (!DeckNear(payload, feet, out Vector3 stand))
+            return false;
+
+        float rise = stand.y - feet.y;
+        if (rise < 0.12f || rise > 1.75f)
+            return false;
+
+        Vector3 landed = stand + Vector3.up * 0.04f;
+        if (!CapsuleFitsAbove(landed))
+            return false;
+
+        transform.position = landed;
+        grinding = false;
+        grindRail = null;
+        grindBoostUntil = -1f;
+        verticalVelocity = 0f;
+        fallTime = 0f;
+        return true;
+    }
+
+    bool DeckNear(Hd2Payload payload, Vector3 feet, out Vector3 stand)
+    {
+        if (payload.DeckUnder(feet, feet.y, 1.75f, out stand))
+            return true;
+
+        const float reach = 0.5f;
+        for (int i = 0; i < 4; i++)
+        {
+            float angle = i * Mathf.PI * 0.5f;
+            Vector3 sample = feet + new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * reach;
+            if (payload.DeckUnder(sample, feet.y, 1.75f, out stand))
+                return true;
+        }
+
+        return false;
+    }
+
+    public bool HitsShield(Hd2Payload cart)
+    {
+        CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        float radius = Mathf.Max(0.05f, bodyRadius) + skinWidth;
+        int count = Physics.OverlapCapsuleNonAlloc(bottom, top, radius, shieldTouch, ~0, QueryTriggerInteraction.Collide);
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = shieldTouch[i];
+            if (collider == null)
+                continue;
+            Hd2PayloadFront front = collider.GetComponent<Hd2PayloadFront>();
+            if (front == null)
+                continue;
+            if (cart == null || front.payload == cart)
+                return true;
+        }
+
+        return false;
+    }
+
+    static readonly Collider[] shieldTouch = new Collider[16];
 
     static bool TryBoxExit(BoxCollider box, Vector3 worldPoint, float radius, out Vector3 exit)
     {
@@ -2493,6 +3031,11 @@ public class Hd2Locomotion : MonoBehaviour
                 if (rail != null && TryWalkOnRail(rail, direction, distance))
                     return;
 
+                var payload = hit.collider != null ? hit.collider.GetComponentInParent<Hd2Payload>() : null;
+                bool shield = hit.collider != null && hit.collider.GetComponentInParent<Hd2PayloadShield>() != null;
+                if (!shield && payload != null && TryStepOntoPayload(payload, direction, distance, travel))
+                    return;
+
                 if (TryStep(direction, distance, travel, hit))
                     return;
 
@@ -2541,6 +3084,48 @@ public class Hd2Locomotion : MonoBehaviour
             transform.position = planted;
         }
 
+        return true;
+    }
+
+    // The payload deck is taller than a normal step. Walking into it plants the
+    // player on the Floor instead of stopping at the side.
+    bool TryStepOntoPayload(Hd2Payload payload, Vector3 direction, float distance, float blockedTravel)
+    {
+        const float maxRise = 1.75f;
+        float feetY = transform.position.y;
+        float reach = Mathf.Max(distance, blockedTravel + Mathf.Max(0.2f, bodyRadius));
+        Vector3 ahead = transform.position + direction * Mathf.Min(reach, 0.55f);
+        Vector3 further = transform.position + direction * 0.9f;
+        if (!payload.DeckUnder(ahead, feetY, maxRise, out Vector3 stand)
+            && !payload.DeckUnder(further, feetY, maxRise, out stand))
+            return false;
+
+        float rise = stand.y - feetY;
+        if (rise < 0.08f || rise > maxRise)
+            return false;
+
+        Vector3 flat = stand - transform.position;
+        flat.y = 0f;
+        if (flat.sqrMagnitude > 1.4f * 1.4f)
+            return false;
+        if (flat.sqrMagnitude > 0.04f && Vector3.Dot(flat.normalized, direction) < 0.15f)
+            return false;
+
+        Vector3 landed = stand + direction * 0.12f;
+        landed.y = stand.y + 0.03f;
+        if (payload.DeckUnder(landed, stand.y, 0.4f, out Vector3 planted))
+        {
+            landed.x = planted.x;
+            landed.z = planted.z;
+            landed.y = planted.y + 0.03f;
+        }
+
+        if (!CapsuleFitsAbove(landed))
+            return false;
+
+        transform.position = landed;
+        verticalVelocity = 0f;
+        fallTime = 0f;
         return true;
     }
 
@@ -3296,9 +3881,9 @@ public class Hd2Locomotion : MonoBehaviour
 
     void CreatePreview()
     {
-        Shader shader = Shader.Find("Sprites/Default");
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
         if (shader == null)
-            shader = Shader.Find("Universal Render Pipeline/Unlit");
+            shader = Shader.Find("Sprites/Default");
         if (shader == null)
             shader = Shader.Find("Universal Render Pipeline/Lit");
         previewMaterial = shader != null ? new Material(shader) : null;
@@ -3332,6 +3917,9 @@ public class Hd2Locomotion : MonoBehaviour
 
     void ApplyPreviewColor(Color color)
     {
+        bool unlit = previewMaterial != null && previewMaterial.shader != null
+            && previewMaterial.shader.name.IndexOf("Unlit", System.StringComparison.Ordinal) >= 0;
+        Color vertex = unlit ? Color.white : color;
         if (previewMaterial != null)
         {
             if (previewMaterial.HasProperty("_BaseColor"))
@@ -3342,8 +3930,8 @@ public class Hd2Locomotion : MonoBehaviour
 
         if (arcLine != null)
         {
-            arcLine.startColor = color;
-            arcLine.endColor = color;
+            arcLine.startColor = vertex;
+            arcLine.endColor = vertex;
         }
 
         if (wireMaterial != null)
@@ -3363,8 +3951,8 @@ public class Hd2Locomotion : MonoBehaviour
         {
             if (wireLines[i] == null)
                 continue;
-            wireLines[i].startColor = color;
-            wireLines[i].endColor = color;
+            wireLines[i].startColor = vertex;
+            wireLines[i].endColor = vertex;
         }
     }
 
@@ -3441,12 +4029,14 @@ public class Hd2Locomotion : MonoBehaviour
             }
         }
 
-        // The preview body's origin is its feet. Put those feet on the landing.
-        // Offset from the tracking origin instead shifted the robot with real-world facing.
+        // Crouching keeps the head on the headset and drops the body root under the floor.
+        // Shift from the planted feet so the preview stands on the landing.
+        var avatar = source.GetComponentInParent<Hd2Body>();
+        float sole = avatar != null ? avatar.SoleHeight() : source.position.y;
         Vector3 delta = landing - source.position;
+        delta.y = landing.y - sole;
         thrustGhost.SetActive(true);
         CopyPose(source, thrustGhost.transform, delta);
-        var avatar = source.GetComponentInParent<Hd2Body>();
         if (avatar != null)
             ShowHeldGhost(avatar, delta);
     }

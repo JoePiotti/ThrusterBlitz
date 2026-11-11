@@ -5,7 +5,7 @@ using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Title card. Picks one of the two title tracks at random and loops it.
-/// Point at Domination or Control Point and pull the trigger, or click it.
+/// Point at a mode and pull the trigger, or click it.
 /// If the player looks away from the card for a few seconds, it swings in front of them.
 /// </summary>
 public class Hd2TitleScreen : MonoBehaviour
@@ -122,15 +122,22 @@ public class Hd2TitleScreen : MonoBehaviour
     {
         if (loading || string.IsNullOrEmpty(sceneName))
             return;
-        loading = true;
         aimed = null;
         HideLaser();
         if (sceneName == Hd2Session.JoinMarker)
         {
+            loading = true;
             Hd2Session.Join();
             return;
         }
 
+        if (!Application.CanStreamedLevelBeLoaded(sceneName))
+        {
+            Debug.LogError("Hd2 title cannot load " + sceneName);
+            return;
+        }
+
+        loading = true;
         SceneManager.LoadScene(sceneName);
     }
 
@@ -333,13 +340,11 @@ public class Hd2TitleScreen : MonoBehaviour
         renderer.receiveShadows = false;
         renderer.sharedMaterial = ArtMaterial(art);
 
-        Vector3 first = center + new Vector3(0f, -height * 0.5f - 0.34f, 0f);
-        Vector3 second = first + new Vector3(0f, -0.5f, 0f);
-        Vector3 third = second + new Vector3(0f, -0.5f, 0f);
-        choices = new Choice[3];
-        choices[0] = BuildChoice("DOMINATION", "Rome", first, new Color(0.08f, 0.28f, 0.72f, 1f), new Color(0.28f, 0.62f, 1f, 1f));
-        choices[1] = BuildChoice("CONTROL POINT", "Rome CP", second, new Color(0.45f, 0.24f, 0.06f, 1f), new Color(1f, 0.62f, 0.22f, 1f));
-        choices[2] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, third, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
+        Vector3 first = center + new Vector3(0f, -height * 0.5f - 0.26f, 0f);
+        Vector3 second = first + new Vector3(0f, -0.44f, 0f);
+        choices = new Choice[2];
+        choices[0] = BuildChoice("SHOOTOUT", "Shootout", first, new Color(0.55f, 0.12f, 0.1f, 1f), new Color(1f, 0.42f, 0.28f, 1f));
+        choices[1] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, second, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
 
         if (view != null && view.transform.position.sqrMagnitude < 0.01f)
             view.transform.position = new Vector3(0f, 1.6f, 0f);

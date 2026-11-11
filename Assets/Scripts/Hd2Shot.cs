@@ -328,7 +328,11 @@ public class Hd2Shot : MonoBehaviour
         if (field != null)
         {
             Recycle();
-            field.RegisterBlockedShot(hit.point, hit.normal);
+            var shootout = hit.collider.GetComponentInParent<Hd2ShootoutShield>();
+            if (shootout != null)
+                shootout.PlayHit(hit.point, hit.normal, direction);
+            else
+                field.RegisterBlockedShot(hit.point, hit.normal);
             return true;
         }
 
@@ -347,12 +351,33 @@ public class Hd2Shot : MonoBehaviour
             return true;
         }
 
+        var glass = hit.collider.GetComponentInParent<Hd2PayloadShield>();
+        if (glass != null)
+        {
+            glass.PlayHit(hit.point, hit.normal, direction);
+            if (bouncesRemaining > 0)
+            {
+                bouncesRemaining--;
+                velocity = Vector3.Reflect(velocity, hit.normal);
+                Vector3 contact = hit.point + hit.normal * 0.04f;
+                transform.position = contact;
+                previous = contact;
+                hasPrevious = true;
+                if (plasma)
+                    PoseBolt(dt);
+                return true;
+            }
+
+            Recycle();
+            return true;
+        }
+
         bool rail = hit.collider.GetComponentInParent<Hd2GrindRail>() != null;
         bool stamp = !rail && !MarkSitsOnPerson(hit.point);
         if (bouncesRemaining > 0)
         {
             if (stamp)
-                ScoreMark(hit.point, hit.normal);
+                ScoreMark(hit.point, hit.normal, hit.collider);
             else
                 MetalSparks(hit.point, hit.normal);
             bouncesRemaining--;
@@ -369,7 +394,7 @@ public class Hd2Shot : MonoBehaviour
         Recycle();
         if (stamp)
         {
-            ScoreMark(hit.point, hit.normal);
+            ScoreMark(hit.point, hit.normal, hit.collider);
             if (gravel)
                 GravelBurst(hit.point, hit.normal);
         }
@@ -437,7 +462,7 @@ public class Hd2Shot : MonoBehaviour
     const int MaxScoreMarks = 24;
     const int MaxBursts = 12;
 
-    static void ScoreMark(Vector3 point, Vector3 normal)
+    static void ScoreMark(Vector3 point, Vector3 normal, Collider surface)
     {
         if (normal.sqrMagnitude < 0.0001f)
             normal = Vector3.up;
@@ -470,8 +495,20 @@ public class Hd2Shot : MonoBehaviour
         Vector3 up = Mathf.Abs(normal.y) > 0.85f ? Vector3.forward : Vector3.up;
         Quaternion face = Quaternion.LookRotation(normal, up);
         face = Quaternion.AngleAxis(Random.Range(0f, 360f), normal) * face;
+        Hd2Payload payload = surface != null ? surface.GetComponentInParent<Hd2Payload>() : null;
+        Transform parent = payload != null ? payload.transform : null;
+        mark.transform.SetParent(parent, false);
         mark.transform.SetPositionAndRotation(point + normal * 0.05f, face);
-        mark.transform.localScale = Vector3.one * 0.08f;
+        Vector3 size = Vector3.one * 0.08f;
+        if (parent != null)
+        {
+            Vector3 lossy = parent.lossyScale;
+            size.x = 0.08f / Mathf.Max(0.0001f, Mathf.Abs(lossy.x));
+            size.y = 0.08f / Mathf.Max(0.0001f, Mathf.Abs(lossy.y));
+            size.z = 0.08f / Mathf.Max(0.0001f, Mathf.Abs(lossy.z));
+        }
+
+        mark.transform.localScale = size;
         mark.SetActive(true);
     }
 
@@ -744,11 +781,13 @@ public class Hd2Shot : MonoBehaviour
     bool ClosestHit(Vector3 origin, Vector3 direction, float distance, out RaycastHit closest)
     {
         closest = default;
-        int count = Physics.RaycastNonAlloc(origin, direction, hitBuffer, distance, ~0, QueryTriggerInteraction.Ignore);
+        int count = Hd2PayloadShield.Cast(origin, direction, hitBuffer, distance);
         float best = float.MaxValue;
         bool found = false;
         for (int i = 0; i < count; i++)
         {
+            if (Hd2PayloadShield.SkipBackface(hitBuffer[i], direction))
+                continue;
             Transform hitTransform = hitBuffer[i].transform;
             if (hitTransform == transform || hitTransform.IsChildOf(transform))
                 continue;
@@ -757,6 +796,8 @@ public class Hd2Shot : MonoBehaviour
 
             var field = hitBuffer[i].collider.GetComponentInParent<Hd2SpawnField>();
             if (field != null && field.ShotPasses(origin))
+                continue;
+            if (Hd2NoJump.Passes(hitBuffer[i].collider))
                 continue;
 
             if (hitBuffer[i].distance < best)

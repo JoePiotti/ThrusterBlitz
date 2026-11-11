@@ -154,7 +154,15 @@ public class Hd2Health : MonoBehaviour
                 hud.AddDeath();
         }
 
-        if (killer == null || killer.GetComponentInParent<Hd2EnemyBot>() != null)
+        if (killer == null)
+            return;
+
+        Hd2Team victimSide = Hd2SpawnField.TeamOf(this);
+        Hd2Team killerSide = Hd2SpawnField.TeamOf(killer);
+        if (Hd2Shootout.Present && killerSide != Hd2Team.None && killerSide != victimSide)
+            Hd2Shootout.NoteKill(killerSide);
+
+        if (killer.GetComponentInParent<Hd2EnemyBot>() != null)
             return;
 
         Hd2Locomotion player = killer.GetComponentInParent<Hd2Locomotion>();
@@ -249,6 +257,13 @@ public class Hd2Health : MonoBehaviour
         spawnRotation = rotation;
         hasSpawn = true;
         pinSpawn = true;
+    }
+
+    public bool TryPinnedSpawn(out Vector3 position, out Quaternion rotation)
+    {
+        position = spawnPosition;
+        rotation = spawnRotation;
+        return hasSpawn && pinSpawn;
     }
 
     bool pinSpawn;

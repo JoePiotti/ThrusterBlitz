@@ -30,6 +30,12 @@ public class Hd2PlayerDeath : MonoBehaviour
     StartingPistol leftPistol;
     LineRenderer killLine;
     Material killLineMaterial;
+    Hd2Payload dragCart;
+    Vector3 dragFromPos;
+    Quaternion dragFromRot;
+    Rigidbody[] dragBones;
+    float dragSlack;
+    float dragTravel;
 
     struct StartingPistol
     {
@@ -165,13 +171,11 @@ public class Hd2PlayerDeath : MonoBehaviour
         if (hud == null)
             return;
 
-        string name = null;
         Hd2EnemyBot bot = killer != null ? killer.GetComponentInParent<Hd2EnemyBot>() : null;
         if (bot != null && !string.IsNullOrEmpty(bot.displayName))
-            name = bot.displayName;
-        else if (killer != null)
-            name = "an enemy";
-        hud.ShowDeath(name);
+            hud.ShowDeath(bot.displayName);
+        else
+            hud.ShowSuicide();
     }
 
     public void DieImmediately()
@@ -253,6 +257,39 @@ public class Hd2PlayerDeath : MonoBehaviour
         downed = false;
     }
 
+    /// <summary>
+    /// The payload shield runs this player down. The ragdoll is pulled with the cart
+    /// until respawn, and a stopped cart still drags the body a short way.
+    /// </summary>
+    public void CrushUnderPayload(Hd2Payload cart)
+    {
+        if (downed || cart == null || health == null || health.IsDead)
+            return;
+
+        health.LastAttacker = null;
+        health.ApplyHit(health.Health, false);
+        if (ragdoll == null)
+            return;
+
+        dragCart = cart;
+        dragFromPos = cart.transform.position;
+        dragFromRot = cart.transform.rotation;
+        dragSlack = 2.2f;
+        dragTravel = 0f;
+        dragBones = ragdoll.GetComponentsInChildren<Rigidbody>();
+        for (int i = 0; i < dragBones.Length; i++)
+        {
+            Rigidbody bone = dragBones[i];
+            if (bone == null)
+                continue;
+            bone.linearVelocity = Vector3.zero;
+            bone.angularVelocity = Vector3.zero;
+            bone.isKinematic = true;
+        }
+
+        IgnoreColliders(ragdoll, cart.gameObject);
+    }
+
     void LateUpdate()
     {
         // Tracking can update the headset pose in onBeforeRender. Stay last in
@@ -260,6 +297,68 @@ public class Hd2PlayerDeath : MonoBehaviour
         Application.onBeforeRender -= HoldCamera;
         Application.onBeforeRender += HoldCamera;
         HoldCamera();
+        StepDrag();
+    }
+
+    void StepDrag()
+    {
+        if (dragCart == null || dragBones == null)
+            return;
+
+        Transform cart = dragCart.transform;
+        Quaternion rotDelta = cart.rotation * Quaternion.Inverse(dragFromRot);
+        Vector3 moved = cart.position - dragFromPos;
+        moved.y = 0f;
+        Vector3 extra = Vector3.zero;
+        if (moved.sqrMagnitude < 0.000001f && dragSlack > 0f)
+        {
+            float step = Mathf.Min(1.1f * Time.deltaTime, dragSlack);
+            extra = dragCart.FlatForward * step;
+            dragSlack -= step;
+        }
+
+        dragTravel += moved.magnitude + extra.magnitude;
+        for (int i = 0; i < dragBones.Length; i++)
+        {
+            Rigidbody bone = dragBones[i];
+            if (bone == null)
+                continue;
+
+            bone.position = cart.position + rotDelta * (bone.position - dragFromPos) + extra;
+            bone.rotation = rotDelta * bone.rotation;
+        }
+
+        dragFromPos = cart.position;
+        dragFromRot = cart.rotation;
+        bool cartMoving = moved.sqrMagnitude >= 0.000001f;
+        if (dragTravel < 2.6f && (cartMoving || dragSlack > 0f))
+            return;
+
+        for (int i = 0; i < dragBones.Length; i++)
+        {
+            Rigidbody bone = dragBones[i];
+            if (bone != null)
+                bone.isKinematic = false;
+        }
+
+        dragCart = null;
+        dragBones = null;
+    }
+
+    static void IgnoreColliders(GameObject corpse, GameObject other)
+    {
+        Collider[] body = corpse.GetComponentsInChildren<Collider>();
+        Collider[] cart = other.GetComponentsInChildren<Collider>();
+        for (int i = 0; i < body.Length; i++)
+        {
+            if (body[i] == null)
+                continue;
+            for (int j = 0; j < cart.Length; j++)
+            {
+                if (cart[j] != null)
+                    Physics.IgnoreCollision(body[i], cart[j], true);
+            }
+        }
     }
 
     void HoldCamera()
@@ -315,6 +414,9 @@ public class Hd2PlayerDeath : MonoBehaviour
 
     void BeginLife()
     {
+        if (locomotion != null && bodyDriver != null)
+            bodyDriver.SetArmorColor(locomotion.teamColor);
+
         var hud = GetComponent<Hd2Hud>();
         if (hud != null)
             hud.BeginLife();
@@ -510,6 +612,8 @@ public class Hd2PlayerDeath : MonoBehaviour
 
         hiddenRenderers.Clear();
         hiddenColliders.Clear();
+        dragCart = null;
+        dragBones = null;
         if (killLine != null)
             killLine.enabled = false;
 

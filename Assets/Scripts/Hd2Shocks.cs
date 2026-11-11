@@ -280,6 +280,9 @@ public class Hd2Shocks : MonoBehaviour
     {
         if (reloading || rounds <= 0 || Time.time < nextFireTime)
             return;
+        Transform barrel = muzzle != null ? muzzle : transform;
+        if (Hd2Locomotion.ShotBlocked(this, barrel.position))
+            return;
 
         rounds--;
         RefreshAmmo();
@@ -935,6 +938,12 @@ public class Hd2ShockOrb : MonoBehaviour
             {
                 if (!nearMissPlayed && Hd2NearMiss.TryPass(origin, hit.point, owner, Hd2NearMiss.HitsPlayer(hit.collider)))
                     nearMissPlayed = true;
+                var glass = hit.collider != null ? hit.collider.GetComponentInParent<Hd2PayloadShield>() : null;
+                if (glass != null)
+                    glass.PlayHit(hit.point, hit.normal, step / distance);
+                var shootout = hit.collider != null ? hit.collider.GetComponentInParent<Hd2ShootoutShield>() : null;
+                if (shootout != null)
+                    shootout.PlayHit(hit.point, hit.normal, step / distance);
                 Burst(hit.point);
                 return;
             }
@@ -953,11 +962,16 @@ public class Hd2ShockOrb : MonoBehaviour
     bool Hit(Vector3 origin, Vector3 direction, float distance, out RaycastHit closest)
     {
         closest = default;
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
         RaycastHit[] hits = Physics.RaycastAll(origin, direction, distance, ~0, QueryTriggerInteraction.Ignore);
+        Physics.queriesHitBackfaces = previous;
         float best = float.MaxValue;
         bool found = false;
         for (int i = 0; i < hits.Length; i++)
         {
+            if (Hd2PayloadShield.SkipBackface(hits[i], direction))
+                continue;
             Transform hitTransform = hits[i].transform;
             if (hitTransform.IsChildOf(transform))
                 continue;
@@ -966,6 +980,8 @@ public class Hd2ShockOrb : MonoBehaviour
 
             var field = hits[i].collider.GetComponentInParent<Hd2SpawnField>();
             if (field != null && field.ShotPasses(origin))
+                continue;
+            if (Hd2NoJump.Passes(hits[i].collider))
                 continue;
 
             if (hits[i].distance < best)

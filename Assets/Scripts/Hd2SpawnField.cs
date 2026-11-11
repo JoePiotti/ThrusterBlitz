@@ -13,6 +13,7 @@ public enum Hd2Team
 /// Inside is the opposite side (the room).
 ///
 /// Shots from inside pass through. Shots from outside stop on this collider.
+/// Before the round opens, nothing crosses and nothing shoots through.
 /// A shield with a team lets only that team cross. A shield with no team still lets
 /// the local player through and stops everyone else.
 /// Keep this object on the default layer with a solid (non-trigger) collider so
@@ -22,10 +23,13 @@ public class Hd2SpawnField : MonoBehaviour
 {
     [Tooltip("Who may cross this shield. None lets the local player through and stops everyone else.")]
     public Hd2Team team;
+
+    [Tooltip("Shots from both teams stop on both sides. The matching team can still walk and blitz through.")]
+    public bool blockAllShots;
     const float InsideSlack = 0.05f;
 
     /// <summary>
-    /// Match start. While set, every shield stops every body. Shots are unchanged.
+    /// Match start. While set, every shield stops every body and every shot.
     /// </summary>
     public static bool Locked { get; private set; }
 
@@ -52,10 +56,13 @@ public class Hd2SpawnField : MonoBehaviour
     }
 
     /// <summary>
-    /// Inside shots pass. Outside shots are stopped by the collider.
+    /// Inside shots pass once the round is open. Outside shots stop.
+    /// A locked shield stops every shot.
     /// </summary>
     public bool ShotPasses(Vector3 worldPosition)
     {
+        if (Locked || blockAllShots)
+            return false;
         return IsInside(worldPosition);
     }
 
@@ -74,6 +81,33 @@ public class Hd2SpawnField : MonoBehaviour
         if (team == Hd2Team.None)
             return body.GetComponentInParent<Hd2Locomotion>() != null;
         return TeamOf(body) == team;
+    }
+
+    static bool watchingGate;
+    static float openAt;
+
+    void Start()
+    {
+        if (watchingGate)
+            return;
+        if (FindFirstObjectByType<Hd2Domination>() != null
+            || FindFirstObjectByType<Hd2ControlPoint>() != null
+            || FindFirstObjectByType<Hd2PayloadMatch>() != null
+            || FindFirstObjectByType<Hd2Shootout>() != null)
+            return;
+
+        SetLocked(true);
+        openAt = Time.time + Hd2Domination.GateSeconds;
+        watchingGate = true;
+    }
+
+    void LateUpdate()
+    {
+        if (!watchingGate || Time.time < openAt)
+            return;
+
+        watchingGate = false;
+        SetLocked(false);
     }
 
     void OnEnable()
@@ -174,10 +208,15 @@ public class Hd2SpawnField : MonoBehaviour
             Hd2SpawnField field = fields[i];
             if (field == null)
                 continue;
-            Collider shield = field.GetComponent<Collider>();
-            if (shield == null || shield == moverCollider)
-                continue;
-            Physics.IgnoreCollision(moverCollider, shield, field.Allows(mover));
+            bool pass = field.Allows(mover);
+            Collider[] shields = field.GetComponents<Collider>();
+            for (int c = 0; c < shields.Length; c++)
+            {
+                Collider shield = shields[c];
+                if (shield == null || shield == moverCollider || !shield.enabled)
+                    continue;
+                Physics.IgnoreCollision(moverCollider, shield, pass);
+            }
         }
     }
 
@@ -223,6 +262,34 @@ public class Hd2SpawnField : MonoBehaviour
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// True when a point is inside a shield or within radius of its surface.
+    /// </summary>
+    public static bool Touches(Vector3 point, float radius)
+    {
+        float reach = radius * radius;
+        for (int i = 0; i < fieldCount; i++)
+        {
+            Hd2SpawnField field = fields[i];
+            if (field == null)
+                continue;
+            if (NearCollider(field.GetComponent<BoxCollider>(), point, reach))
+                return true;
+            if (NearCollider(field.GetComponent<MeshCollider>(), point, reach))
+                return true;
+        }
+
+        return false;
+    }
+
+    public static bool NearCollider(Collider collider, Vector3 point, float reach)
+    {
+        if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy)
+            return false;
+        Vector3 closest = collider.ClosestPoint(point);
+        return (closest - point).sqrMagnitude <= reach;
     }
 
     /// <summary>

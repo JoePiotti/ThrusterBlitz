@@ -223,9 +223,14 @@ public class Hd2Hud : MonoBehaviour
 
     public void ShowDeath(string killerName)
     {
-        deathText = string.IsNullOrEmpty(killerName) ? "You died" : "You were killed by " + killerName;
+        deathText = string.IsNullOrEmpty(killerName) ? "You killed yourself" : "You were killed by " + killerName;
         deathUntil = Time.unscaledTime + 3.5f;
         RefreshBanner();
+    }
+
+    public void ShowSuicide()
+    {
+        ShowDeath(null);
     }
 
     void RefreshHealth()
@@ -298,6 +303,7 @@ public class Hd2Hud : MonoBehaviour
     {
         if (!dominationReady)
         {
+            bool shootout = Hd2Shootout.Present;
             var all = Hd2TeamButton.All;
             for (int i = 0; i < all.Count; i++)
             {
@@ -312,11 +318,11 @@ public class Hd2Hud : MonoBehaviour
                     buttonC = point;
             }
 
-            if (buttonA == null && buttonB == null && buttonC == null)
+            if (!shootout && buttonA == null && buttonB == null && buttonC == null)
                 return;
 
             Transform parent = view != null ? view : transform;
-            if (!Hd2ControlPoint.Present)
+            if (!shootout && !Hd2ControlPoint.Present)
             {
                 if (buttonA != null)
                     pointA = MakePoint(parent, new Vector3(-0.40f, -0.145f, 0.9f), "A");
@@ -333,7 +339,7 @@ public class Hd2Hud : MonoBehaviour
             clockReadout = MakePoint(parent, new Vector3(-0.33f, -0.09f, 0.9f), "MatchClock");
             clockReadout.color = Color.white;
             clockReadout.characterSize = 0.0032f;
-            clockReadout.text = clocks[900];
+            clockReadout.text = clocks[Hd2Shootout.Present ? 600 : 900];
             dominationReady = true;
             ApplyPlacement();
         }
@@ -348,32 +354,36 @@ public class Hd2Hud : MonoBehaviour
         if (!dominationReady || clockReadout == null)
             return;
 
+        bool shootout = Hd2Shootout.Present;
         bool control = Hd2ControlPoint.Present;
-        int red = control ? Hd2ControlPoint.RedPoints : Hd2Domination.RedPoints;
-        int blue = control ? Hd2ControlPoint.BluePoints : Hd2Domination.BluePoints;
-        int cap = control ? Hd2ControlPoint.PointsToWin : 3;
-        if (red < 0)
-            red = 0;
-        if (red > cap)
-            red = cap;
-        if (blue < 0)
-            blue = 0;
-        if (blue > cap)
-            blue = cap;
-        float left = control ? Hd2ControlPoint.TimeLeft : Hd2Domination.TimeLeft;
+        int red = shootout ? Hd2Shootout.RedKills : control ? Hd2ControlPoint.RedPoints : Hd2Domination.RedPoints;
+        int blue = shootout ? Hd2Shootout.BlueKills : control ? Hd2ControlPoint.BluePoints : Hd2Domination.BluePoints;
+        if (!shootout)
+        {
+            int cap = control ? Hd2ControlPoint.PointsToWin : 3;
+            if (red < 0)
+                red = 0;
+            if (red > cap)
+                red = cap;
+            if (blue < 0)
+                blue = 0;
+            if (blue > cap)
+                blue = cap;
+        }
+        float left = shootout ? Hd2Shootout.TimeLeft : control ? Hd2ControlPoint.TimeLeft : Hd2Domination.TimeLeft;
         int second = left <= 0f ? 0 : Mathf.CeilToInt(left);
         if (second > 900)
             second = 900;
         if (red != shownRed)
         {
             shownRed = red;
-            redScore.text = control ? ControlLine(true, red) : redLines[red];
+            redScore.text = shootout ? "Red " + red : control ? ControlLine(true, red) : redLines[red];
         }
 
         if (blue != shownBlue)
         {
             shownBlue = blue;
-            blueScore.text = control ? ControlLine(false, blue) : blueLines[blue];
+            blueScore.text = shootout ? "Blue " + blue : control ? ControlLine(false, blue) : blueLines[blue];
         }
 
         if (second != shownClock)

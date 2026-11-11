@@ -7,8 +7,7 @@ using UnityEngine.Rendering;
 /// </summary>
 public class Hd2ScoreBoard : MonoBehaviour
 {
-    static readonly Color Blue = new Color(0.35f, 0.62f, 1f, 1f);
-    static readonly Color Red = new Color(0.92f, 0.16f, 0.12f, 1f);
+    const float Fill = 0.9f;
     static string[] numbers;
     static Vector3 arenaCenter;
     static bool hasCenter;
@@ -28,9 +27,8 @@ public class Hd2ScoreBoard : MonoBehaviour
         if (!Application.isPlaying)
             return;
 
-        bool control = Hd2ControlPoint.Present;
-        int blueScore = control ? Hd2ControlPoint.BluePoints : Hd2Domination.BluePoints;
-        int redScore = control ? Hd2ControlPoint.RedPoints : Hd2Domination.RedPoints;
+        int blueScore = BlueScore();
+        int redScore = RedScore();
         if (blueScore == shownBlue && redScore == shownRed)
             return;
 
@@ -60,13 +58,17 @@ public class Hd2ScoreBoard : MonoBehaviour
         boardUp.Normalize();
         // Viewed from the arena center, +boardRight is the viewer's left.
         Vector3 boardRight = Vector3.Cross(boardUp, face).normalized;
+        BoardSpan(boardUp, boardRight, out float height, out float width);
 
         Collider[] colliders = GetComponents<Collider>();
         for (int i = 0; i < colliders.Length; i++)
             colliders[i].enabled = false;
 
-        blue = Place("BlueScore", Blue, face, boardUp, boardRight * 1.22f);
-        red = Place("RedScore", Red, face, boardUp, -boardRight * 1.22f);
+        float gap = width * 0.25f;
+        blue = Place("BlueScore", Hd2Locomotion.BlueArmor, face, boardUp, boardRight * gap);
+        red = Place("RedScore", Hd2Locomotion.RedArmor, face, boardUp, -boardRight * gap);
+        Fit(blue, height * Fill, width * 0.46f);
+        Fit(red, height * Fill, width * 0.46f);
         if (blue != null)
             blue.text = Number(0);
         if (red != null)
@@ -100,8 +102,8 @@ public class Hd2ScoreBoard : MonoBehaviour
         if (text == null)
             text = go.AddComponent<TextMesh>();
         text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 96;
-        text.characterSize = 0.12f;
+        text.fontSize = 128;
+        text.characterSize = 0.1f;
         text.anchor = TextAnchor.MiddleCenter;
         text.alignment = TextAlignment.Center;
         text.color = color;
@@ -115,6 +117,65 @@ public class Hd2ScoreBoard : MonoBehaviour
         }
 
         return text;
+    }
+
+    static int BlueScore()
+    {
+        if (Hd2Shootout.Present)
+            return Hd2Shootout.BlueKills;
+        if (Hd2ControlPoint.Present)
+            return Hd2ControlPoint.BluePoints;
+        return Hd2Domination.BluePoints;
+    }
+
+    static int RedScore()
+    {
+        if (Hd2Shootout.Present)
+            return Hd2Shootout.RedKills;
+        if (Hd2ControlPoint.Present)
+            return Hd2ControlPoint.RedPoints;
+        return Hd2Domination.RedPoints;
+    }
+
+    void BoardSpan(Vector3 boardUp, Vector3 boardRight, out float height, out float width)
+    {
+        Vector3 alongX = transform.TransformVector(Vector3.right * 10f);
+        Vector3 alongZ = transform.TransformVector(Vector3.forward * 10f);
+        height = Mathf.Abs(Vector3.Dot(alongX, boardUp)) + Mathf.Abs(Vector3.Dot(alongZ, boardUp));
+        width = Mathf.Abs(Vector3.Dot(alongX, boardRight)) + Mathf.Abs(Vector3.Dot(alongZ, boardRight));
+        if (height < 0.2f)
+            height = 4f;
+        if (width < 0.2f)
+            width = 10f;
+    }
+
+    static void Fit(TextMesh text, float targetHeight, float maxWidth)
+    {
+        if (text == null)
+            return;
+
+        text.text = "8";
+        if (text.font != null)
+            text.font.RequestCharactersInTexture("0123456789", text.fontSize, FontStyle.Normal);
+        MeshRenderer renderer = text.GetComponent<MeshRenderer>();
+        if (renderer == null)
+            return;
+
+        float glyph = renderer.bounds.size.y;
+        if (glyph < 0.001f)
+        {
+            text.characterSize = targetHeight * 10f / Mathf.Max(1, text.fontSize);
+            text.text = "0";
+            return;
+        }
+
+        float factor = targetHeight / glyph;
+        text.transform.localScale *= factor;
+        text.text = "88";
+        float wide = Mathf.Max(renderer.bounds.size.x, renderer.bounds.size.z);
+        if (wide > maxWidth && wide > 0.001f)
+            text.transform.localScale *= maxWidth / wide;
+        text.text = "0";
     }
 
     static void CacheCenter()

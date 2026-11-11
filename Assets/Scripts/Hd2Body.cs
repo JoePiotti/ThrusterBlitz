@@ -414,6 +414,9 @@ public class Hd2Body : MonoBehaviour
         else
             stride.Normalize();
 
+        float sideShare = speed > 0.01f ? Mathf.Clamp01(Mathf.Abs(strafe) / speed) : 0f;
+        stride *= Mathf.Lerp(1f, 1.85f, sideShare);
+
         gait += (backward ? -speed : speed) * walkStepRate * Time.deltaTime;
         stepStride = stride;
         return true;
@@ -803,6 +806,29 @@ public class Hd2Body : MonoBehaviour
         PlaceHandOnGun(hand, target);
     }
 
+    /// <summary>
+    /// World height of the lower foot. Crouching drops the body root under the floor
+    /// so the head stays with the headset, and the feet stay up here.
+    /// </summary>
+    public float SoleHeight()
+    {
+        float y = body != null ? body.position.y : transform.position.y;
+        bool any = false;
+        ConsiderSole(footL, ref y, ref any);
+        ConsiderSole(footR, ref y, ref any);
+        ConsiderSole(toeL, ref y, ref any);
+        ConsiderSole(toeR, ref y, ref any);
+        return y;
+    }
+
+    static void ConsiderSole(Transform bone, ref float y, ref bool any)
+    {
+        if (bone == null)
+            return;
+        y = any ? Mathf.Min(y, bone.position.y) : bone.position.y;
+        any = true;
+    }
+
     float CrouchAmount()
     {
         if (locomotion == null)
@@ -1068,7 +1094,7 @@ public class Hd2Body : MonoBehaviour
         for (int i = 0; i < renderers.Length; i++)
         {
             Renderer renderer = renderers[i];
-            if (renderer == null || renderer is ParticleSystemRenderer)
+            if (SkipArmorTint(renderer))
                 continue;
             if (renderer.gameObject.name == "Head" || renderer.gameObject.name == "Neck")
                 continue;
@@ -1089,6 +1115,30 @@ public class Hd2Body : MonoBehaviour
                     material.SetColor("_Color", color);
             }
         }
+    }
+
+    /// Guns and beams keep their own colors. Armor tint was turning the laser pointer brown.
+    public static bool SkipArmorTint(Renderer renderer)
+    {
+        if (renderer == null || renderer is ParticleSystemRenderer || renderer is LineRenderer)
+            return true;
+
+        Transform node = renderer.transform;
+        while (node != null)
+        {
+            if (node.GetComponent<Hd2Pistol>() != null
+                || node.GetComponent<Hd2LaserPistol>() != null
+                || node.GetComponent<Hd2Smg>() != null
+                || node.GetComponent<Hd2Shotgun>() != null
+                || node.GetComponent<Hd2Shocks>() != null
+                || node.GetComponent<Hd2RocketLauncher>() != null
+                || node.GetComponent<Hd2BurstPistol>() != null
+                || node.GetComponent<Hd2MuzzleFlash>() != null)
+                return true;
+            node = node.parent;
+        }
+
+        return false;
     }
 
     void HideHeadFromInside()
@@ -1414,9 +1464,6 @@ public class Hd2Body : MonoBehaviour
             return PistolWrist(target, gun);
         }
 
-        if (gun.GetComponent<Hd2LaserPistol>() != null)
-            return PistolWrist(target, gun);
-
         if (gun.GetComponent<Hd2Smg>() != null)
             return SmgWrist(target, gun);
 
@@ -1475,7 +1522,9 @@ public class Hd2Body : MonoBehaviour
 
     static bool UsesWristMarker(Transform gun)
     {
-        return gun.GetComponent<Hd2Pistol>() != null || gun.GetComponent<Hd2Shocks>() != null;
+        return gun.GetComponent<Hd2Pistol>() != null
+            || gun.GetComponent<Hd2Shocks>() != null
+            || gun.GetComponent<Hd2LaserPistol>() != null;
     }
 
     void AimHandAtWrist(Transform hand, Transform marker)

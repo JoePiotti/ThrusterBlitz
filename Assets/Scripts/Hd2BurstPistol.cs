@@ -214,6 +214,9 @@ public class Hd2BurstPistol : MonoBehaviour
     {
         if (Time.time < nextFireTime)
             return;
+        Transform barrel = muzzle != null ? muzzle : transform;
+        if (Hd2Locomotion.ShotBlocked(this, barrel.position))
+            return;
 
         rounds--;
         RefreshAmmo();

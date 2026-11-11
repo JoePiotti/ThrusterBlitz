@@ -329,6 +329,9 @@ public class Hd2Pistol : MonoBehaviour
             return;
         if (Time.time < nextFireTime)
             return;
+        Transform barrel = muzzle != null ? muzzle : transform;
+        if (Hd2Locomotion.ShotBlocked(this, barrel.position))
+            return;
 
         int cost = charged ? Mathf.Min(Mathf.Max(1, chargedAmmoCost), rounds) : 1;
         rounds -= cost;
@@ -456,7 +459,7 @@ public class Hd2Pistol : MonoBehaviour
         if (clip == null)
             clip = shotClip;
         if (clip != null)
-            shotSource.PlayOneShot(clip, charged ? 1f : 0.9f);
+            shotSource.PlayOneShot(clip, charged ? 1f : 0.72f);
     }
 
     void SpawnShot(bool charged)

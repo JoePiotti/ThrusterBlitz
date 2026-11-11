@@ -199,6 +199,9 @@ public class Hd2RocketLauncher : MonoBehaviour
 
         if (!chambering && Time.time >= nextShotTime && aiming && full && !firedThisPull)
         {
+            if (Hd2Locomotion.ShotBlocked(this, origin))
+                return;
+
             firedThisPull = true;
             nextShotTime = Time.time + Mathf.Max(0.05f, shotInterval);
             Fire(origin, direction, point);
@@ -650,16 +653,20 @@ public class Hd2RocketLauncher : MonoBehaviour
     bool AimPoint(Vector3 origin, Vector3 direction, out Vector3 point)
     {
         point = origin + direction * 80f;
-        int count = Physics.RaycastNonAlloc(origin, direction, aimHits, 200f, ~0, QueryTriggerInteraction.Ignore);
+        int count = Hd2PayloadShield.Cast(origin, direction, aimHits, 200f);
         float best = float.MaxValue;
         bool found = false;
         Transform owner = Hd2SpawnField.FighterBody(this);
         for (int i = 0; i < count; i++)
         {
+            if (Hd2PayloadShield.SkipBackface(aimHits[i], direction))
+                continue;
             Collider collider = aimHits[i].collider;
             if (collider == null)
                 continue;
             if (collider.transform.IsChildOf(transform) || collider.transform.IsChildOf(owner))
+                continue;
+            if (Hd2NoJump.Passes(collider))
                 continue;
             if (aimHits[i].distance >= best)
                 continue;

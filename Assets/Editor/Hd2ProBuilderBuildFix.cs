@@ -5,8 +5,8 @@ using UnityEngine;
 using UnityEngine.ProBuilder;
 
 /// <summary>
-/// ProBuilder's build step rebuilds every mesh, then crashes when one has no faces.
-/// Repair those meshes first and keep the mesh that is already saved on the object.
+/// ProBuilder's build step rebuilds every mesh, then crashes on an empty shape or a mesh with no faces.
+/// Drop unsaved shape-tool objects first, repair the rest, and keep the mesh that is already saved.
 /// </summary>
 static class Hd2ProBuilderBuildFix
 {
@@ -16,6 +16,7 @@ static class Hd2ProBuilderBuildFix
         var versionField = typeof(ProBuilderMesh).GetField("m_MeshFormatVersion", BindingFlags.Instance | BindingFlags.NonPublic);
         var facesField = typeof(ProBuilderMesh).GetField("m_Faces", BindingFlags.Instance | BindingFlags.NonPublic);
         var positionsField = typeof(ProBuilderMesh).GetField("m_Positions", BindingFlags.Instance | BindingFlags.NonPublic);
+        var sharedField = typeof(ProBuilderMesh).GetField("m_SharedVertices", BindingFlags.Instance | BindingFlags.NonPublic);
         var meshes = Resources.FindObjectsOfTypeAll<ProBuilderMesh>();
         for (int i = 0; i < meshes.Length; i++)
         {
@@ -23,10 +24,20 @@ static class Hd2ProBuilderBuildFix
             if (mesh == null || EditorUtility.IsPersistent(mesh))
                 continue;
 
+            // The shape tool leaves a hidden Shape object with no scene and no vertices.
+            // ProBuilder rebuilds it during the build and crashes on the missing shared vertices.
+            if (IsScratchShape(mesh))
+            {
+                Debug.LogWarning("Removed an unsaved ProBuilder shape so the build can finish.");
+                Object.DestroyImmediate(mesh.gameObject);
+                continue;
+            }
+
             int version = versionField != null ? (int)versionField.GetValue(mesh) : 2;
             bool facesMissing = facesField != null && facesField.GetValue(mesh) == null;
+            bool sharedMissing = sharedField != null && sharedField.GetValue(mesh) == null;
             MeshRenderer renderer = mesh.GetComponent<MeshRenderer>();
-            if (version >= 2 && !facesMissing && renderer != null && renderer.sharedMaterials != null && renderer.sharedMaterials.Length > 0)
+            if (version >= 2 && !facesMissing && !sharedMissing && renderer != null && renderer.sharedMaterials != null && renderer.sharedMaterials.Length > 0)
                 continue;
 
             MeshFilter filter = mesh.GetComponent<MeshFilter>();
@@ -61,8 +72,24 @@ static class Hd2ProBuilderBuildFix
                 facesField.SetValue(mesh, System.Array.Empty<Face>());
             if (positionsField != null && positionsField.GetValue(mesh) == null)
                 positionsField.SetValue(mesh, System.Array.Empty<Vector3>());
+            if (sharedMissing)
+            {
+                Vector3[] positions = positionsField != null ? positionsField.GetValue(mesh) as Vector3[] : null;
+                if (positions != null && positions.Length > 0)
+                    mesh.sharedVertices = SharedVertex.GetSharedVerticesWithPositions(positions);
+                else
+                    sharedField.SetValue(mesh, System.Array.Empty<SharedVertex>());
+            }
             if (version < 2 && versionField != null)
                 versionField.SetValue(mesh, 2);
         }
+    }
+
+    static bool IsScratchShape(ProBuilderMesh mesh)
+    {
+        GameObject gameObject = mesh.gameObject;
+        if ((gameObject.hideFlags & HideFlags.DontSave) == 0)
+            return false;
+        return !gameObject.scene.IsValid();
     }
 }

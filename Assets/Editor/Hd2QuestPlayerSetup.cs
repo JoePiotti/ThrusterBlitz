@@ -17,7 +17,7 @@ public static class Hd2QuestPlayerSetup
     static void EnsureTitleStarts()
     {
         const string title = "Assets/Scenes/Title.unity";
-        const string rome = "Assets/Scenes/Rome.unity";
+        const string shootout = "Assets/Scenes/Shootout.unity";
         var titleAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>(title);
         if (titleAsset != null && EditorSceneManager.playModeStartScene != titleAsset)
             EditorSceneManager.playModeStartScene = titleAsset;
@@ -27,18 +27,18 @@ public static class Hd2QuestPlayerSetup
             && scenes[0].enabled
             && scenes[0].path == title
             && scenes[1].enabled
-            && scenes[1].path == rome;
+            && scenes[1].path == shootout;
         if (titleFirst)
             return;
 
         var next = new System.Collections.Generic.List<EditorBuildSettingsScene>
         {
             new EditorBuildSettingsScene(title, true),
-            new EditorBuildSettingsScene(rome, true)
+            new EditorBuildSettingsScene(shootout, true)
         };
         for (int i = 0; i < scenes.Length; i++)
         {
-            if (scenes[i].path == title || scenes[i].path == rome)
+            if (scenes[i].path == title || scenes[i].path == shootout)
                 continue;
             next.Add(scenes[i]);
         }
@@ -62,10 +62,8 @@ public static class Hd2QuestPlayerSetup
         EditorBuildSettings.scenes = new[]
         {
             new EditorBuildSettingsScene("Assets/Scenes/Title.unity", true),
-            new EditorBuildSettingsScene("Assets/Scenes/Rome.unity", true),
-            new EditorBuildSettingsScene("Assets/Scenes/Rome CP.unity", true),
-            new EditorBuildSettingsScene("Assets/Scenes/Deathmatch.unity", false),
-            new EditorBuildSettingsScene("Assets/Scenes/Greybox.unity", false)
+            new EditorBuildSettingsScene("Assets/Scenes/Shootout.unity", true),
+            new EditorBuildSettingsScene("Assets/Scenes/Archive/Greybox.unity", true)
         };
         var title = AssetDatabase.LoadAssetAtPath<SceneAsset>("Assets/Scenes/Title.unity");
         if (title != null)

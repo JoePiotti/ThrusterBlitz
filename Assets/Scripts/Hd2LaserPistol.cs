@@ -163,13 +163,32 @@ public class Hd2LaserPistol : MonoBehaviour
         line.startWidth = 1f;
         line.endWidth = 1f;
         line.widthMultiplier = pointerWidth;
-        Shader shader = Shader.Find("Sprites/Default");
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
         if (shader != null)
-            line.material = new Material(shader);
-        line.startColor = BeamColor;
-        line.endColor = BeamColor;
+            line.sharedMaterial = new Material(shader);
+        PaintBeam(line, BeamColor);
         line.enabled = false;
         return line;
+    }
+
+    static void PaintBeam(LineRenderer line, Color color)
+    {
+        if (line == null)
+            return;
+
+        Material material = line.sharedMaterial;
+        bool unlit = material != null && material.shader != null && material.shader.name.IndexOf("Unlit", System.StringComparison.Ordinal) >= 0;
+        Color vertex = unlit ? Color.white : color;
+        line.startColor = vertex;
+        line.endColor = vertex;
+        if (material == null)
+            return;
+        if (material.HasProperty("_BaseColor"))
+            material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color"))
+            material.SetColor("_Color", color);
     }
 
     static void FitScale(Transform line, Transform parent)
@@ -301,6 +320,15 @@ public class Hd2LaserPistol : MonoBehaviour
     {
         StopCharge();
         Vector3 origin = MuzzlePosition();
+        if (Hd2Locomotion.ShotBlocked(this, origin))
+        {
+            if (pointer != null)
+                pointer.enabled = false;
+            phase = Phase.Cooling;
+            phaseEndsAt = Time.time + 0.2f;
+            return;
+        }
+
         Vector3 direction = MuzzleForward();
         Vector3 end = origin + direction * 80f;
         Hd2Health target = null;
@@ -309,7 +337,15 @@ public class Hd2LaserPistol : MonoBehaviour
         {
             end = hit.point;
             if (hit.collider != null)
+            {
                 target = hit.collider.GetComponentInParent<Hd2Health>();
+                var glass = hit.collider.GetComponentInParent<Hd2PayloadShield>();
+                if (glass != null)
+                    glass.PlayHit(hit.point, hit.normal, direction);
+                var shootout = hit.collider.GetComponentInParent<Hd2ShootoutShield>();
+                if (shootout != null)
+                    shootout.PlayHit(hit.point, hit.normal, direction);
+            }
         }
 
         if (pointer != null)
@@ -373,8 +409,7 @@ public class Hd2LaserPistol : MonoBehaviour
         pointer.enabled = true;
         pointer.useWorldSpace = false;
         pointer.widthMultiplier = pointerWidth;
-        pointer.startColor = BeamColor;
-        pointer.endColor = BeamColor;
+        PaintBeam(pointer, BeamColor);
         pointer.SetPosition(0, Vector3.zero);
         pointer.SetPosition(1, new Vector3(0f, 0f, distance));
     }
@@ -387,8 +422,7 @@ public class Hd2LaserPistol : MonoBehaviour
         shot.enabled = true;
         shot.useWorldSpace = true;
         shot.widthMultiplier = pointerWidth * 3f;
-        shot.startColor = BeamColor;
-        shot.endColor = BeamColor;
+        PaintBeam(shot, BeamColor);
         shot.SetPosition(0, origin);
         shot.SetPosition(1, end);
     }
@@ -396,16 +430,23 @@ public class Hd2LaserPistol : MonoBehaviour
     bool Trace(Vector3 origin, Vector3 direction, out RaycastHit closest)
     {
         closest = default;
-        int count = Physics.RaycastNonAlloc(origin, direction, hits, reach, ~0, QueryTriggerInteraction.Ignore);
+        int count = Hd2PayloadShield.Cast(origin, direction, hits, reach);
         float best = float.MaxValue;
         bool found = false;
         Transform owner = Hd2SpawnField.FighterBody(this);
         for (int i = 0; i < count; i++)
         {
+            if (Hd2PayloadShield.SkipBackface(hits[i], direction))
+                continue;
             Collider collider = hits[i].collider;
             if (collider == null)
                 continue;
             if (collider.transform.IsChildOf(transform) || collider.transform.IsChildOf(owner))
+                continue;
+            var field = collider.GetComponentInParent<Hd2SpawnField>();
+            if (field != null && field.ShotPasses(origin))
+                continue;
+            if (Hd2NoJump.Passes(collider))
                 continue;
             if (hits[i].distance >= best)
                 continue;

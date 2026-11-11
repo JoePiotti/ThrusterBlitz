@@ -176,7 +176,8 @@ public class Hd2Shotgun : MonoBehaviour
         if (kick > 0f)
         {
             kick = Mathf.MoveTowards(kick, 0f, kickReturnSpeed * Time.deltaTime);
-            transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
+            // The model is turned 180, so the pistol's upward pitch points this barrel down.
+            transform.localRotation = restLocalRotation * Quaternion.Euler(kick, 0f, 0f);
         }
     }
 
@@ -186,6 +187,8 @@ public class Hd2Shotgun : MonoBehaviour
             return;
 
         Transform origin = muzzle != null ? muzzle : transform;
+        if (Hd2Locomotion.ShotBlocked(this, origin.position))
+            return;
 
         byte pattern = (byte)patternCursor;
         patternCursor = (patternCursor + 1) % PatternCount;

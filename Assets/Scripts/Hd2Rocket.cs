@@ -254,22 +254,39 @@ public class Hd2Rocket : MonoBehaviour
             return false;
 
         Vector3 direction = delta / distance;
-        int count = Physics.RaycastNonAlloc(from, direction, hits, distance, ~0, QueryTriggerInteraction.Ignore);
+        int count = Hd2PayloadShield.Cast(from, direction, hits, distance);
         float best = float.MaxValue;
         bool found = false;
+        Hd2PayloadShield glass = null;
+        Hd2ShootoutShield shootout = null;
+        Vector3 glassNormal = Vector3.up;
         for (int i = 0; i < count; i++)
         {
+            if (Hd2PayloadShield.SkipBackface(hits[i], direction))
+                continue;
             Collider collider = hits[i].collider;
             if (collider == null || Skip(collider))
+                continue;
+            var field = collider.GetComponentInParent<Hd2SpawnField>();
+            if (field != null && field.ShotPasses(from))
+                continue;
+            if (Hd2NoJump.Passes(collider))
                 continue;
             if (hits[i].distance >= best)
                 continue;
             best = hits[i].distance;
             point = hits[i].point;
             struckPlayer = Hd2NearMiss.HitsPlayer(collider);
+            glass = collider.GetComponentInParent<Hd2PayloadShield>();
+            shootout = collider.GetComponentInParent<Hd2ShootoutShield>();
+            glassNormal = hits[i].normal;
             found = true;
         }
 
+        if (glass != null)
+            glass.PlayHit(point, glassNormal, direction);
+        if (shootout != null)
+            shootout.PlayHit(point, glassNormal, direction);
         return found;
     }
 

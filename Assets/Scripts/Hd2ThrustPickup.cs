@@ -30,14 +30,13 @@ public class Hd2ThrustPickup : MonoBehaviour
         SetReady(true);
     }
 
+    void LateUpdate()
+    {
+        Hd2PickupIcon.Face(iconQuad, ring != null ? ring.transform : null);
+    }
+
     void Update()
     {
-        var view = Camera.main;
-        if (iconQuad != null && view != null)
-            iconQuad.rotation = Quaternion.LookRotation(iconQuad.position - view.transform.position);
-        if (ring != null && view != null)
-            ring.transform.rotation = Quaternion.LookRotation(ring.transform.position - view.transform.position);
-
         if (!ready)
         {
             cooldownLeft -= Time.deltaTime;

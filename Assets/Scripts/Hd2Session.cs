@@ -93,7 +93,7 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
 
         if (mode == GameMode.Server)
         {
-            int index = SceneUtility.GetBuildIndexByScenePath("Assets/Scenes/Greybox.unity");
+            int index = SceneUtility.GetBuildIndexByScenePath("Assets/Scenes/Archive/Greybox.unity");
             if (index < 0)
             {
                 Debug.LogError("Hd2 Greybox is not in the build.");
@@ -178,6 +178,47 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log("Hd2 player left " + player.PlayerId);
+        if (runner == null || !runner.IsServer)
+            return;
+
+        int remaining = 0;
+        foreach (PlayerRef connected in runner.ActivePlayers)
+        {
+            if (connected != player)
+                remaining++;
+        }
+
+        if (remaining == 0)
+            Close();
+    }
+
+    public static void CloseRoom()
+    {
+        var session = FindFirstObjectByType<Hd2Session>();
+        if (session != null)
+            session.Close();
+        else if (!IsServerProcess())
+            SceneManager.LoadScene("Title");
+    }
+
+    bool closing;
+
+    public void Close()
+    {
+        if (closing)
+            return;
+        closing = true;
+        if (runner != null && runner.IsRunning)
+            runner.Shutdown();
+        if (IsServerProcess())
+        {
+#if !UNITY_EDITOR
+            Application.Quit();
+#endif
+            return;
+        }
+
+        SceneManager.LoadScene("Title");
     }
 
     public void OnSceneLoadDone(NetworkRunner runner)

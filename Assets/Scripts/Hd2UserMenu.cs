@@ -461,7 +461,7 @@ public class Hd2UserMenu : MonoBehaviour
             return;
 
         var move = GetComponent<Hd2Locomotion>();
-        bool show = move != null && move.OtherTeamHasBot();
+        bool show = move != null && move.CanSwitchTeam();
         if (switchTeams.gameObject.activeSelf != show)
             switchTeams.gameObject.SetActive(show);
     }
@@ -469,7 +469,7 @@ public class Hd2UserMenu : MonoBehaviour
     void SwitchTeams()
     {
         var move = GetComponent<Hd2Locomotion>();
-        if (move == null || !move.OtherTeamHasBot())
+        if (move == null || !move.CanSwitchTeam())
             return;
 
         SetOpen(false);
