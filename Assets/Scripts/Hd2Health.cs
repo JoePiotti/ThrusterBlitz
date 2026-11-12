@@ -300,7 +300,7 @@ public class Hd2Health : MonoBehaviour
         }
 
         transform.SetPositionAndRotation(pos, rot);
-        if (GetComponent<Hd2Locomotion>() != null)
+        if (locomotion != null)
             Hd2TeleportArrive.Play(pos);
     }
 

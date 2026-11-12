@@ -7,7 +7,7 @@ using UnityEngine;
 [InitializeOnLoad]
 public static class Hd2RocketPickupSetup
 {
-    const string ModelPath = "Assets/Prefabs/GripRocket.prefab";
+    const string ModelPath = "Assets/Prefabs/GripWeapons/GripRocket.prefab";
     const string PrefabPath = "Assets/Prefabs/Pickups/RocketPickup.prefab";
 
     static Hd2RocketPickupSetup()

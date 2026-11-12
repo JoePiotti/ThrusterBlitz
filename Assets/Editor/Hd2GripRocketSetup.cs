@@ -10,7 +10,7 @@ using UnityEngine;
 public static class Hd2GripRocketSetup
 {
     const string ModelPath = "Assets/Models/Rocket/GripRocket.fbx";
-    const string PrefabPath = "Assets/Prefabs/GripRocket.prefab";
+    const string PrefabPath = "Assets/Prefabs/GripWeapons/GripRocket.prefab";
 
     static Hd2GripRocketSetup()
     {
@@ -29,7 +29,7 @@ public static class Hd2GripRocketSetup
             return;
 
         string full = Path.GetFullPath(PrefabPath);
-        bool nested = File.Exists(full) && File.ReadAllText(full).Contains("PrefabInstance:");
+        bool nested = File.Exists(full) && File.ReadAllText(full).Contains("!u!1001");
         if (AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) != null && !nested)
             return;
 

@@ -2007,9 +2007,8 @@ public class Hd2EnemyBot : MonoBehaviour
             Vector3 shoulder = upper.position;
             float extra = pistol ? (bone == handR ? tipReachR : tipReachL) : 0f;
             Vector3 wrist = aim + transform.right * side - dir * extra;
-            Vector3 reach = wrist - shoulder;
-            if (reach.sqrMagnitude > 0.01f)
-                PoseArm(upper, fore, bone, shoulder + reach.normalized * Mathf.Min(reach.magnitude, 0.62f));
+            if ((wrist - shoulder).sqrMagnitude > 0.01f)
+                PoseArm(upper, fore, bone, wrist, side);
         }
 
         if (pistol)
@@ -3719,18 +3718,52 @@ public class Hd2EnemyBot : MonoBehaviour
         AimBone(fore, along, Vector3.down + transform.forward * 0.08f);
     }
 
-    void PoseArm(Transform upper, Transform fore, Transform hand, Vector3 reach)
+    void PoseArm(Transform upper, Transform fore, Transform hand, Vector3 reach, float side)
     {
         if (upper == null || fore == null)
             return;
-        Vector3 from = fore.position - upper.position;
-        Vector3 toShoulder = reach - upper.position;
-        AimBone(upper, from, toShoulder.sqrMagnitude > 0.0001f ? toShoulder : transform.forward);
+
+        float upperLength = Vector3.Distance(upper.position, fore.position);
+        float foreLength = hand != null ? Vector3.Distance(fore.position, hand.position) : upperLength * 0.9f;
+        if (upperLength < 0.02f)
+            upperLength = 0.25f;
+        if (foreLength < 0.02f)
+            foreLength = 0.22f;
+
+        Vector3 shoulder = upper.position;
+        Vector3 to = reach - shoulder;
+        if (to.sqrMagnitude < 0.0001f)
+            to = transform.forward;
+        // A little short of a straight arm, and a few centimeters toward the chest.
+        float full = upperLength + foreLength;
+        Vector3 direction = to.normalized;
+        Vector3 inward = transform.position - shoulder;
+        inward.y = 0f;
+        if (inward.sqrMagnitude > 0.0001f)
+            direction = (direction + inward.normalized * 0.18f).normalized;
+        Vector3 wrist = shoulder + direction * (full * 0.88f);
+
+        float sideSign = side < 0f ? -1f : 1f;
+        Vector3 pole = shoulder + transform.right * sideSign * 0.35f - transform.up * 0.12f;
+        Vector3 bend = Vector3.Cross(direction, pole - shoulder);
+        if (bend.sqrMagnitude < 0.0001f)
+            bend = Vector3.Cross(direction, transform.up);
+        Vector3 poleDirection = Vector3.Cross(bend, direction).normalized;
+        float distance = Vector3.Distance(shoulder, wrist);
+        float cosShoulder = Mathf.Clamp(
+            (upperLength * upperLength + distance * distance - foreLength * foreLength)
+            / (2f * upperLength * Mathf.Max(0.01f, distance)),
+            -1f,
+            1f);
+        float sinShoulder = Mathf.Sqrt(Mathf.Max(0f, 1f - cosShoulder * cosShoulder));
+        Vector3 elbow = shoulder + direction * (upperLength * cosShoulder) + poleDirection * (upperLength * sinShoulder);
+        if (Vector3.Dot(elbow - shoulder, pole - shoulder) < 0f)
+            elbow = shoulder + direction * (upperLength * cosShoulder) - poleDirection * (upperLength * sinShoulder);
+
+        AimBone(upper, fore.position - upper.position, elbow - shoulder);
         if (hand == null)
             return;
-        Vector3 along = hand.position - fore.position;
-        Vector3 toHand = reach - fore.position;
-        AimBone(fore, along, toHand.sqrMagnitude > 0.0001f ? toHand : transform.forward);
+        AimBone(fore, hand.position - fore.position, wrist - fore.position);
     }
 
     void DrownIfOnWater()

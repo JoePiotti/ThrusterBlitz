@@ -787,7 +787,7 @@ public class Hd2RocketLauncher : MonoBehaviour
         var lineObject = new GameObject("LaserBeam");
         lineObject.transform.SetParent(transform, false);
         laser = lineObject.AddComponent<LineRenderer>();
-        laser.useWorldSpace = true;
+        laser.useWorldSpace = false;
         laser.positionCount = 2;
         laser.widthMultiplier = 0.003f;
         laser.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -828,6 +828,20 @@ public class Hd2RocketLauncher : MonoBehaviour
         const float beamLength = 0.15f;
         if (laser != null)
         {
+            Transform anchor = laserSight != null ? laserSight : transform;
+            if (laser.transform.parent != anchor)
+            {
+                laser.transform.SetParent(anchor, false);
+                laser.transform.localPosition = Vector3.zero;
+                laser.transform.localRotation = Quaternion.identity;
+            }
+
+            Vector3 scale = anchor.lossyScale;
+            laser.transform.localScale = new Vector3(
+                1f / Mathf.Max(0.0001f, scale.x),
+                1f / Mathf.Max(0.0001f, scale.y),
+                1f / Mathf.Max(0.0001f, scale.z));
+            laser.useWorldSpace = false;
             laser.enabled = on;
             if (on)
             {
@@ -839,8 +853,8 @@ public class Hd2RocketLauncher : MonoBehaviour
                         end = point;
                 }
 
-                laser.SetPosition(0, origin);
-                laser.SetPosition(1, end);
+                laser.SetPosition(0, laser.transform.InverseTransformPoint(origin));
+                laser.SetPosition(1, laser.transform.InverseTransformPoint(end));
             }
         }
 

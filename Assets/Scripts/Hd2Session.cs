@@ -8,7 +8,7 @@ using UnityEngine.InputSystem.XR;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// One Fusion server room named hd2-test. The server loads Greybox and spawns a capsule
+/// One Fusion server room named hd2-test. The server loads Shootout and spawns a capsule
 /// for each joined player. Clients only render that room.
 /// </summary>
 public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
@@ -93,10 +93,10 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
 
         if (mode == GameMode.Server)
         {
-            int index = SceneUtility.GetBuildIndexByScenePath("Assets/Scenes/Archive/Greybox.unity");
+            int index = SceneUtility.GetBuildIndexByScenePath("Assets/Scenes/Shootout.unity");
             if (index < 0)
             {
-                Debug.LogError("Hd2 Greybox is not in the build.");
+                Debug.LogError("Hd2 Shootout is not in the build.");
                 return;
             }
 

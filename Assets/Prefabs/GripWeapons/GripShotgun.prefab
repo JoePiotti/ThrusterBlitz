@@ -1011,7 +1011,7 @@ SkinnedMeshRenderer:
   m_Quality: 1
   m_UpdateWhenOffscreen: 1
   m_SkinnedMotionVectors: 1
-  m_Mesh: {fileID: 4300000, guid: 44d8f020779e2bc4182e2d1ea7101465, type: 2}
+  m_Mesh: {fileID: 4300000, guid: db6e4232d2ec09b4180ae2b49eef104d, type: 2}
   m_Bones:
   - {fileID: 6185518025469872846}
   - {fileID: 8108128922703158530}
@@ -1037,9 +1037,9 @@ SkinnedMeshRenderer:
   m_BlendShapeWeights: []
   m_RootBone: {fileID: 6185518025469872846}
   m_AABB:
-    m_Center: {x: 0, y: 0, z: 0}
-    m_Extent: {x: 0, y: 0, z: 0}
-  m_DirtyAABB: 1
+    m_Center: {x: -0.34876823, y: -0.047368675, z: 0.28621766}
+    m_Extent: {x: 0.24330813, y: 0.17247072, z: 0.19690062}
+  m_DirtyAABB: 0
 --- !u!1 &2197396138683623658
 GameObject:
   m_ObjectHideFlags: 0
@@ -2402,13 +2402,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4481651080884899919}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.5865843, y: 0, z: 0, w: 0.8098882}
+  m_LocalRotation: {x: 0.8379092, y: 0, z: 0, w: 0.54580957}
   m_LocalPosition: {x: 0.0004, y: -0.1118, z: -0.174}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 4280015963128701768}
-  m_LocalEulerAnglesHint: {x: -71.83, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 113.84, y: 0, z: 0}
 --- !u!1 &4633277163689283394
 GameObject:
   m_ObjectHideFlags: 0
@@ -2700,13 +2700,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5126021398408182484}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.25626236, y: 0.0000000037252903, z: -0.0000000018626451, w: 0.96660733}
+  m_LocalRotation: {x: 0.49770695, y: 0.000000008381903, z: 0.000000006519258, w: 0.86734533}
   m_LocalPosition: {x: 0.0055, y: 0.0127, z: -0.0532}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 4280015963128701768}
-  m_LocalEulerAnglesHint: {x: 29.697, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 59.697, y: 0, z: 0}
 --- !u!1 &5706551600605012421
 GameObject:
   m_ObjectHideFlags: 0

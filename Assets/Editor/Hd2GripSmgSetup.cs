@@ -68,7 +68,7 @@ public class Hd2GripSmgImporter : AssetPostprocessor
 public static class Hd2GripSmgSetup
 {
     public const string ModelPath = "Assets/Models/SMG/GripSmg.fbx";
-    public const string PrefabPath = "Assets/Prefabs/GripSmg.prefab";
+    public const string PrefabPath = "Assets/Prefabs/GripWeapons/GripSmg.prefab";
 
     static Hd2GripSmgSetup()
     {
@@ -94,7 +94,7 @@ public static class Hd2GripSmgSetup
         }
 
         string full = Path.GetFullPath(PrefabPath);
-        bool nested = File.Exists(full) && File.ReadAllText(full).Contains("PrefabInstance:");
+        bool nested = File.Exists(full) && File.ReadAllText(full).Contains("!u!1001");
         if (AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) != null && !nested)
             return;
 

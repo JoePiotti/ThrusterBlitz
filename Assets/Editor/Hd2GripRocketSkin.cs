@@ -12,7 +12,7 @@ using UnityEngine.Rendering;
 [InitializeOnLoad]
 public static class Hd2GripRocketSkin
 {
-    const string PrefabPath = "Assets/Prefabs/GripRocket.prefab";
+    const string PrefabPath = "Assets/Prefabs/GripWeapons/GripRocket.prefab";
     const string TextureFolder = "Assets/Models/Rocket/Textures";
     const string MaterialFolder = "Assets/Models/Rocket/Materials";
     const string MeshFolder = "Assets/Models/Rocket";

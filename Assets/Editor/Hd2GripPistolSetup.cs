@@ -90,7 +90,7 @@ public static class Hd2GripPistolSetup
     public const string LeftPath = "Assets/Models/Pistol/GripPistolLeft.fbx";
     public const string RightPath = "Assets/Models/Pistol/GripPistolRight.fbx";
     public const string GripPath = "Assets/Models/Pistol/GripPistol.fbx";
-    public const string PrefabPath = "Assets/Prefabs/GripPistol.prefab";
+    public const string PrefabPath = "Assets/Prefabs/GripWeapons/GripPistol.prefab";
     public const string ColorPath = "Assets/Models/Pistol/GripPistol_BaseColor.png";
     public const string TriggerColorPath = "Assets/Models/Pistol/GripPistol_Trigger_BaseColor.png";
     public const string MaterialPath = "Assets/Models/Pistol/GripPistol.mat";
@@ -195,7 +195,7 @@ public static class Hd2GripPistolSetup
             return;
 
         string full = Path.GetFullPath(PrefabPath);
-        bool nested = File.Exists(full) && File.ReadAllText(full).Contains("PrefabInstance:");
+        bool nested = File.Exists(full) && File.ReadAllText(full).Contains("!u!1001");
         if (AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) != null && !nested)
             return;
 

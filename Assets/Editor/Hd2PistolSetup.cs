@@ -9,7 +9,7 @@ using UnityEngine;
 [InitializeOnLoad]
 public static class Hd2PistolSetup
 {
-    const string GripPrefabPath = "Assets/Prefabs/GripPistol.prefab";
+    const string GripPrefabPath = "Assets/Prefabs/GripWeapons/GripPistol.prefab";
     const string GripMaterialPath = "Assets/Models/Pistol/GripPistol.mat";
     const string PrefabPath = "Assets/Prefabs/VRPlayer.prefab";
     const string ScenePath = "Assets/Scenes/Greybox.unity";

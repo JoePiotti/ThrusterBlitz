@@ -9,7 +9,7 @@ using UnityEngine;
 public static class Hd2SmgPickupSetup
 {
     const string ModelPath = "Assets/Models/SMG/Smg.fbx";
-    const string GripPath = "Assets/Prefabs/GripSmg.prefab";
+    const string GripPath = "Assets/Prefabs/GripWeapons/GripSmg.prefab";
     const string PrefabPath = "Assets/Prefabs/Pickups/SmgPickup.prefab";
 
     static Hd2SmgPickupSetup()

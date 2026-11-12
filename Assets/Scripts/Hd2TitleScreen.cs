@@ -345,6 +345,7 @@ public class Hd2TitleScreen : MonoBehaviour
         choices = new Choice[2];
         choices[0] = BuildChoice("SHOOTOUT", "Shootout", first, new Color(0.55f, 0.12f, 0.1f, 1f), new Color(1f, 0.42f, 0.28f, 1f));
         choices[1] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, second, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
+        BuildVersionLabel(second + new Vector3(0f, -0.32f, -0.04f));
 
         if (view != null && view.transform.position.sqrMagnitude < 0.01f)
             view.transform.position = new Vector3(0f, 1.6f, 0f);
@@ -398,6 +399,39 @@ public class Hd2TitleScreen : MonoBehaviour
             rest = rest,
             hot = hot
         };
+    }
+
+    void BuildVersionLabel(Vector3 center)
+    {
+        var labelObject = new GameObject("BuildVersion");
+        labelObject.transform.SetParent(board, false);
+        labelObject.transform.position = center;
+        labelObject.transform.rotation = Quaternion.identity;
+        var text = labelObject.AddComponent<TextMesh>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.text = VersionLabel();
+        text.fontSize = 48;
+        text.characterSize = 0.02f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = new Color(0.75f, 0.8f, 0.86f, 1f);
+        var textRenderer = text.GetComponent<MeshRenderer>();
+        if (textRenderer != null)
+        {
+            textRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            textRenderer.receiveShadows = false;
+            if (text.font != null)
+                textRenderer.sharedMaterial = text.font.material;
+        }
+    }
+
+    static string VersionLabel()
+    {
+#if UNITY_EDITOR
+        return Application.version + " editor";
+#else
+        return Application.version;
+#endif
     }
 
     static Material ArtMaterial(Texture2D art)

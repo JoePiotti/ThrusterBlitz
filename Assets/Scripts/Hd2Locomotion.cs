@@ -346,6 +346,9 @@ public class Hd2Locomotion : MonoBehaviour
                 Renderer renderer = shieldGunRenderers[i];
                 if (renderer == null || renderer is LineRenderer || renderer is ParticleSystemRenderer || !renderer.enabled)
                     continue;
+                // The rocket aim dot sits on the shield. It is not the gun.
+                if (renderer.gameObject.name == "LaserDot")
+                    continue;
                 count = AddBounds(renderer.bounds, shieldPoints, count);
             }
 
@@ -513,7 +516,7 @@ public class Hd2Locomotion : MonoBehaviour
         new Color(0.92f, 0.08f, 0.06f, 1f),
         new Color(1.00f, 0.48f, 0.05f, 1f),
         new Color(0.38f, 0.02f, 0.04f, 1f),
-        new Color(0.95f, 0.12f, 0.48f, 1f),
+        new Color(1.00f, 0.36f, 0.55f, 1f),
         new Color(0.70f, 0.28f, 0.08f, 1f),
         new Color(1.00f, 0.42f, 0.38f, 1f)
     };

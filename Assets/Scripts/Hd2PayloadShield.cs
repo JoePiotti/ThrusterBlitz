@@ -7,12 +7,14 @@ using UnityEngine;
 public class Hd2PayloadShield : MonoBehaviour
 {
     const int RipplePool = 6;
+    const int HitVoices = 4;
     const float RippleLife = 0.5f;
     const float RippleStart = 0.12f;
     const float RippleEnd = 0.72f;
     static readonly Color RippleColor = new Color(0.45f, 0.86f, 1f, 1f);
 
-    AudioSource voice;
+    AudioSource[] hitVoices;
+    int hitVoice;
     AudioClip clip;
     Transform follow;
     Ripple[] ripples;
@@ -34,17 +36,40 @@ public class Hd2PayloadShield : MonoBehaviour
     void Awake()
     {
         clip = Resources.Load<AudioClip>("Audio/ShieldHit");
-        voice = gameObject.AddComponent<AudioSource>();
-        voice.playOnAwake = false;
-        voice.spatialBlend = 1f;
-        voice.dopplerLevel = 0f;
-        voice.rolloffMode = AudioRolloffMode.Linear;
-        voice.minDistance = 1.5f;
-        voice.maxDistance = 28f;
 
         var payload = GetComponentInParent<Hd2Payload>();
         follow = payload != null ? payload.transform : transform;
+        BuildVoices(follow);
         BuildRipples();
+    }
+
+    void BuildVoices(Transform parent)
+    {
+        hitVoices = new AudioSource[HitVoices];
+        for (int i = 0; i < HitVoices; i++)
+        {
+            var go = new GameObject("ShieldHitSound");
+            go.transform.SetParent(parent, false);
+            AudioSource source = go.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.spatialBlend = 1f;
+            source.dopplerLevel = 0f;
+            source.rolloffMode = AudioRolloffMode.Linear;
+            source.minDistance = 1.5f;
+            source.maxDistance = 28f;
+            source.clip = clip;
+            hitVoices[i] = source;
+        }
+    }
+
+    void PlayRippleSound(Vector3 point)
+    {
+        if (clip == null || hitVoices == null)
+            return;
+        AudioSource source = hitVoices[hitVoice];
+        hitVoice = (hitVoice + 1) % hitVoices.Length;
+        source.transform.position = point;
+        source.Play();
     }
 
     void OnEnable()
@@ -199,8 +224,7 @@ public class Hd2PayloadShield : MonoBehaviour
     {
         if (incoming.sqrMagnitude > 0.0001f && Vector3.Dot(normal, incoming) > 0.05f)
             normal = -normal;
-        if (voice != null && clip != null)
-            voice.PlayOneShot(clip);
+        PlayRippleSound(point);
         ShowRipple(point, normal);
     }
 
