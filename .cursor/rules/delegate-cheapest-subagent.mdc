@@ -1,0 +1,23 @@
+---
+description: Delegate work to the cheapest capable subagent
+alwaysApply: true
+---
+
+# Delegate to the cheapest capable subagent
+
+Real work goes to a subagent. Pick the cheapest listed model that can still do the job. Answer a short question in the parent chat.
+
+## Model ladder
+
+- Lookups, file searches, and straightforward Unity or C# edits: `composer-2.5-fast`
+- Multi-file changes, prefab wiring, and ordinary bug fixes: `composer-2.5`
+- Networking, subtle gameplay bugs, and design calls a cheap model is likely to get wrong: `grok-4.7-low`
+- Sonnet, Opus, and other high-end models only after a cheaper run fails, or when the task clearly needs them
+
+Pass that model slug on the Task tool. Do not use `inherit` for this.
+
+## How to delegate
+
+- Put the full task, file paths, and constraints in the subagent prompt. It cannot see the parent chat.
+- Launch independent tasks together.
+- Keep the parent turn for choosing the model, checking the result, and talking to the user.
