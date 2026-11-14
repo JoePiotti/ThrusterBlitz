@@ -163,6 +163,10 @@ public class Hd2SpawnField : MonoBehaviour
         if (bot != null)
             return bot.team;
 
+        Hd2NetPlayer net = body.GetComponentInParent<Hd2NetPlayer>();
+        if (net != null)
+            return net.team;
+
         return Hd2Team.None;
     }
 
@@ -218,6 +222,8 @@ public class Hd2SpawnField : MonoBehaviour
                 Physics.IgnoreCollision(moverCollider, shield, pass);
             }
         }
+
+        Hd2DropShield.IgnoreMover(moverCollider);
     }
 
     static void RememberMover(Component mover, CharacterController body)

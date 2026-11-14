@@ -337,9 +337,9 @@ public class Hd2BodyImporter : AssetPostprocessor
 [InitializeOnLoad]
 public static class Hd2BodySetup
 {
-    public const string RobotPath = "Assets/Models/Bot/HumanoidRobot.fbx";
-    const string TexturePath = "Assets/Models/Bot/HumanoidRobot_BaseColor.png";
-    const string MaterialPath = "Assets/Models/Bot/HumanoidRobot.mat";
+    public const string RobotPath = "Assets/Models/Bot/PlayerBotRobot.fbx";
+    const string TexturePath = "Assets/Models/Bot/PlayerBotRobot_BaseColor.png";
+    const string MaterialPath = "Assets/Models/Bot/PlayerBotRobot.mat";
     const string PlayerPath = "Assets/Prefabs/VRPlayer.prefab";
     const string SessionKey = "HD2_BODY_RIG_V13";
     static int rigTries;

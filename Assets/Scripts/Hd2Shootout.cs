@@ -4,6 +4,9 @@ using UnityEngine;
 /// <summary>
 /// Team deathmatch. First team to 50 kills wins. The clock is 10 minutes.
 /// At zero the leader wins, or the match is a draw.
+/// When a score passes the other team, and that other score is already
+/// above zero, that team's lead line plays in the ear. The line waits until
+/// the current announcer clip finishes. A tie plays nothing.
 /// </summary>
 [DefaultExecutionOrder(100)]
 public class Hd2Shootout : MonoBehaviour
@@ -19,11 +22,16 @@ public class Hd2Shootout : MonoBehaviour
     public static int BlueKills { get; private set; }
     public static float TimeLeft { get; private set; } = MatchSeconds;
 
+    static Hd2Shootout live;
+
     TextMesh banner;
     Transform bannerAnchor;
     AudioSource voice;
     AudioClip buzzer;
     AudioClip matchBegins;
+    AudioClip redLead;
+    AudioClip blueLead;
+    AudioClip queuedLead;
     bool gatesOpen;
     float gatesOpenAt;
     float matchEndsAt;
@@ -33,6 +41,7 @@ public class Hd2Shootout : MonoBehaviour
     void Awake()
     {
         Present = true;
+        live = this;
         voice = gameObject.AddComponent<AudioSource>();
         voice.playOnAwake = false;
         voice.loop = false;
@@ -40,10 +49,14 @@ public class Hd2Shootout : MonoBehaviour
         voice.dopplerLevel = 0f;
         buzzer = Resources.Load<AudioClip>("Audio/Buzzer");
         matchBegins = Resources.Load<AudioClip>("Audio/MatchBegins");
+        redLead = Resources.Load<AudioClip>("Audio/RedHasTakenTheLead");
+        blueLead = Resources.Load<AudioClip>("Audio/BlueHasTakenTheLead");
     }
 
     void OnDestroy()
     {
+        if (live == this)
+            live = null;
         if (Present)
             Present = false;
     }
@@ -53,6 +66,8 @@ public class Hd2Shootout : MonoBehaviour
         Decided = false;
         RedKills = 0;
         BlueKills = 0;
+        queuedLead = null;
+        FillRosters();
         BalanceTeams();
         matchEndsAt = Time.time + MatchSeconds;
         TimeLeft = MatchSeconds;
@@ -90,6 +105,8 @@ public class Hd2Shootout : MonoBehaviour
                 TimeLeft = 0f;
                 FinishByClock();
             }
+            else
+                PumpLead();
         }
 
         if (!gatesOpen && Time.time >= gatesOpenAt)
@@ -141,6 +158,9 @@ public class Hd2Shootout : MonoBehaviour
                 blueHumans++;
         }
 
+        for (int i = 0; i < players.Count; i++)
+            ReplaceEasiestOnTeam(players[i].team);
+
         Hd2Locomotion.PaintTeamRoster();
         var spawns = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         var bots = new List<Hd2EnemyBot>();
@@ -153,6 +173,106 @@ public class Hd2Shootout : MonoBehaviour
 
         PlaceSide(Hd2Team.Red, players, bots, spawns);
         PlaceSide(Hd2Team.Blue, players, bots, spawns);
+    }
+
+    static readonly Hd2BotDifficulty[] FullRoster =
+    {
+        Hd2BotDifficulty.Easy,
+        Hd2BotDifficulty.Easy,
+        Hd2BotDifficulty.Medium,
+        Hd2BotDifficulty.Medium,
+        Hd2BotDifficulty.Hard
+    };
+
+    void FillRosters()
+    {
+        var found = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        var red = new List<Hd2EnemyBot>();
+        var blue = new List<Hd2EnemyBot>();
+        for (int i = 0; i < found.Length; i++)
+        {
+            if (found[i] == null)
+                continue;
+            if (found[i].team == Hd2Team.Red)
+                red.Add(found[i]);
+            else if (found[i].team == Hd2Team.Blue)
+                blue.Add(found[i]);
+        }
+
+        FillTeam(Hd2Team.Red, red);
+        FillTeam(Hd2Team.Blue, blue);
+    }
+
+    static void FillTeam(Hd2Team side, List<Hd2EnemyBot> mine)
+    {
+        if (mine.Count == 0)
+            return;
+        Hd2EnemyBot sample = mine[0];
+        for (int i = 0; i < FullRoster.Length; i++)
+            AddUntil(side, FullRoster[i], Wanted(FullRoster[i]), sample, mine);
+    }
+
+    static int Wanted(Hd2BotDifficulty level)
+    {
+        int count = 0;
+        for (int i = 0; i < FullRoster.Length; i++)
+        {
+            if (FullRoster[i] == level)
+                count++;
+        }
+
+        return count;
+    }
+
+    static void AddUntil(Hd2Team side, Hd2BotDifficulty level, int want, Hd2EnemyBot sample, List<Hd2EnemyBot> mine)
+    {
+        int have = 0;
+        for (int i = 0; i < mine.Count; i++)
+        {
+            if (mine[i] != null && mine[i].difficulty == level)
+                have++;
+        }
+
+        for (int i = have; i < want; i++)
+            mine.Add(SpawnBot(sample, side, level, mine.Count + 1));
+    }
+
+    static Hd2EnemyBot SpawnBot(Hd2EnemyBot sample, Hd2Team side, Hd2BotDifficulty level, int number)
+    {
+        string teamName = side == Hd2Team.Red ? "Red" : "Blue";
+        var go = new GameObject(teamName + " bot " + number);
+        go.transform.SetParent(sample.transform.parent, false);
+        go.transform.SetPositionAndRotation(sample.transform.position, sample.transform.rotation);
+        var bot = go.AddComponent<Hd2EnemyBot>();
+        bot.robotPrefab = sample.robotPrefab;
+        bot.pistolModel = sample.pistolModel;
+        bot.team = side;
+        bot.difficulty = level;
+        bot.useBodyColor = sample.useBodyColor;
+        bot.bodyColor = sample.bodyColor;
+        bot.displayName = (side == Hd2Team.Red ? "red " : "blue ") + number;
+        bot.Boot();
+        return bot;
+    }
+
+    static void ReplaceEasiestOnTeam(Hd2Team side)
+    {
+        if (side != Hd2Team.Red && side != Hd2Team.Blue)
+            return;
+
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Hd2EnemyBot easiest = null;
+        for (int i = 0; i < bots.Length; i++)
+        {
+            Hd2EnemyBot bot = bots[i];
+            if (bot == null || bot.team != side || !bot.gameObject.activeInHierarchy)
+                continue;
+            if (easiest == null || Easier(bot, easiest))
+                easiest = bot;
+        }
+
+        if (easiest != null)
+            easiest.PullFromMatch();
     }
 
     static void PlaceSide(Hd2Team side, List<Hd2Locomotion> players, List<Hd2EnemyBot> bots, Hd2SpawnPoint[] spawns)
@@ -180,30 +300,62 @@ public class Hd2Shootout : MonoBehaviour
         var mine = new List<Hd2EnemyBot>();
         for (int i = 0; i < bots.Count; i++)
         {
-            if (bots[i] != null && bots[i].team == side)
-                mine.Add(bots[i]);
+            Hd2EnemyBot bot = bots[i];
+            if (bot != null && bot.team == side && bot.gameObject.activeInHierarchy)
+                mine.Add(bot);
         }
 
-        int need = seats - humanSeats;
-        Hd2EnemyBot template = bots.Count > 0 ? bots[0] : null;
-        Transform parent = template != null ? template.transform.parent : null;
-        for (int i = 0; i < need; i++)
+        int room = seats - humanSeats;
+        int place = mine.Count < room ? mine.Count : room;
+        for (int i = 0; i < place; i++)
         {
             int rank = humanSeats + i;
             Transform spot = points[rank].transform;
-            Hd2EnemyBot bot = i < mine.Count ? mine[i] : CreateBot(template, parent, side, spot);
-            if (bot == null)
-                continue;
+            Hd2EnemyBot bot = mine[i];
             Color color = side == Hd2Team.Red ? Hd2Locomotion.RedShade(rank) : Hd2Locomotion.BlueShade(rank);
             bot.TakePlace(side, color, rank, spot);
             bot.displayName = (side == Hd2Team.Red ? "red " : "blue ") + (i + 1);
         }
+    }
 
-        for (int i = need; i < mine.Count; i++)
+    /// <summary>
+    /// A player who joins the room takes a Shootout slot. The easiest bot still
+    /// fighting is disabled. Easy goes first, then medium, then hard. The same
+    /// difficulty drops red before blue. The player already in the map does not
+    /// take a slot, so all five bots start the match.
+    /// </summary>
+    public static bool ReplaceEasiestBot()
+    {
+        if (!Present && FindFirstObjectByType<Hd2Shootout>(FindObjectsInactive.Include) == null)
+            return false;
+
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Hd2EnemyBot easiest = null;
+        for (int i = 0; i < bots.Length; i++)
         {
-            if (mine[i] != null)
-                Destroy(mine[i].gameObject);
+            Hd2EnemyBot bot = bots[i];
+            if (bot == null || !bot.gameObject.activeInHierarchy)
+                continue;
+            if (easiest == null || Easier(bot, easiest))
+                easiest = bot;
         }
+
+        if (easiest == null)
+            return false;
+
+        easiest.PullFromMatch();
+        return true;
+    }
+
+    static bool Easier(Hd2EnemyBot candidate, Hd2EnemyBot current)
+    {
+        int rank = candidate.ReplaceRank.CompareTo(current.ReplaceRank);
+        if (rank != 0)
+            return rank < 0;
+        int team = ((int)candidate.team).CompareTo((int)current.team);
+        if (team != 0)
+            return team < 0;
+        return string.CompareOrdinal(candidate.name, current.name) < 0;
     }
 
     static void StandHuman(Hd2Locomotion player, Transform spot)
@@ -217,40 +369,56 @@ public class Hd2Shootout : MonoBehaviour
             life.PinSpawn(spot.position, spot.rotation);
     }
 
-    static Hd2EnemyBot CreateBot(Hd2EnemyBot template, Transform parent, Hd2Team side, Transform spot)
-    {
-        var go = new GameObject(side == Hd2Team.Red ? "Red bot" : "Blue bot");
-        if (parent != null)
-            go.transform.SetParent(parent, false);
-        if (spot != null)
-            go.transform.SetPositionAndRotation(spot.position, spot.rotation);
-
-        var bot = go.AddComponent<Hd2EnemyBot>();
-        if (template != null)
-        {
-            bot.robotPrefab = template.robotPrefab;
-            bot.pistolModel = template.pistolModel;
-        }
-
-        bot.team = side;
-        bot.useBodyColor = true;
-        return bot;
-    }
-
     public static void NoteKill(Hd2Team team)
     {
         if (!Present || Decided || team == Hd2Team.None)
             return;
 
+        int redBefore = RedKills;
+        int blueBefore = BlueKills;
         if (team == Hd2Team.Red)
             RedKills++;
         else
             BlueKills++;
 
+        bool tookLead = team == Hd2Team.Red
+            ? RedKills > BlueKills && redBefore <= blueBefore && blueBefore > 0
+            : BlueKills > RedKills && blueBefore <= redBefore && redBefore > 0;
+        if (tookLead && live != null)
+            live.QueueLead(team);
+
         if (RedKills >= KillsToWin)
             Finish(Hd2Team.Red);
         else if (BlueKills >= KillsToWin)
             Finish(Hd2Team.Blue);
+    }
+
+    void QueueLead(Hd2Team team)
+    {
+        AudioClip clip = team == Hd2Team.Red ? redLead : blueLead;
+        if (voice == null || clip == null || Decided)
+            return;
+
+        if (voice.isPlaying)
+        {
+            queuedLead = clip;
+            return;
+        }
+
+        queuedLead = null;
+        voice.clip = clip;
+        voice.Play();
+    }
+
+    void PumpLead()
+    {
+        if (queuedLead == null || voice == null || voice.isPlaying)
+            return;
+
+        AudioClip clip = queuedLead;
+        queuedLead = null;
+        voice.clip = clip;
+        voice.Play();
     }
 
     static void FinishByClock()
@@ -278,6 +446,7 @@ public class Hd2Shootout : MonoBehaviour
 
         Decided = true;
         TimeLeft = Mathf.Max(0f, TimeLeft);
+        queuedLead = null;
         if (voice != null)
             voice.Stop();
     }
@@ -289,6 +458,7 @@ public class Hd2Shootout : MonoBehaviour
 
         Decided = true;
         TimeLeft = Mathf.Max(0f, TimeLeft);
+        queuedLead = null;
         if (voice != null)
         {
             voice.Stop();

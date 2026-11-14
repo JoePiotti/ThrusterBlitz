@@ -233,6 +233,12 @@ public class Hd2Smg : MonoBehaviour
         rounds--;
         RefreshAmmo();
         float rate = botHeld ? 6f : shotsPerSecond;
+        if (botHeld)
+        {
+            float scale = Hd2EnemyBot.FireScaleOf(this);
+            if (scale > 0f && scale < 1f)
+                rate *= scale;
+        }
         nextFireTime = Time.time + 1f / Mathf.Max(0.01f, rate);
         if (climbedRounds < recoilClimbRounds)
         {

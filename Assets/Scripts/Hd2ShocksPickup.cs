@@ -154,6 +154,7 @@ public class Hd2ShocksPickup : MonoBehaviour
         if (model == null || hand.GetComponentInChildren<Hd2Shocks>(true) != null)
             return false;
 
+        Hd2DropShield.DiscardHeld(hand);
         DestroyGuns<Hd2Pistol>(hand);
         DestroyGuns<Hd2Smg>(hand);
         DestroyGuns<Hd2RocketLauncher>(hand);

@@ -10,9 +10,17 @@ public enum Hd2PayloadRole
     Stop = 3
 }
 
+public enum Hd2BotDifficulty
+{
+    Hard = 0,
+    Easy = 1,
+    Medium = 2
+}
+
 /// <summary>
 /// Deathmatch bot. Wanders until it sees an enemy or takes a hit, then shoots the body
 /// while sprinting, strafing, or blitzing. Walk, blitz, and guns match the player.
+/// Hard keeps that pace. Easy and medium use the same logic, slowed by the pace table.
 /// A jump spends thrust the same way a player's does, and the meter refills only
 /// while the bot is not sprinting. Combat sidesteps are a little slower than a player sprint.
 /// With domination on, the same body holds a point, walks to a weak or contested one,
@@ -50,6 +58,8 @@ public class Hd2EnemyBot : MonoBehaviour
     public string pointBias = "A";
     [Tooltip("Which reserved spawn of this team this bot uses.")]
     public int spawnSlot;
+    [Tooltip("Hard is the original pace. Easy and medium move, turn, react, and shoot slower.")]
+    public Hd2BotDifficulty difficulty = Hd2BotDifficulty.Hard;
 
     static readonly Hd2Poi[] poiNear = new Hd2Poi[4];
     static readonly float[] poiNearDist = new float[4];
@@ -71,6 +81,85 @@ public class Hd2EnemyBot : MonoBehaviour
     const float RagdollSeconds = 5f;
     const float TurnStep = 45f;
     const float TurnRate = 120f;
+
+    struct Pace
+    {
+        public float move;
+        public float notice;
+        public float fire;
+        public float turn;
+    }
+
+    // Hard is the first row and keeps the speeds, 120 deg/s turn, 0.4s notice, and shot gaps.
+    // Easy and medium keep the same logic. Move, turn, and fire are multipliers. Notice is seconds.
+    static readonly Pace[] paces =
+    {
+        new Pace { move = 1f, notice = NoticeDelay, fire = 1f, turn = 1f },
+        new Pace { move = 0.55f, notice = 0.8f, fire = 0.55f, turn = 0.55f },
+        new Pace { move = 0.75f, notice = 0.6f, fire = 0.75f, turn = 0.75f }
+    };
+
+    static Pace PaceFor(Hd2BotDifficulty level)
+    {
+        int index = (int)level;
+        if ((uint)index >= (uint)paces.Length)
+            return paces[0];
+        return paces[index];
+    }
+
+    float MoveAt(float hardSpeed)
+    {
+        float scale = PaceFor(difficulty).move;
+        if (scale < 1f)
+            return hardSpeed * scale;
+        return hardSpeed;
+    }
+
+    float TurnAt(float hardRate)
+    {
+        float scale = PaceFor(difficulty).turn;
+        if (scale < 1f)
+            return hardRate * scale;
+        return hardRate;
+    }
+
+    float NoticeAt()
+    {
+        if (difficulty == Hd2BotDifficulty.Hard)
+            return NoticeDelay;
+        return PaceFor(difficulty).notice;
+    }
+
+    float GapAt(float hardGap)
+    {
+        float fire = PaceFor(difficulty).fire;
+        if (fire > 0f && fire < 1f)
+            return hardGap / fire;
+        return hardGap;
+    }
+
+    public static float FireScaleOf(Component gun)
+    {
+        if (gun == null)
+            return 1f;
+        Hd2EnemyBot bot = gun.GetComponentInParent<Hd2EnemyBot>();
+        if (bot == null)
+            return 1f;
+        return PaceFor(bot.difficulty).fire;
+    }
+
+    public int ReplaceRank
+    {
+        get
+        {
+            if (difficulty == Hd2BotDifficulty.Easy)
+                return 0;
+            if (difficulty == Hd2BotDifficulty.Medium)
+                return 1;
+            return 2;
+        }
+    }
+
     const float JumpGravity = 15f;
     const float JumpAccelGs = 3f;
     const float JumpMaxTime = 0.3f;
@@ -130,6 +219,7 @@ public class Hd2EnemyBot : MonoBehaviour
     WanderKind wander = WanderKind.Walk;
     CombatKind combat = CombatKind.Sprint;
     Transform target;
+    Hd2DropShield shelter;
     float lostTargetAt = -1f;
 
     public Transform CombatTarget => mode == Mode.Combat ? target : null;
@@ -226,6 +316,16 @@ public class Hd2EnemyBot : MonoBehaviour
     Transform upperR;
     Transform foreR;
     Transform handR;
+    readonly Transform[] gripBonesL = new Transform[Hd2GripFingers.BoneCount];
+    readonly Transform[] gripBonesR = new Transform[Hd2GripFingers.BoneCount];
+    readonly Transform[] gripMarksL = new Transform[Hd2GripFingers.BoneCount];
+    readonly Transform[] gripMarksR = new Transform[Hd2GripFingers.BoneCount];
+    readonly Vector3[] gripAxesL = new Vector3[Hd2GripFingers.BoneCount];
+    readonly Vector3[] gripAxesR = new Vector3[Hd2GripFingers.BoneCount];
+    Transform gripGunL;
+    Transform gripGunR;
+    bool gripReadyL;
+    bool gripReadyR;
     float tipReachL = 0.06f;
     float tipReachR = 0.06f;
     Vector3 tipLocalL = new Vector3(0f, 0.06f, 0f);
@@ -291,8 +391,19 @@ public class Hd2EnemyBot : MonoBehaviour
     ParticleSystem blitzTrail;
     bool jumpExhaustOn;
 
+    bool booted;
+
     void Start()
     {
+        Boot();
+    }
+
+    public void Boot()
+    {
+        if (booted)
+            return;
+        booted = true;
+
         body = gameObject.AddComponent<CharacterController>();
         body.height = 1.8f;
         body.radius = 0.25f;
@@ -609,6 +720,7 @@ public class Hd2EnemyBot : MonoBehaviour
         {
             returnFire = null;
             noticed = null;
+            shelter = null;
             payloadGoalReady = false;
             StopMotion();
             if (body != null)
@@ -659,6 +771,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         if (health == null || !health.IsDead)
             GrabNearbyWeapon();
+        UseShield();
 
         if (!retreating)
         {
@@ -716,9 +829,9 @@ public class Hd2EnemyBot : MonoBehaviour
             aimReady = false;
     }
 
-    static float TurnBudget()
+    float TurnBudget()
     {
-        return TurnRate * Mathf.Min(Time.deltaTime, 0.05f);
+        return TurnAt(TurnRate) * Mathf.Min(Time.deltaTime, 0.05f);
     }
 
     void LateUpdate()
@@ -1443,6 +1556,13 @@ public class Hd2EnemyBot : MonoBehaviour
         EnterWander();
     }
 
+    public void PullFromMatch()
+    {
+        ReleaseGuns();
+        StopMotion();
+        gameObject.SetActive(false);
+    }
+
     void CacheHome()
     {
         if (team == Hd2Team.None)
@@ -1531,7 +1651,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         if (noticed == null || Time.time < attackAt)
         {
-            attackAt = Time.time + NoticeDelay;
+            attackAt = Time.time + NoticeAt();
             modeUntil = attackAt;
         }
 
@@ -1907,7 +2027,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         if (Time.time >= nextPistolFire)
         {
-            nextPistolFire = Time.time + 0.2f;
+            nextPistolFire = Time.time + GapAt(0.2f);
             GetComponentsInChildren(heldPistols);
             for (int i = 0; i < heldPistols.Count; i++)
                 heldPistols[i].BotTap();
@@ -1915,7 +2035,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         if (Time.time < nextPump)
             return;
-        nextPump = Time.time + 0.85f;
+        nextPump = Time.time + GapAt(0.85f);
         GetComponentsInChildren(heldShotguns);
         for (int i = 0; i < heldShotguns.Count; i++)
             heldShotguns[i].BotTap();
@@ -2027,6 +2147,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (dir.sqrMagnitude < 0.01f)
         {
             KeepFistOnArm(hand, fore, bone);
+            PoseGripFingers(bone, gun);
             return;
         }
         dir.Normalize();
@@ -2034,10 +2155,41 @@ public class Hd2EnemyBot : MonoBehaviour
         if (barrel.sqrMagnitude < 0.0001f || Vector3.Dot(barrel, dir) > 0.9995f)
         {
             KeepFistOnArm(hand, fore, bone);
+            PoseGripFingers(bone, gun);
             return;
         }
         hand.rotation = Quaternion.FromToRotation(barrel, dir) * hand.rotation;
         KeepFistOnArm(hand, fore, bone);
+        PoseGripFingers(bone, gun);
+    }
+
+    void PoseGripFingers(Transform bone, Transform gun)
+    {
+        if (bone == null || gun == null)
+            return;
+
+        bool right = bone == handR;
+        if ((right ? gripGunR : gripGunL) != gun)
+        {
+            if (right)
+            {
+                gripGunR = gun;
+                gripReadyR = Hd2GripFingers.Bind(bone, gun, gripBonesR, gripMarksR, gripAxesR);
+            }
+            else
+            {
+                gripGunL = gun;
+                gripReadyL = Hd2GripFingers.Bind(bone, gun, gripBonesL, gripMarksL, gripAxesL);
+            }
+        }
+
+        if (!(right ? gripReadyR : gripReadyL))
+            return;
+
+        if (right)
+            Hd2GripFingers.Apply(gripBonesR, gripMarksR, gripAxesR);
+        else
+            Hd2GripFingers.Apply(gripBonesL, gripMarksL, gripAxesL);
     }
 
     static bool IsPistolGrip(Transform gun)
@@ -2197,6 +2349,7 @@ public class Hd2EnemyBot : MonoBehaviour
         AddWeapons<Hd2LaserPickup>(found);
         AddWeapons<Hd2ShotgunPickup>(found);
         AddWeapons<Hd2BurstPickup>(found);
+        AddWeapons<Hd2DropShieldPickup>(found);
         cachedWeapons = found.ToArray();
         weaponListReady = true;
     }
@@ -2664,7 +2817,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (traveling)
         {
             float distance = Vector3.Distance(travelStart, travelEnd);
-            float duration = distance / BlitzSpeed;
+            float duration = distance / MoveAt(BlitzSpeed);
             travelElapsed += Time.deltaTime;
             float t = duration <= 0.01f ? 1f : Mathf.Clamp01(travelElapsed / duration);
             float hop = 4f * BlitzHop * t * (1f - t);
@@ -2712,7 +2865,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (cart != null && cart.rail == grindRail && grindSign >= 0f && CatchCart(cart))
             return;
 
-        grindDistance += grindSign * GrindSpeed * Time.deltaTime;
+        grindDistance += grindSign * MoveAt(GrindSpeed) * Time.deltaTime;
         bool ended = grindSign > 0f ? grindDistance >= grindRail.length - 0.3f : grindDistance <= 0.3f;
         grindDistance = Mathf.Clamp(grindDistance, 0f, grindRail.length);
         if (body != null)
@@ -2743,6 +2896,47 @@ public class Hd2EnemyBot : MonoBehaviour
             wander = WanderKind.Walk;
     }
 
+    void UseShield()
+    {
+        if (shelter != null && !shelter.IsHeld && !shelter.IsPlanted)
+            shelter = null;
+
+        if (mode != Mode.Combat)
+            return;
+
+        Hd2DropShield held = GetComponentInChildren<Hd2DropShield>(false);
+        if (held == null || !held.IsHeld)
+            return;
+
+        held.BotDrop();
+        shelter = held;
+    }
+
+    Vector3 StayInShelter(Vector3 dir)
+    {
+        if (shelter == null || !shelter.IsLive)
+            return dir;
+
+        Vector3 flat = transform.position - shelter.ShelterCenter;
+        flat.y = 0f;
+        float dist = flat.magnitude;
+        if (dist < 0.05f)
+            return dir;
+
+        float radius = shelter.ShelterReach;
+        float edge = radius * 0.7f;
+        if (dist <= edge)
+            return dir;
+
+        Vector3 back = -flat / dist;
+        if (dist > radius * 0.9f)
+            return back;
+        if (Vector3.Dot(dir, flat) <= 0f)
+            return dir;
+        Vector3 blended = Vector3.Slerp(dir.sqrMagnitude > 0.0001f ? dir.normalized : back, back, 0.75f);
+        return blended.sqrMagnitude > 0.0001f ? blended.normalized : back;
+    }
+
     void TickWalk()
     {
         if (body == null || !body.enabled)
@@ -2757,9 +2951,11 @@ public class Hd2EnemyBot : MonoBehaviour
             speed = SidestepSpeed;
         else if (mode == Mode.Combat && combat == CombatKind.Strafe)
             speed = WalkSpeed * 0.85f;
+        speed = MoveAt(speed);
         if (moveDir.sqrMagnitude > 0.0001f && WaterAlong(moveDir, 0.9f))
             moveDir = Vector3.zero;
         moveDir = StayOnMap(moveDir);
+        moveDir = StayInShelter(moveDir);
         moveDir = Hd2Payload.SteerBot(transform.position, moveDir);
         Vector3 wish = moveDir;
         if (wish.sqrMagnitude > 1f)
@@ -2829,6 +3025,8 @@ public class Hd2EnemyBot : MonoBehaviour
             Collider collider = stepHits[i].collider;
             if (collider == null || collider.transform.IsChildOf(transform))
                 continue;
+            if (Hd2DropShield.PassesBody(collider))
+                continue;
             if (stepHits[i].distance >= nearest)
                 continue;
             nearest = stepHits[i].distance;
@@ -2847,6 +3045,8 @@ public class Hd2EnemyBot : MonoBehaviour
         {
             Collider collider = stepHits[i].collider;
             if (collider == null || collider.transform.IsChildOf(transform))
+                continue;
+            if (Hd2DropShield.PassesBody(collider))
                 continue;
             if (stepHits[i].distance >= best)
                 continue;
@@ -2952,6 +3152,8 @@ public class Hd2EnemyBot : MonoBehaviour
             Collider collider = stepHits[i].collider;
             if (collider == null || collider.transform.IsChildOf(transform))
                 continue;
+            if (Hd2DropShield.PassesBody(collider))
+                continue;
             if (stepHits[i].distance >= nearest)
                 continue;
             nearest = stepHits[i].distance;
@@ -2970,6 +3172,8 @@ public class Hd2EnemyBot : MonoBehaviour
             {
                 Collider collider = stepHits[i].collider;
                 if (collider == null || collider.transform.IsChildOf(transform))
+                    continue;
+                if (Hd2DropShield.PassesBody(collider))
                     continue;
                 if (stepHits[i].distance >= best)
                     continue;
@@ -2992,6 +3196,8 @@ public class Hd2EnemyBot : MonoBehaviour
         {
             Collider collider = stepHits[i].collider;
             if (collider == null || collider.transform.IsChildOf(transform))
+                continue;
+            if (Hd2DropShield.PassesBody(collider))
                 continue;
             if (stepHits[i].distance >= ground)
                 continue;
@@ -3022,6 +3228,8 @@ public class Hd2EnemyBot : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             if (probeHits[i].collider.transform.root == transform)
+                continue;
+            if (Hd2DropShield.PassesBody(probeHits[i].collider))
                 continue;
             if (probeHits[i].collider.GetComponentInParent<Hd2Water>() != null)
                 continue;
@@ -3173,6 +3381,7 @@ public class Hd2EnemyBot : MonoBehaviour
         Scan<Hd2LaserPickup>(ref found, ref best);
         Scan<Hd2ShotgunPickup>(ref found, ref best);
         Scan<Hd2BurstPickup>(ref found, ref best);
+        Scan<Hd2DropShieldPickup>(ref found, ref best);
         return found != null;
     }
 
@@ -3209,6 +3418,8 @@ public class Hd2EnemyBot : MonoBehaviour
             took = shotgun.BotTake(hand);
         else if (source is Hd2BurstPickup burst)
             took = burst.BotTake(hand);
+        else if (source is Hd2DropShieldPickup dropShield)
+            took = dropShield.BotTake(hand);
         if (took)
             SeatOneHand(hand);
         return took;

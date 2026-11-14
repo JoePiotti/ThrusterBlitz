@@ -372,6 +372,14 @@ public class Hd2Shot : MonoBehaviour
             return true;
         }
 
+        var dropShield = hit.collider.GetComponentInParent<Hd2DropShield>();
+        if (dropShield != null)
+        {
+            Recycle();
+            dropShield.AbsorbShot(hit.collider, hit.point, hit.normal, direction, DamageAt(hit.point, false));
+            return true;
+        }
+
         bool rail = hit.collider.GetComponentInParent<Hd2GrindRail>() != null;
         bool stamp = !rail && !MarkSitsOnPerson(hit.point);
         if (bouncesRemaining > 0)
@@ -557,6 +565,11 @@ public class Hd2Shot : MonoBehaviour
 
     static int sparkMade;
     static int gravelMade;
+
+    public static void Sparks(Vector3 point, Vector3 normal)
+    {
+        MetalSparks(point, normal);
+    }
 
     static void MetalSparks(Vector3 point, Vector3 normal)
     {
@@ -902,6 +915,32 @@ public class Hd2Shot : MonoBehaviour
         PoseBolt(0.016f);
     }
 
+    float DamageAt(Vector3 point, bool headshot)
+    {
+        float dealt = damage;
+        if (headshot)
+            dealt *= headMultiplier;
+        if (!hasRangeOrigin)
+            return dealt;
+
+        float distance = Vector3.Distance(rangeOrigin, point);
+        if (falloffInterval > 0.01f && distance >= rangeFalloffStart)
+        {
+            int steps = Mathf.FloorToInt(distance / falloffInterval);
+            float loss = falloffBodyLoss * steps;
+            if (headshot)
+                loss *= headMultiplier;
+            float floorDamage = falloffMinDamage;
+            if (headshot)
+                floorDamage *= headMultiplier;
+            return Mathf.Max(floorDamage, dealt - loss);
+        }
+
+        if (rangeFalloffStart > 0f && distance > rangeFalloffStart)
+            dealt *= rangeFalloffMultiplier;
+        return dealt;
+    }
+
     bool TryHitBody(RaycastHit hit)
     {
         var health = hit.collider.GetComponentInParent<Hd2Health>();
@@ -917,27 +956,8 @@ public class Hd2Shot : MonoBehaviour
         if ((from - hit.point).sqrMagnitude < 0.04f && velocity.sqrMagnitude > 0.01f)
             from = hit.point - velocity.normalized * 8f;
         health.MarkKillLine(from, hit.point);
-        float dealt = damage;
         bool headshot = IsHeadshot(hit);
-        if (headshot)
-            dealt *= headMultiplier;
-        if (hasRangeOrigin)
-        {
-            float distance = Vector3.Distance(rangeOrigin, hit.point);
-            if (falloffInterval > 0.01f && distance >= rangeFalloffStart)
-            {
-                int steps = Mathf.FloorToInt(distance / falloffInterval);
-                float loss = falloffBodyLoss * steps;
-                if (headshot)
-                    loss *= headMultiplier;
-                float floorDamage = falloffMinDamage;
-                if (headshot)
-                    floorDamage *= headMultiplier;
-                dealt = Mathf.Max(floorDamage, dealt - loss);
-            }
-            else if (rangeFalloffStart > 0f && distance > rangeFalloffStart)
-                dealt *= rangeFalloffMultiplier;
-        }
+        float dealt = DamageAt(hit.point, headshot);
         health.MarkHit(hit.point);
         health.ApplyHit(dealt, false, true);
         if (owner != null && owner.GetComponent<Hd2Locomotion>() != null

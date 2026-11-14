@@ -257,6 +257,7 @@ public class Hd2Rocket : MonoBehaviour
         int count = Hd2PayloadShield.Cast(from, direction, hits, distance);
         float best = float.MaxValue;
         bool found = false;
+        Collider struck = null;
         Hd2PayloadShield glass = null;
         Hd2ShootoutShield shootout = null;
         Vector3 glassNormal = Vector3.up;
@@ -276,6 +277,7 @@ public class Hd2Rocket : MonoBehaviour
                 continue;
             best = hits[i].distance;
             point = hits[i].point;
+            struck = collider;
             struckPlayer = Hd2NearMiss.HitsPlayer(collider);
             glass = collider.GetComponentInParent<Hd2PayloadShield>();
             shootout = collider.GetComponentInParent<Hd2ShootoutShield>();
@@ -287,6 +289,13 @@ public class Hd2Rocket : MonoBehaviour
             glass.PlayHit(point, glassNormal, direction);
         if (shootout != null)
             shootout.PlayHit(point, glassNormal, direction);
+        if (struck != null)
+        {
+            Hd2DropShield drop = struck.GetComponentInParent<Hd2DropShield>();
+            if (drop != null)
+                drop.NoteImpact(struck, point, glassNormal, direction);
+        }
+
         return found;
     }
 
@@ -312,6 +321,7 @@ public class Hd2Rocket : MonoBehaviour
 
         exploded = true;
         RememberEnd(point);
+        Hd2DropShield.ApplyBlast(point, innerRadiusMeters, innerDamage, outerRadiusMeters, outerDamage);
         Transform thrust = transform.Find("Thrust");
         if (thrust != null)
         {
@@ -330,6 +340,8 @@ public class Hd2Rocket : MonoBehaviour
 
             Hd2Health health = colliders[i].GetComponentInParent<Hd2Health>();
             if (health == null || !seen.Add(health))
+                continue;
+            if (Hd2DropShield.Blocks(point, health.transform.position + Vector3.up * 0.9f))
                 continue;
             if (!damageOwner && ownerHealth != null && health == ownerHealth)
                 continue;

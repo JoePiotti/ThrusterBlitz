@@ -8,42 +8,132 @@ using UnityEngine.InputSystem.XR;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// One Fusion server room named hd2-test. The server loads Shootout and spawns a capsule
-/// for each joined player. Clients only render that room.
+/// One Fusion server room named hd2-test. The server loads Shootout and stays there.
+/// Clients join that room. A capsule is spawned only after the client has loaded Shootout.
 /// </summary>
 public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
 {
     public const string SessionName = "hd2-test";
     public const string JoinMarker = "hd2-test";
+    public const string JoinFailMessage = "Could not join hd2-test";
+    public const string JoiningMessage = "Joining hd2-test";
     const string PlayerResource = "Hd2NetPlayer";
     const string PlayAsServerKey = "Hd2PlayAsServer";
+    const string LostLabel = "hd2-test\nconnection lost";
+    const float JoinTimeout = 30f;
+    const int ReadyResends = 8;
 
-    static bool starting;
+    static readonly string[] CountLabels =
+    {
+        "hd2-test\n0 players",
+        "hd2-test\n1 player",
+        "hd2-test\n2 players",
+        "hd2-test\n3 players",
+        "hd2-test\n4 players",
+        "hd2-test\n5 players",
+        "hd2-test\n6 players",
+        "hd2-test\n7 players",
+        "hd2-test\n8 players",
+        "hd2-test\n9 players",
+        "hd2-test\n10 players"
+    };
+
+    static readonly ReliableKey ReadyKey = ReliableKey.FromInts(0x48443201, 0, 0, 0);
+
+    static Hd2Session active;
+    static bool hostPending;
+    static int serverAttempts;
+    static bool quitting;
+    static string pendingTitleNote;
 
     NetworkRunner runner;
     NetworkObject playerPrefab;
+    GameMode mode;
     bool sceneReady;
+    bool live;
+    bool closing;
+    bool ending;
+    bool returnToTitle;
+    bool returned;
+    bool anchored;
+    bool keptOpen;
+    int anchorTries;
     int spawnCount;
-    readonly List<PlayerRef> waiting = new List<PlayerRef>();
+    int readySends;
+    float giveUpAt;
+    float nextReadyAt;
+    TextMesh roomLabel;
+    readonly List<PlayerRef> members = new List<PlayerRef>(8);
+    readonly List<PlayerRef> waiting = new List<PlayerRef>(8);
+    readonly List<PlayerRef> ready = new List<PlayerRef>(8);
+    readonly List<PlayerRef> spawnedPlayers = new List<PlayerRef>(8);
+    readonly List<SpawnedBody> bodies = new List<SpawnedBody>(8);
+
+    struct SpawnedBody
+    {
+        public int playerId;
+        public NetworkObject body;
+    }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics()
+    {
+        active = null;
+        hostPending = false;
+        serverAttempts = 0;
+        quitting = false;
+        pendingTitleNote = null;
+    }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Boot()
     {
+        if (quitting || active != null)
+            return;
+
 #if UNITY_EDITOR
         if (UnityEditor.SessionState.GetBool(PlayAsServerKey, false))
         {
             UnityEditor.SessionState.SetBool(PlayAsServerKey, false);
+            hostPending = true;
             Begin(GameMode.Server);
             return;
         }
 #endif
-        if (IsServerProcess())
+        if (hostPending)
+        {
+            Debug.Log("Hd2 server restarted after the title unloaded.");
             Begin(GameMode.Server);
+            return;
+        }
+
+        if (IsServerProcess())
+        {
+            hostPending = true;
+            Begin(GameMode.Server);
+        }
     }
 
     public static void Join()
     {
+        if (active != null && active.mode == GameMode.Server)
+            return;
+        if (active != null)
+            active.Retire();
         Begin(GameMode.Client);
+    }
+
+    public static void NoteLocalBody()
+    {
+        if (active != null)
+            active.live = true;
+    }
+
+    public static string TakeTitleNote()
+    {
+        string note = pendingTitleNote;
+        pendingTitleNote = null;
+        return note;
     }
 
     static bool IsServerProcess()
@@ -57,24 +147,76 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
             if (args[i] == "-batchmode" || args[i] == "-hd2Server")
                 return true;
         }
+
         return false;
 #endif
     }
 
     static void Begin(GameMode mode)
     {
-        if (starting)
+        if (active != null)
             return;
-        starting = true;
+        if (mode != GameMode.Client && mode != GameMode.Server)
+            return;
+        if (mode == GameMode.Server)
+        {
+            serverAttempts++;
+            if (serverAttempts > 2)
+            {
+                hostPending = false;
+                Debug.LogError("Hd2 server stopped before Shootout loaded.");
+                return;
+            }
+        }
 
         var host = new GameObject("Hd2Session");
         DontDestroyOnLoad(host);
         var session = host.AddComponent<Hd2Session>();
-        session.StartSession(mode);
+        session.mode = mode;
+        session.StartSession();
     }
 
-    async void StartSession(GameMode mode)
+    void Awake()
     {
+        if (active != null && active != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        active = this;
+        DontDestroyOnLoad(gameObject);
+    }
+
+    void OnApplicationQuit()
+    {
+        quitting = true;
+        hostPending = false;
+    }
+
+    void OnDestroy()
+    {
+        if (active == this)
+            active = null;
+    }
+
+    void Retire()
+    {
+        closing = true;
+        returnToTitle = false;
+        if (runner != null && runner.IsRunning)
+            runner.Shutdown(false, ShutdownReason.Ok, false);
+        if (active == this)
+            active = null;
+        Destroy(gameObject);
+    }
+
+    async void StartSession()
+    {
+        DontDestroyOnLoad(gameObject);
+        if (mode == GameMode.Client)
+            giveUpAt = Time.unscaledTime + JoinTimeout;
+
         playerPrefab = Resources.Load<NetworkObject>(PlayerResource);
         if (playerPrefab == null)
             Debug.LogError("Hd2 is missing Resources/Hd2NetPlayer.");
@@ -83,6 +225,7 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
         runner.ProvideInput = false;
         var sceneManager = gameObject.AddComponent<NetworkSceneManagerDefault>();
         runner.AddCallbacks(this);
+        DontDestroyOnLoad(gameObject);
 
         var args = new StartGameArgs
         {
@@ -97,6 +240,7 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
             if (index < 0)
             {
                 Debug.LogError("Hd2 Shootout is not in the build.");
+                hostPending = false;
                 return;
             }
 
@@ -109,25 +253,231 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
         {
             StartGameResult result = await runner.StartGame(args);
             if (result.Ok)
+            {
                 Debug.Log("Hd2 session " + mode + " " + SessionName);
-            else
-                Debug.LogError("Hd2 session failed " + result.ShutdownReason + " " + result.ErrorMessage + ". Paste a Fusion 2 App Id into PhotonAppSettings.");
+                return;
+            }
+
+            Debug.LogError("Hd2 session failed " + result.ShutdownReason + " " + result.ErrorMessage);
+            if (mode == GameMode.Client)
+                GiveUp();
         }
         catch (Exception error)
         {
             Debug.LogError("Hd2 session failed " + error.Message);
+            if (mode == GameMode.Client)
+                GiveUp();
         }
     }
 
-    void SpawnPlayer(PlayerRef player)
+    void Update()
     {
-        if (playerPrefab == null)
+        if (returnToTitle)
+        {
+            ReturnToTitle();
+            return;
+        }
+
+        if (mode != GameMode.Client || runner == null || !runner.IsRunning)
             return;
 
-        Vector3 position = new Vector3(spawnCount * 1.5f, 1.5f, 0f);
+        if (!sceneReady)
+        {
+            if (giveUpAt > 0f && Time.unscaledTime >= giveUpAt)
+                GiveUp();
+            return;
+        }
+
+        if (readySends < ReadyResends && Time.unscaledTime >= nextReadyAt)
+        {
+            nextReadyAt = Time.unscaledTime + 1f;
+            readySends++;
+            runner.SendReliableDataToServer(ReadyKey, ReadOnlySpan<byte>.Empty);
+        }
+    }
+
+    void LateUpdate()
+    {
+        if (anchored)
+            return;
+
+        anchorTries++;
+        if (gameObject.scene.buildIndex < 0 || anchorTries > 5)
+        {
+            anchored = true;
+            return;
+        }
+
+        DontDestroyOnLoad(gameObject);
+    }
+
+    void GiveUp()
+    {
+        if (ending || mode == GameMode.Server)
+            return;
+        ending = true;
+        giveUpAt = 0f;
+        Debug.LogError("Hd2 join timed out");
+        if (runner != null && runner.IsRunning)
+            runner.Shutdown(false, ShutdownReason.Ok, false);
+        else
+            returnToTitle = true;
+    }
+
+    void ReturnToTitle()
+    {
+        if (returned)
+            return;
+        returned = true;
+        returnToTitle = false;
+        bool onTitle = SceneManager.GetActiveScene().name == "Title";
+        if (onTitle)
+        {
+            pendingTitleNote = null;
+            Hd2TitleScreen title = FindFirstObjectByType<Hd2TitleScreen>();
+            if (title != null)
+                title.CancelJoin();
+        }
+        else
+        {
+            pendingTitleNote = JoinFailMessage;
+            SceneManager.LoadScene("Title");
+        }
+
+        if (active == this)
+            active = null;
+        Destroy(gameObject);
+    }
+
+    void Remember(PlayerRef player)
+    {
+        if (Listed(members, player))
+            return;
+        members.Add(player);
+        ApplyLabel();
+    }
+
+    void ForgetMember(PlayerRef player)
+    {
+        int id = player.PlayerId;
+        for (int i = members.Count - 1; i >= 0; i--)
+        {
+            if (members[i].PlayerId != id)
+                continue;
+            members.RemoveAt(i);
+            ApplyLabel();
+            return;
+        }
+    }
+
+    static bool Listed(List<PlayerRef> list, PlayerRef player)
+    {
+        int id = player.PlayerId;
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (list[i].PlayerId == id)
+                return true;
+        }
+
+        return false;
+    }
+
+    static void Forget(List<PlayerRef> list, PlayerRef player)
+    {
+        int id = player.PlayerId;
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            if (list[i].PlayerId == id)
+                list.RemoveAt(i);
+        }
+    }
+
+    void SeatAndSpawn(PlayerRef player)
+    {
+        if (!sceneReady || !ShootoutLoaded() || playerPrefab == null || runner == null)
+            return;
+        if (!runner.IsPlayerValid(player) || Listed(spawnedPlayers, player))
+            return;
+
+        spawnedPlayers.Add(player);
+        Forget(waiting, player);
+
+        int nth = spawnCount;
         spawnCount++;
-        runner.Spawn(playerPrefab, position, Quaternion.identity, player);
+        Vector3 position = new Vector3(nth * 1.5f, 2.5f, 0f);
+        Quaternion rotation = Quaternion.identity;
+        if (TryTeamSpawn(nth, out Vector3 spawnPosition, out Quaternion spawnRotation))
+        {
+            position = spawnPosition;
+            rotation = spawnRotation;
+        }
+
+        NetworkObject body = runner.Spawn(playerPrefab, position, rotation, player);
+        if (body == null)
+        {
+            Forget(spawnedPlayers, player);
+            Debug.LogError("Hd2 could not spawn a player body.");
+            return;
+        }
+
+        var spawned = new SpawnedBody();
+        spawned.playerId = player.PlayerId;
+        spawned.body = body;
+        bodies.Add(spawned);
+        Hd2Shootout.ReplaceEasiestBot();
         Debug.Log("Hd2 player joined " + player.PlayerId + " at " + position.x);
+    }
+
+    static bool TryTeamSpawn(int nth, out Vector3 position, out Quaternion rotation)
+    {
+        position = Vector3.zero;
+        rotation = Quaternion.identity;
+        Hd2Team side = (nth % 2) == 0 ? Hd2Team.Blue : Hd2Team.Red;
+        int slot = nth / 2;
+        var points = UnityEngine.Object.FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        int matches = 0;
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (points[i] != null && points[i].team == side)
+                matches++;
+        }
+
+        if (matches == 0)
+            return false;
+
+        int want = slot % matches;
+        int seen = 0;
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (points[i] == null || points[i].team != side)
+                continue;
+            if (seen == want)
+            {
+                position = points[i].transform.position;
+                rotation = points[i].transform.rotation;
+                return true;
+            }
+
+            seen++;
+        }
+
+        return false;
+    }
+
+    void DespawnBody(PlayerRef player)
+    {
+        if (runner == null)
+            return;
+        int id = player.PlayerId;
+        for (int i = bodies.Count - 1; i >= 0; i--)
+        {
+            if (bodies[i].playerId != id)
+                continue;
+            NetworkObject body = bodies[i].body;
+            bodies.RemoveAt(i);
+            if (body != null)
+                runner.Despawn(body);
+        }
     }
 
     void EnsureView()
@@ -162,34 +512,102 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
 #endif
     }
 
-    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
+    void ShowRoomLabel()
     {
-        if (!runner.IsServer)
+        if (roomLabel != null)
             return;
-        if (!sceneReady)
+
+        var labelObject = new GameObject("Hd2RoomLabel");
+        Camera view = Camera.main;
+        if (view != null)
         {
-            waiting.Add(player);
-            return;
+            labelObject.transform.SetParent(view.transform, false);
+            labelObject.transform.localPosition = new Vector3(0f, -0.22f, 1.25f);
+            labelObject.transform.localRotation = Quaternion.identity;
+        }
+        else
+        {
+            labelObject.transform.position = new Vector3(0f, 2.2f, 3f);
+            labelObject.transform.rotation = Quaternion.identity;
         }
 
-        SpawnPlayer(player);
+        var text = labelObject.AddComponent<TextMesh>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 64;
+        text.characterSize = 0.018f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = new Color(0.55f, 1f, 0.7f, 1f);
+        var renderer = text.GetComponent<MeshRenderer>();
+        if (renderer != null)
+        {
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            if (text.font != null)
+                renderer.sharedMaterial = text.font.material;
+        }
+
+        roomLabel = text;
+        ApplyLabel();
+    }
+
+    void ApplyLabel()
+    {
+        if (roomLabel == null)
+            return;
+        int count = members.Count;
+        if (count < 0)
+            count = 0;
+        if (count >= CountLabels.Length)
+            count = CountLabels.Length - 1;
+        string next = CountLabels[count];
+        if (roomLabel.text == next)
+            return;
+        roomLabel.text = next;
+    }
+
+    void ShowLostLabel()
+    {
+        if (roomLabel == null)
+            return;
+        if (roomLabel.text == LostLabel)
+            return;
+        roomLabel.text = LostLabel;
+    }
+
+    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
+    {
+        Remember(player);
+        if (runner == null || !runner.IsServer)
+            return;
+        if (Listed(ready, player) || Listed(spawnedPlayers, player))
+            SeatAndSpawn(player);
+        else if (!Listed(waiting, player))
+            waiting.Add(player);
+    }
+
+    static bool ShootoutLoaded()
+    {
+        Scene scene = SceneManager.GetActiveScene();
+        return scene.IsValid() && scene.name == "Shootout";
     }
 
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log("Hd2 player left " + player.PlayerId);
-        if (runner == null || !runner.IsServer)
-            return;
-
-        int remaining = 0;
-        foreach (PlayerRef connected in runner.ActivePlayers)
+        ForgetMember(player);
+        Forget(waiting, player);
+        Forget(ready, player);
+        Forget(spawnedPlayers, player);
+        if (runner != null && runner.IsServer)
         {
-            if (connected != player)
-                remaining++;
+            DespawnBody(player);
+            if (!keptOpen)
+            {
+                keptOpen = true;
+                Debug.Log("Hd2 room " + SessionName + " stays open");
+            }
         }
-
-        if (remaining == 0)
-            Close();
     }
 
     public static void CloseRoom()
@@ -201,15 +619,15 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
             SceneManager.LoadScene("Title");
     }
 
-    bool closing;
-
     public void Close()
     {
+        if (mode == GameMode.Server)
+            return;
         if (closing)
             return;
         closing = true;
         if (runner != null && runner.IsRunning)
-            runner.Shutdown();
+            runner.Shutdown(false, ShutdownReason.Ok, false);
         if (IsServerProcess())
         {
 #if !UNITY_EDITOR
@@ -224,15 +642,25 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
     public void OnSceneLoadDone(NetworkRunner runner)
     {
         sceneReady = true;
-        if (runner.IsServer)
+        if (gameObject.scene.buildIndex >= 0)
+            DontDestroyOnLoad(gameObject);
+
+        if (runner != null && runner.IsServer)
         {
-            for (int i = 0; i < waiting.Count; i++)
-                SpawnPlayer(waiting[i]);
-            waiting.Clear();
+            hostPending = false;
+            ShowRoomLabel();
+            ApplyLabel();
+            for (int i = 0; i < ready.Count; i++)
+                SeatAndSpawn(ready[i]);
         }
         else
         {
             EnsureView();
+            ShowRoomLabel();
+            ApplyLabel();
+            giveUpAt = 0f;
+            nextReadyAt = Time.unscaledTime;
+            readySends = 0;
         }
 
         Debug.Log("Hd2 scene ready");
@@ -246,6 +674,21 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
     public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
     {
         Debug.Log("Hd2 shutdown " + shutdownReason);
+        if (mode == GameMode.Server || closing)
+            return;
+        if (live)
+        {
+            ShowLostLabel();
+            return;
+        }
+
+        returnToTitle = true;
+        if (SceneManager.GetActiveScene().name != "Title")
+            return;
+
+        Hd2TitleScreen title = FindFirstObjectByType<Hd2TitleScreen>();
+        if (title != null)
+            title.CancelJoin();
     }
 
     public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
@@ -262,7 +705,15 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
     public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
     public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
     public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
-    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ReadOnlySpan<byte> data) { }
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ReadOnlySpan<byte> data)
+    {
+        if (runner == null || !runner.IsServer || key != ReadyKey)
+            return;
+        if (!Listed(ready, player))
+            ready.Add(player);
+        SeatAndSpawn(player);
+    }
+
     public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
     public void OnInput(NetworkRunner runner, NetworkInput input) { }
     public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }

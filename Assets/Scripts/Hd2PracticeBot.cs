@@ -33,6 +33,9 @@ public class Hd2PracticeBot : MonoBehaviour
 
     void Start()
     {
+#if UNITY_EDITOR
+        ReplaceLegacyRobot();
+#endif
         var existing = transform.Find("PracticeRobot");
         if (existing != null)
         {
@@ -234,6 +237,36 @@ public class Hd2PracticeBot : MonoBehaviour
             capsule.center = length > 0.01f ? end * 0.5f : Vector3.zero;
         }
     }
+
+#if UNITY_EDITOR
+    const string PlayerBotPath = "Assets/Models/Bot/PlayerBotRobot.fbx";
+
+    void ReplaceLegacyRobot()
+    {
+        bool legacyPrefab = IsLegacyPath(UnityEditor.AssetDatabase.GetAssetPath(robotPrefab));
+        var existing = transform.Find("PracticeRobot");
+        bool legacyChild = existing != null
+            && IsLegacyPath(UnityEditor.PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(existing.gameObject));
+        if (!legacyPrefab && !legacyChild)
+            return;
+
+        var model = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlayerBotPath);
+        if (model == null)
+            return;
+
+        if (legacyChild)
+            DestroyImmediate(existing.gameObject);
+        robotPrefab = model;
+    }
+
+    static bool IsLegacyPath(string path)
+    {
+        return path == "Assets/Prefabs/HumanoidPractice.prefab"
+            || path == "Assets/Prefabs/PracticeRobot.prefab"
+            || path == "Assets/Models/Bot/HumanoidRobot.fbx"
+            || path == "Assets/Models/Bot/LowPolyRobot.fbx";
+    }
+#endif
 
     static Transform FindNamed(Transform root, string boneName)
     {

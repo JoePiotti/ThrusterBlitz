@@ -9,6 +9,7 @@ using UnityEngine;
 public static class Hd2PracticeBotSetup
 {
     public const string PrefabPath = "Assets/Prefabs/HumanoidPractice.prefab";
+    public const string ModelPath = "Assets/Models/Bot/PlayerBotRobot.fbx";
 
     [MenuItem("HD2/Bake Practice Bot Hitboxes")]
     public static void BakeFromMenu()
@@ -38,7 +39,7 @@ public static class Hd2PracticeBotSetup
         if (AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) != null)
             return;
 
-        var model = AssetDatabase.LoadAssetAtPath<GameObject>(Hd2BodySetup.RobotPath);
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
         if (model == null)
             return;
 
@@ -52,15 +53,16 @@ public static class Hd2PracticeBotSetup
 
     static void WireOpenScenes()
     {
-        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
-        if (prefab == null || EditorApplication.isPlayingOrWillChangePlaymode)
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
+        if (model == null || EditorApplication.isPlayingOrWillChangePlaymode)
             return;
 
         var bots = Object.FindObjectsByType<Hd2PracticeBot>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         for (int i = 0; i < bots.Length; i++)
         {
             var practice = bots[i];
-            if (practice.gameObject.scene.path != "Assets/Scenes/Deathmatch.unity")
+            string scenePath = practice.gameObject.scene.path;
+            if (scenePath.Contains("/Archive/") || scenePath.Contains("/_Recovery/"))
                 continue;
             if (UnderManual(practice.transform))
                 continue;
@@ -69,29 +71,42 @@ public static class Hd2PracticeBotSetup
             if (existing != null)
             {
                 string path = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(existing.gameObject);
-                if (path == PrefabPath)
+                if (path == ModelPath)
                 {
-                    if (practice.robotPrefab != prefab)
-                    {
-                        practice.robotPrefab = prefab;
-                        EditorUtility.SetDirty(practice);
-                        EditorSceneManager.MarkSceneDirty(practice.gameObject.scene);
-                    }
+                    AssignRobot(practice, model);
                     continue;
                 }
+
+                if (!IsLegacyRobotPath(path))
+                    continue;
 
                 Object.DestroyImmediate(existing.gameObject);
             }
 
-            var placed = (GameObject)PrefabUtility.InstantiatePrefab(prefab, practice.transform);
+            var placed = (GameObject)PrefabUtility.InstantiatePrefab(model, practice.transform);
             placed.name = "PracticeRobot";
             placed.transform.localPosition = Vector3.zero;
             placed.transform.localRotation = Quaternion.identity;
             placed.transform.localScale = Vector3.one;
-            practice.robotPrefab = prefab;
-            EditorUtility.SetDirty(practice);
-            EditorSceneManager.MarkSceneDirty(practice.gameObject.scene);
+            AssignRobot(practice, model);
         }
+    }
+
+    static void AssignRobot(Hd2PracticeBot practice, GameObject model)
+    {
+        if (practice.robotPrefab == model)
+            return;
+        practice.robotPrefab = model;
+        EditorUtility.SetDirty(practice);
+        EditorSceneManager.MarkSceneDirty(practice.gameObject.scene);
+    }
+
+    static bool IsLegacyRobotPath(string path)
+    {
+        return path == PrefabPath
+            || path == "Assets/Prefabs/PracticeRobot.prefab"
+            || path == "Assets/Models/Bot/HumanoidRobot.fbx"
+            || path == "Assets/Models/Bot/LowPolyRobot.fbx";
     }
 
     static bool UnderManual(Transform target)

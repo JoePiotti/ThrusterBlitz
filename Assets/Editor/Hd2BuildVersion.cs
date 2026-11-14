@@ -15,8 +15,14 @@ public class Hd2BuildVersion : IPreprocessBuildWithReport
         int code = PlayerSettings.Android.bundleVersionCode + 1;
         if (code < 1)
             code = 1;
+        string version = "1.0." + code;
         PlayerSettings.Android.bundleVersionCode = code;
-        PlayerSettings.bundleVersion = "1.0." + code;
+        PlayerSettings.bundleVersion = version;
+        string folder = "Assets/Resources";
+        if (!AssetDatabase.IsValidFolder(folder))
+            AssetDatabase.CreateFolder("Assets", "Resources");
+        System.IO.File.WriteAllText(folder + "/BuildVersion.txt", version);
+        AssetDatabase.ImportAsset(folder + "/BuildVersion.txt");
         AssetDatabase.SaveAssets();
     }
 }

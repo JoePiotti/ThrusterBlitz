@@ -944,6 +944,9 @@ public class Hd2ShockOrb : MonoBehaviour
                 var shootout = hit.collider != null ? hit.collider.GetComponentInParent<Hd2ShootoutShield>() : null;
                 if (shootout != null)
                     shootout.PlayHit(hit.point, hit.normal, step / distance);
+                var drop = hit.collider != null ? hit.collider.GetComponentInParent<Hd2DropShield>() : null;
+                if (drop != null)
+                    drop.NoteImpact(hit.collider, hit.point, hit.normal, step / distance);
                 Burst(hit.point);
                 return;
             }
@@ -1002,6 +1005,7 @@ public class Hd2ShockOrb : MonoBehaviour
 
         exploded = true;
         RememberEnd(point);
+        Hd2DropShield.ApplyBlast(point, innerRadius, innerDamage, outerRadius, outerDamage);
         var seen = new HashSet<Hd2Health>();
         Collider[] colliders = Physics.OverlapSphere(point, outerRadius, ~0, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < colliders.Length; i++)
@@ -1011,6 +1015,8 @@ public class Hd2ShockOrb : MonoBehaviour
 
             Hd2Health health = colliders[i].GetComponentInParent<Hd2Health>();
             if (health == null || !seen.Add(health))
+                continue;
+            if (Hd2DropShield.Blocks(point, health.transform.position + Vector3.up * 0.9f))
                 continue;
             if (health.IsAlly(owner))
                 continue;

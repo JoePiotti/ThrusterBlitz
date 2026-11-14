@@ -57,6 +57,14 @@ public class Hd2Body : MonoBehaviour
     public Transform gripPivotL;
     [Tooltip("Where the end of the right forearm should meet the gun. Drag this while the game is stopped.")]
     public Transform gripPivotR;
+    [Tooltip("Decimated left-hand mesh spawned on Hand.L.")]
+    public GameObject handMeshLeftPrefab;
+    [Tooltip("Decimated right-hand mesh spawned on Hand.R.")]
+    public GameObject handMeshRightPrefab;
+    [Tooltip("Extra euler rotation applied after the grip Wrist aim on the left hand mesh.")]
+    public Vector3 handMeshEulerOffsetL;
+    [Tooltip("Extra euler rotation applied after the grip Wrist aim on the right hand mesh.")]
+    public Vector3 handMeshEulerOffsetR;
 
     Transform hips;
     Transform neck;
@@ -108,11 +116,28 @@ public class Hd2Body : MonoBehaviour
     readonly Dictionary<Transform, Vector3> palmAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> lengthAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> indexSpread = new Dictionary<Transform, Vector3>();
+    readonly Transform[] gripBonesL = new Transform[Hd2GripFingers.BoneCount];
+    readonly Transform[] gripBonesR = new Transform[Hd2GripFingers.BoneCount];
+    readonly Transform[] gripMarksL = new Transform[Hd2GripFingers.BoneCount];
+    readonly Transform[] gripMarksR = new Transform[Hd2GripFingers.BoneCount];
+    readonly Vector3[] gripAxesL = new Vector3[Hd2GripFingers.BoneCount];
+    readonly Vector3[] gripAxesR = new Vector3[Hd2GripFingers.BoneCount];
+    Transform gripGunL;
+    Transform gripGunR;
+    bool gripReadyL;
+    bool gripReadyR;
     InputAction leftTrigger;
     InputAction leftGrip;
     InputAction rightTrigger;
     InputAction rightGrip;
     static readonly List<XRDisplaySubsystem> displays = new List<XRDisplaySubsystem>();
+    Transform handVisualL;
+    Transform handVisualR;
+    Transform cachedGunL;
+    Transform cachedGunR;
+    Transform cachedWristL;
+    Transform cachedWristR;
+    bool handVisualsReady;
 
     void Awake()
     {
@@ -132,6 +157,7 @@ public class Hd2Body : MonoBehaviour
             for (int i = 0; i < animators.Length; i++)
                 animators[i].enabled = false;
             Hd2RobotCleanup.StripImportedDevices(body.gameObject);
+            Hd2PracticeBot.FitHitboxes(body);
         }
 
         leftTrigger = FingerAxis("LeftHand", "trigger");
@@ -754,6 +780,7 @@ public class Hd2Body : MonoBehaviour
             chainL = BuildChain(upperArmL, handL);
         if (chainR == null)
             chainR = BuildChain(upperArmR, handR);
+        EnsureHandVisuals();
     }
 
     static Transform[] BuildChain(Transform upper, Transform hand)
@@ -804,6 +831,85 @@ public class Hd2Body : MonoBehaviour
         }
 
         PlaceHandOnGun(hand, target);
+        PoseHandMesh(hand, target);
+    }
+
+    void EnsureHandVisuals()
+    {
+        if (handVisualsReady)
+            return;
+        if (handMeshLeftPrefab != null && handL != null && handVisualL == null)
+        {
+            GameObject go = Instantiate(handMeshLeftPrefab, handL);
+            go.name = "HandMesh";
+            handVisualL = go.transform;
+        }
+
+        if (handMeshRightPrefab != null && handR != null && handVisualR == null)
+        {
+            GameObject go = Instantiate(handMeshRightPrefab, handR);
+            go.name = "HandMesh";
+            handVisualR = go.transform;
+        }
+
+        handVisualsReady = (handMeshLeftPrefab == null || handVisualL != null)
+            && (handMeshRightPrefab == null || handVisualR != null);
+    }
+
+    void PoseHandMesh(Transform handBone, Transform controller)
+    {
+        if (handBone == null)
+            return;
+
+        bool right = handBone == handR;
+        Transform visual = right ? handVisualR : handVisualL;
+        if (visual == null)
+            return;
+
+        RefreshWristCache(controller, right);
+        Transform wrist = right ? cachedWristR : cachedWristL;
+        if (wrist != null)
+        {
+            Vector3 offset = right ? handMeshEulerOffsetR : handMeshEulerOffsetL;
+            visual.SetPositionAndRotation(wrist.position, wrist.rotation * Quaternion.Euler(offset));
+            return;
+        }
+
+        visual.localPosition = Vector3.zero;
+        visual.localRotation = Quaternion.identity;
+    }
+
+    void RefreshWristCache(Transform controller, bool right)
+    {
+        Transform gun = GunInHand(controller);
+        if (right)
+        {
+            if (gun == cachedGunR)
+                return;
+            cachedGunR = gun;
+            cachedWristR = gun != null ? FindWristChild(gun) : null;
+            return;
+        }
+
+        if (gun == cachedGunL)
+            return;
+        cachedGunL = gun;
+        cachedWristL = gun != null ? FindWristChild(gun) : null;
+    }
+
+    static Transform FindWristChild(Transform gun)
+    {
+        for (int i = 0; i < gun.childCount; i++)
+        {
+            Transform child = gun.GetChild(i);
+            if (child.name == "Wrist")
+                return child;
+            Transform nested = FindWristChild(child);
+            if (nested != null)
+                return nested;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -1133,6 +1239,7 @@ public class Hd2Body : MonoBehaviour
                 || node.GetComponent<Hd2Shocks>() != null
                 || node.GetComponent<Hd2RocketLauncher>() != null
                 || node.GetComponent<Hd2BurstPistol>() != null
+                || node.GetComponent<Hd2DropShield>() != null
                 || node.GetComponent<Hd2MuzzleFlash>() != null)
                 return true;
             node = node.parent;
@@ -1235,6 +1342,7 @@ public class Hd2Body : MonoBehaviour
         AlignForearmToWrist(forearm, hand, target);
         KeepForearmStraight(hand);
         PlaceHandOnGun(hand, target);
+        PoseHandMesh(hand, target);
     }
 
     // Upper arms may meet in front of the chest, but neither elbow may cross
@@ -1394,7 +1502,7 @@ public class Hd2Body : MonoBehaviour
 
     void KeepForearmStraight(Transform hand)
     {
-        if (hand == null || fingers.Count > 0)
+        if (hand == null)
             return;
 
         if (!handRestReady)
@@ -1409,9 +1517,65 @@ public class Hd2Body : MonoBehaviour
         hand.localRotation = hand == handR ? restHandR : restHandL;
     }
 
+    bool PoseGripFingers(Transform hand, Transform gun)
+    {
+        bool right = hand == handR;
+        if (hand == null || gun == null)
+        {
+            ClearGrip(right);
+            return false;
+        }
+
+        if ((right ? gripGunR : gripGunL) != gun)
+        {
+            if (right)
+            {
+                gripGunR = gun;
+                gripReadyR = Hd2GripFingers.Bind(hand, gun, gripBonesR, gripMarksR, gripAxesR);
+            }
+            else
+            {
+                gripGunL = gun;
+                gripReadyL = Hd2GripFingers.Bind(hand, gun, gripBonesL, gripMarksL, gripAxesL);
+            }
+        }
+
+        if (!(right ? gripReadyR : gripReadyL))
+            return false;
+
+        if (right)
+            Hd2GripFingers.Apply(gripBonesR, gripMarksR, gripAxesR);
+        else
+            Hd2GripFingers.Apply(gripBonesL, gripMarksL, gripAxesL);
+        return true;
+    }
+
+    void ClearGrip(bool right)
+    {
+        if (right)
+        {
+            gripGunR = null;
+            gripReadyR = false;
+        }
+        else
+        {
+            gripGunL = null;
+            gripReadyL = false;
+        }
+    }
+
     void PlaceHandOnGun(Transform hand, Transform target)
     {
         Transform gun = GunInHand(target);
+        bool right = hand == handR;
+        float indexPull = ReadFinger(right ? rightTrigger : leftTrigger, true, right);
+        if (PoseGripFingers(hand, gun))
+        {
+            if (gun != null)
+                PullGunTrigger(gun, indexPull);
+            return;
+        }
+
         bool pistol = gun != null && (gun.GetComponent<Hd2Pistol>() != null || gun.GetComponent<Hd2Shocks>() != null || gun.GetComponent<Hd2LaserPistol>() != null);
         if (fingers.Count == 0)
         {
@@ -1431,8 +1595,7 @@ public class Hd2Body : MonoBehaviour
         else
             hand.rotation = target.rotation * Quaternion.Euler(0f, 180f, 0f);
 
-        bool right = hand == handR;
-        float index = ReadFinger(right ? rightTrigger : leftTrigger, true, right);
+        float index = indexPull;
         float others = ReadFinger(right ? rightGrip : leftGrip, false, right);
         if (pistol)
         {
@@ -1524,7 +1687,10 @@ public class Hd2Body : MonoBehaviour
     {
         return gun.GetComponent<Hd2Pistol>() != null
             || gun.GetComponent<Hd2Shocks>() != null
-            || gun.GetComponent<Hd2LaserPistol>() != null;
+            || gun.GetComponent<Hd2LaserPistol>() != null
+            || gun.GetComponent<Hd2DropShield>() != null
+            || gun.GetComponent<Hd2Smg>() != null
+            || gun.GetComponent<Hd2BurstPistol>() != null;
     }
 
     void AimHandAtWrist(Transform hand, Transform marker)
@@ -1641,6 +1807,10 @@ public class Hd2Body : MonoBehaviour
     {
         if (controller == null)
             return null;
+        // A held drop shield hides the previous gun. Attach the arm to the shield.
+        var dropShield = controller.GetComponentInChildren<Hd2DropShield>(false);
+        if (dropShield != null)
+            return dropShield.transform;
         var pistol = controller.GetComponentInChildren<Hd2Pistol>(true);
         if (pistol != null)
             return pistol.transform;
@@ -1656,6 +1826,9 @@ public class Hd2Body : MonoBehaviour
         var smg = controller.GetComponentInChildren<Hd2Smg>(true);
         if (smg != null)
             return smg.transform;
+        var burst = controller.GetComponentInChildren<Hd2BurstPistol>(true);
+        if (burst != null)
+            return burst.transform;
         var rocket = controller.GetComponentInChildren<Hd2RocketLauncher>(true);
         if (rocket != null)
             return rocket.transform;

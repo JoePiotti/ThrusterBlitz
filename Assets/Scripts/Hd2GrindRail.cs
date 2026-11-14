@@ -46,11 +46,54 @@ public class Hd2GrindRail : MonoBehaviour
 
     void OnEnable()
     {
-        beamFilter = GetComponent<MeshFilter>();
-        beamCollider = GetComponent<MeshCollider>();
-        beamRenderer = GetComponent<MeshRenderer>();
+        CacheParts();
         Rebuild();
         ApplyColor();
+    }
+
+    /// <summary>
+    /// Replace the feet path and rebuild the beam. Fewer than two points clears the beam.
+    /// </summary>
+    public void SetPath(Vector3[] next)
+    {
+        points = next ?? System.Array.Empty<Vector3>();
+        CacheParts();
+        if (points.Length < 2)
+        {
+            ClearBeam();
+            return;
+        }
+
+        shapeHash = 0;
+        if (!enabled)
+        {
+            enabled = true;
+            return;
+        }
+
+        Rebuild();
+    }
+
+    void CacheParts()
+    {
+        if (beamFilter == null)
+            beamFilter = GetComponent<MeshFilter>();
+        if (beamCollider == null)
+            beamCollider = GetComponent<MeshCollider>();
+        if (beamRenderer == null)
+            beamRenderer = GetComponent<MeshRenderer>();
+    }
+
+    void ClearBeam()
+    {
+        CacheParts();
+        if (beamFilter != null)
+            beamFilter.sharedMesh = null;
+        if (beamCollider != null)
+            beamCollider.sharedMesh = null;
+        DestroyMesh();
+        shapeHash = 0;
+        enabled = false;
     }
 
     void OnDestroy()
@@ -84,7 +127,7 @@ public class Hd2GrindRail : MonoBehaviour
 
     void RebuildIfAlive()
     {
-        if (this == null)
+        if (this == null || !enabled)
             return;
         Rebuild();
     }

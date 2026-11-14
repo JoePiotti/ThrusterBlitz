@@ -38,6 +38,8 @@ public class Hd2TitleScreen : MonoBehaviour
     Vector3 boardFocus;
     float lookedAwayFor;
     bool loading;
+    bool joining;
+    TextMesh status;
     readonly RaycastHit[] aimHits = new RaycastHit[8];
 
     void Awake()
@@ -118,18 +120,36 @@ public class Hd2TitleScreen : MonoBehaviour
         board.RotateAround(view.transform.position, Vector3.up, Mathf.Sign(yaw) * step);
     }
 
+    public void CancelJoin()
+    {
+        joining = false;
+        loading = false;
+        SetStatus(Hd2Session.JoinFailMessage);
+    }
+
+    void SetStatus(string message)
+    {
+        if (status == null || string.IsNullOrEmpty(message))
+            return;
+        if (status.text == message)
+            return;
+        status.text = message;
+    }
+
     void Begin(string sceneName)
     {
-        if (loading || string.IsNullOrEmpty(sceneName))
+        if (loading || joining || string.IsNullOrEmpty(sceneName))
             return;
         aimed = null;
-        HideLaser();
         if (sceneName == Hd2Session.JoinMarker)
         {
-            loading = true;
+            joining = true;
+            SetStatus(Hd2Session.JoiningMessage);
             Hd2Session.Join();
             return;
         }
+
+        HideLaser();
 
         if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
@@ -346,6 +366,10 @@ public class Hd2TitleScreen : MonoBehaviour
         choices[0] = BuildChoice("SHOOTOUT", "Shootout", first, new Color(0.55f, 0.12f, 0.1f, 1f), new Color(1f, 0.42f, 0.28f, 1f));
         choices[1] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, second, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
         BuildVersionLabel(second + new Vector3(0f, -0.32f, -0.04f));
+        status = BuildNotice(second + new Vector3(0f, -0.52f, -0.04f));
+        string note = Hd2Session.TakeTitleNote();
+        if (!string.IsNullOrEmpty(note))
+            SetStatus(note);
 
         if (view != null && view.transform.position.sqrMagnitude < 0.01f)
             view.transform.position = new Vector3(0f, 1.6f, 0f);
@@ -401,6 +425,32 @@ public class Hd2TitleScreen : MonoBehaviour
         };
     }
 
+    TextMesh BuildNotice(Vector3 center)
+    {
+        var labelObject = new GameObject("JoinStatus");
+        labelObject.transform.SetParent(board, false);
+        labelObject.transform.position = center;
+        labelObject.transform.rotation = Quaternion.identity;
+        var text = labelObject.AddComponent<TextMesh>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.text = string.Empty;
+        text.fontSize = 48;
+        text.characterSize = 0.02f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = new Color(1f, 0.86f, 0.4f, 1f);
+        var textRenderer = text.GetComponent<MeshRenderer>();
+        if (textRenderer != null)
+        {
+            textRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            textRenderer.receiveShadows = false;
+            if (text.font != null)
+                textRenderer.sharedMaterial = text.font.material;
+        }
+
+        return text;
+    }
+
     void BuildVersionLabel(Vector3 center)
     {
         var labelObject = new GameObject("BuildVersion");
@@ -427,10 +477,14 @@ public class Hd2TitleScreen : MonoBehaviour
 
     static string VersionLabel()
     {
+        TextAsset stamp = Resources.Load<TextAsset>("BuildVersion");
+        string version = stamp != null && !string.IsNullOrEmpty(stamp.text)
+            ? stamp.text.Trim()
+            : Application.version;
 #if UNITY_EDITOR
-        return Application.version + " editor";
+        return version + " editor";
 #else
-        return Application.version;
+        return version;
 #endif
     }
 

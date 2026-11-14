@@ -161,6 +161,7 @@ public class Hd2RocketPickup : MonoBehaviour
         if (rocketModel == null || hand.GetComponentInChildren<Hd2RocketLauncher>(true) != null)
             return false;
 
+        Hd2DropShield.DiscardHeld(hand);
         DestroyAll<Hd2Pistol>(hand);
         DestroyAll<Hd2Smg>(hand);
         DestroyAll<Hd2RocketLauncher>(hand);

@@ -217,7 +217,9 @@ public class Hd2PayloadShield : MonoBehaviour
     {
         if (hit.collider == null || Vector3.Dot(hit.normal, direction) <= 0.05f)
             return false;
-        return hit.collider.GetComponentInParent<Hd2PayloadShield>() == null;
+        if (hit.collider.GetComponentInParent<Hd2PayloadShield>() != null)
+            return false;
+        return true;
     }
 
     public void PlayHit(Vector3 point, Vector3 normal, Vector3 incoming)

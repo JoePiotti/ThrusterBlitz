@@ -220,7 +220,14 @@ public class Hd2BurstPistol : MonoBehaviour
 
         rounds--;
         RefreshAmmo();
-        nextFireTime = Time.time + 1f / Mathf.Max(0.01f, shotsPerSecond);
+        float rate = shotsPerSecond;
+        if (botHeld)
+        {
+            float scale = Hd2EnemyBot.FireScaleOf(this);
+            if (scale > 0f && scale < 1f)
+                rate *= scale;
+        }
+        nextFireTime = Time.time + 1f / Mathf.Max(0.01f, rate);
         if (climbedRounds < recoilClimbRounds)
         {
             climbedRounds++;

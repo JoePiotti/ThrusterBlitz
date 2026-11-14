@@ -110,6 +110,7 @@ public class Hd2Health : MonoBehaviour
             PlayPlayerHit();
         NoteCritical(before);
         Changed?.Invoke(this);
+        Hd2Team killerTeam = Hd2SpawnField.TeamOf(LastAttacker);
         if (health <= 0f)
         {
             var killer = LastAttacker;
@@ -125,6 +126,10 @@ public class Hd2Health : MonoBehaviour
             if (autoRespawn)
                 Respawn();
         }
+
+        Hd2NetPlayer net = GetComponent<Hd2NetPlayer>();
+        if (net != null)
+            net.RelayHit(amount, killerTeam);
     }
 
     public Transform LastAttacker { get; set; }

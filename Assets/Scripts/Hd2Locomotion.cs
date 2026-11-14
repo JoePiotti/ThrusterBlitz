@@ -849,6 +849,8 @@ public class Hd2Locomotion : MonoBehaviour
             Collider collider = hits[i].collider;
             if (collider == null || collider.transform == transform || collider.transform.IsChildOf(transform))
                 continue;
+            if (Hd2DropShield.PassesBody(collider))
+                continue;
             if (hits[i].normal.y < 0.5f || hits[i].distance >= nearest)
                 continue;
             if (collider.GetComponentInParent<Hd2Water>() != null)
@@ -1592,7 +1594,7 @@ public class Hd2Locomotion : MonoBehaviour
 
     bool CountsAsWall(Collider collider)
     {
-        if (collider == null || IsSelf(collider))
+        if (collider == null || IsSelf(collider) || Hd2DropShield.PassesBody(collider))
             return false;
         if (collider.GetComponentInParent<Hd2Health>() != null)
             return false;
@@ -1827,6 +1829,13 @@ public class Hd2Locomotion : MonoBehaviour
                 continue;
             }
 
+            if (Hd2DropShield.PassesBody(hit.collider))
+            {
+                float exit = Hd2DropShield.ExitDistance(origin, direction, remain);
+                traveled += Mathf.Max(hit.distance + 0.08f, exit);
+                continue;
+            }
+
             if (hit.collider != null && hit.collider.GetComponentInParent<Hd2SpawnField>() != null)
                 return true;
 
@@ -1918,6 +1927,8 @@ public class Hd2Locomotion : MonoBehaviour
             for (int i = 0; i < count; i++)
             {
                 if (bodyHits[i].collider != null && bodyHits[i].collider.GetComponentInParent<Hd2SpawnField>() != null)
+                    continue;
+                if (Hd2DropShield.PassesBody(bodyHits[i].collider))
                     continue;
                 if (IsSelf(bodyHits[i].collider))
                     continue;
@@ -2102,7 +2113,7 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider collider = bodyHits[i].collider;
-            if (IsSelf(collider) || IsButton(collider))
+            if (IsSelf(collider) || IsButton(collider) || Hd2DropShield.PassesBody(collider))
                 continue;
             Hd2SpawnField field = collider != null ? collider.GetComponentInParent<Hd2SpawnField>() : null;
             if (field != null && field.Allows(this))
@@ -2759,6 +2770,8 @@ public class Hd2Locomotion : MonoBehaviour
     {
         if (collider == null || collider.isTrigger || IsSelf(collider) || IsButton(collider))
             return false;
+        if (Hd2DropShield.PassesBody(collider))
+            return false;
         if (collider.GetComponentInParent<Hd2GrindRail>() != null)
             return false;
         if (collider.GetComponentInParent<Hd2Water>() != null)
@@ -2803,6 +2816,8 @@ public class Hd2Locomotion : MonoBehaviour
         if (collider == null || collider.isTrigger)
             return false;
         if (collider.transform == transform || collider.transform.IsChildOf(transform))
+            return false;
+        if (Hd2DropShield.PassesBody(collider))
             return false;
         Hd2SpawnField field = collider.GetComponentInParent<Hd2SpawnField>();
         if (field != null && field.Allows(this))
@@ -3178,7 +3193,7 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider collider = bodyHits[i].collider;
-            if (IsSelf(collider) || IsButton(collider))
+            if (IsSelf(collider) || IsButton(collider) || Hd2DropShield.PassesBody(collider))
                 continue;
             Hd2SpawnField field = collider != null ? collider.GetComponentInParent<Hd2SpawnField>() : null;
             if (field != null && field.Allows(this))
@@ -3217,7 +3232,7 @@ public class Hd2Locomotion : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider collider = bodyHits[i].collider;
-            if (IsSelf(collider) || IsButton(collider))
+            if (IsSelf(collider) || IsButton(collider) || Hd2DropShield.PassesBody(collider))
                 continue;
             if (bodyHits[i].normal.y < 0.45f || bodyHits[i].distance >= best)
                 continue;

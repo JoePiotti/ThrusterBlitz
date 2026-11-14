@@ -339,6 +339,13 @@ public class Hd2LaserPistol : MonoBehaviour
             if (hit.collider != null)
             {
                 target = hit.collider.GetComponentInParent<Hd2Health>();
+                var dropShield = hit.collider.GetComponentInParent<Hd2DropShield>();
+                if (dropShield != null)
+                {
+                    dropShield.AbsorbShot(hit.collider, hit.point, hit.normal, direction, damage);
+                    target = null;
+                }
+
                 var glass = hit.collider.GetComponentInParent<Hd2PayloadShield>();
                 if (glass != null)
                     glass.PlayHit(hit.point, hit.normal, direction);
@@ -376,8 +383,18 @@ public class Hd2LaserPistol : MonoBehaviour
             shot.enabled = false;
         if (voice != null && cooldownClip != null)
             voice.PlayOneShot(cooldownClip);
+        float wait = cooldownSeconds;
+        if (botHeld)
+        {
+            float scale = Hd2EnemyBot.FireScaleOf(this);
+            if (scale > 0f && scale < 1f)
+            {
+                float cycle = chargeSeconds + beamSeconds + cooldownSeconds;
+                wait += cycle * (1f / scale - 1f);
+            }
+        }
         phase = Phase.Cooling;
-        phaseEndsAt = Time.time + Mathf.Max(0f, cooldownSeconds);
+        phaseEndsAt = Time.time + Mathf.Max(0f, wait);
         RefreshAmmo();
     }
 

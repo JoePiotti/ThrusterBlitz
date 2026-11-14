@@ -191,3 +191,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8000ca117bc065c4b8e0c19d2329c1ad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Hd2NetPlayer
+  bodyPrefab: {fileID: 919132149155446097, guid: 3786657fe2b144ba953015f5a8772b58, type: 3}
+  pistolPrefab: {fileID: 705638875007445313, guid: e7986862ed5bb8745a16c8c77631e150, type: 3}
+  smgPrefab: {fileID: 7447035856727951518, guid: a1e270decd737274da945fe1f5735d6e, type: 3}
+  shotgunPrefab: {fileID: 3471848131262020082, guid: b3c193bb611ca7143ba67b89ab97bac0, type: 3}
+  laserPrefab: {fileID: 6186150709353209742, guid: 0c1ffcde0086ec142b81ffc2be31b0ea, type: 3}
+  shockPrefab: {fileID: 6186150709353209742, guid: b130f2d64073e0842acae735344e8c1c, type: 3}
+  rocketPrefab: {fileID: 4211275592567137828, guid: d8efecad9537c9145986a3a8e46cd714, type: 3}
+  burstPrefab: {fileID: 6186150709353209742, guid: 41746c628ce201d448e45c30f2139400, type: 3}
+  handMeshLeftPrefab: {fileID: 0}
+  handMeshRightPrefab: {fileID: 0}
+  handMeshEulerOffsetL: {x: 0, y: 0, z: 0}
+  handMeshEulerOffsetR: {x: 0, y: 0, z: 0}
+  team: 0

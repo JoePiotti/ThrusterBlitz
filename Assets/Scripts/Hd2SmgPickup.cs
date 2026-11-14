@@ -169,6 +169,7 @@ public class Hd2SmgPickup : MonoBehaviour
         if (equipped == null || hand.GetComponentInChildren<Hd2Smg>(true) != null)
             return false;
 
+        Hd2DropShield.DiscardHeld(hand);
         var pistols = hand.GetComponentsInChildren<Hd2Pistol>(true);
         for (int i = 0; i < pistols.Length; i++)
         {

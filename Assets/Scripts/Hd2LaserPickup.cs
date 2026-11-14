@@ -170,6 +170,7 @@ public class Hd2LaserPickup : MonoBehaviour
         if (model == null || hand.GetComponentInChildren<Hd2LaserPistol>(true) != null)
             return false;
 
+        Hd2DropShield.DiscardHeld(hand);
         DestroyGuns<Hd2Pistol>(hand);
         DestroyGuns<Hd2Smg>(hand);
         DestroyGuns<Hd2RocketLauncher>(hand);

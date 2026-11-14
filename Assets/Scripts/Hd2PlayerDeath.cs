@@ -447,6 +447,7 @@ public class Hd2PlayerDeath : MonoBehaviour
 
     static void ClearGuns(Transform hand)
     {
+        Hd2DropShield.DiscardHeld(hand);
         DestroyGuns<Hd2Smg>(hand);
         DestroyGuns<Hd2RocketLauncher>(hand);
         DestroyGuns<Hd2Shocks>(hand);
