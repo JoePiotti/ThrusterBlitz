@@ -1,25 +1,56 @@
 using UnityEngine;
 
 /// <summary>
-/// Points robot finger bones along the GripFingers markers on a held gun.
-/// Marker and bone arrays are caller-owned and filled only when the gun instance changes.
+/// Poses robot finger bones from the GripFingers markers on a held gun.
+/// Unbaked guns aim each bone along its markers (legacy). Baked guns (see Hd2GripPose)
+/// copy the marker rotations directly, so the hand matches what was posed in the editor.
 /// </summary>
 public static class Hd2GripFingers
 {
     public const int BoneCount = 15;
 
-    static readonly string[] Names = { "Thumb", "Index", "Middle", "Ring", "Pinky" };
+    public static readonly string[] Names = { "Thumb", "Index", "Middle", "Ring", "Pinky" };
 
-    public static bool Bind(Transform hand, Transform gun, Transform[] bones, Transform[] markers, Vector3[] axes)
+    /// <summary>".R" for a right hand bone, ".L" otherwise.</summary>
+    public static string Side(Transform hand)
     {
-        if (hand == null || gun == null || bones == null || markers == null || axes == null)
+        return hand.name.EndsWith("R") || hand.name.EndsWith("_R") ? ".R" : ".L";
+    }
+
+    /// <summary>Fills bones with Thumb, Thumb.001, Thumb.Tip, Index, ... under the hand.</summary>
+    public static bool FindBones(Transform hand, Transform[] bones)
+    {
+        if (hand == null || bones == null)
+            return false;
+
+        string side = Side(hand);
+        bool any = false;
+        for (int finger = 0; finger < Names.Length; finger++)
+        {
+            string name = Names[finger];
+            Transform bone = Find(hand, name + side);
+            Transform boneMid = bone != null ? Find(bone, name + side + ".001") : null;
+            Transform boneTip = boneMid != null ? Find(boneMid, name + side + ".Tip") : null;
+            int index = finger * 3;
+            bones[index] = bone;
+            bones[index + 1] = boneMid;
+            bones[index + 2] = boneTip;
+            any |= bone != null;
+        }
+
+        return any;
+    }
+
+    /// <summary>Fills markers with Thumb, Thumb.001, Thumb.Tip, Index, ... under the gun's GripFingers.</summary>
+    public static bool FindMarkers(Transform gun, Transform[] markers)
+    {
+        if (gun == null || markers == null)
             return false;
 
         Transform root = Find(gun, "GripFingers");
         if (root == null)
             return false;
 
-        string side = hand.name.EndsWith("R") || hand.name.EndsWith("_R") ? ".R" : ".L";
         bool any = false;
         for (int finger = 0; finger < Names.Length; finger++)
         {
@@ -27,26 +58,39 @@ public static class Hd2GripFingers
             Transform marker = Find(root, name);
             Transform markerMid = marker != null ? Find(marker, name + ".001") : null;
             Transform markerTip = markerMid != null ? Find(markerMid, name + ".Tip") : null;
-            Transform bone = Find(hand, name + side);
-            Transform boneMid = bone != null ? Find(bone, name + side + ".001") : null;
-            Transform boneTip = boneMid != null ? Find(boneMid, name + side + ".Tip") : null;
             int index = finger * 3;
             markers[index] = marker;
             markers[index + 1] = markerMid;
             markers[index + 2] = markerTip;
-            bones[index] = bone;
-            bones[index + 1] = boneMid;
-            bones[index + 2] = boneTip;
-            axes[index] = LengthAxis(bone, boneMid);
-            axes[index + 1] = LengthAxis(boneMid, boneTip);
-            axes[index + 2] = LengthAxis(boneTip, null, boneMid);
-            if (bone != null && marker != null && markerMid != null)
+            any |= marker != null && markerMid != null;
+        }
+
+        return any;
+    }
+
+    public static bool Bind(Transform hand, Transform gun, Transform[] bones, Transform[] markers, Vector3[] axes)
+    {
+        if (hand == null || gun == null || bones == null || markers == null || axes == null)
+            return false;
+        if (!FindMarkers(gun, markers))
+            return false;
+
+        FindBones(hand, bones);
+        bool any = false;
+        for (int finger = 0; finger < Names.Length; finger++)
+        {
+            int index = finger * 3;
+            axes[index] = LengthAxis(bones[index], bones[index + 1]);
+            axes[index + 1] = LengthAxis(bones[index + 1], bones[index + 2]);
+            axes[index + 2] = LengthAxis(bones[index + 2], null, bones[index + 1]);
+            if (bones[index] != null && markers[index] != null && markers[index + 1] != null)
                 any = true;
         }
 
         return any;
     }
 
+    /// <summary>Legacy: points each bone along its markers. Used until a gun is baked.</summary>
     public static void Apply(Transform[] bones, Transform[] markers, Vector3[] axes)
     {
         if (bones == null || markers == null || axes == null)
@@ -59,6 +103,22 @@ public static class Hd2GripFingers
             Aim(bones[index + 1], bones[index + 2], markers[index + 1], markers[index + 2], axes[index + 1]);
             Aim(bones[index + 2], null, markers[index + 1], markers[index + 2], axes[index + 2]);
         }
+    }
+
+    /// <summary>
+    /// Reflects a rotation across the plane with this normal the same way MirrorGrip does:
+    /// forward and up are reflected, right is rebuilt so the result stays a proper rotation.
+    /// </summary>
+    public static Quaternion MirrorRotation(Quaternion rotation, Vector3 normal)
+    {
+        Vector3 forward = Vector3.Reflect(rotation * Vector3.forward, normal);
+        Vector3 up = Vector3.Reflect(rotation * Vector3.up, normal);
+        return Quaternion.LookRotation(forward, up);
+    }
+
+    public static Vector3 MirrorPoint(Vector3 point, Vector3 planePoint, Vector3 normal)
+    {
+        return point - 2f * Vector3.Dot(point - planePoint, normal) * normal;
     }
 
     static void Aim(Transform bone, Transform child, Transform from, Transform to, Vector3 localAxis)
@@ -111,7 +171,7 @@ public static class Hd2GripFingers
         bone.rotation = Quaternion.FromToRotation(current, desired) * bone.rotation;
     }
 
-    static Transform Find(Transform root, string name)
+    public static Transform Find(Transform root, string name)
     {
         if (root == null)
             return null;
@@ -125,5 +185,157 @@ public static class Hd2GripFingers
         }
 
         return null;
+    }
+}
+
+/// <summary>
+/// One robot hand's grip state: its bones, the held gun's markers, and (for the right hand)
+/// the rest-pose offsets that turn a mirrored left-hand marker into this hand's bone rotation.
+/// Create one per hand at rest pose, then call Track, PinHand and ApplyFingers each frame.
+/// </summary>
+public sealed class Hd2GripHand
+{
+    public const int HandSlot = Hd2GripFingers.BoneCount;
+
+    public readonly Transform hand;
+    public readonly bool right;
+    readonly Transform[] bones = new Transform[Hd2GripFingers.BoneCount];
+    readonly Transform[] markers = new Transform[Hd2GripFingers.BoneCount];
+    readonly Vector3[] axes = new Vector3[Hd2GripFingers.BoneCount];
+    readonly Quaternion[] mirror = new Quaternion[Hd2GripFingers.BoneCount + 1];
+    Transform gun;
+    Transform wrist;
+    Hd2GripPose pose;
+    bool fingersReady;
+
+    public Hd2GripHand(Transform hand, bool right)
+    {
+        this.hand = hand;
+        this.right = right;
+        for (int i = 0; i < mirror.Length; i++)
+            mirror[i] = Quaternion.identity;
+        Hd2GripFingers.FindBones(hand, bones);
+    }
+
+    public Transform Gun => gun;
+    public Transform Wrist => wrist;
+    public Hd2GripPose Pose => pose;
+    public bool HasFingers => fingersReady;
+    public bool Baked => pose != null && pose.baked && wrist != null && hand != null;
+    public Transform Bone(int index) => bones[index];
+    public Transform Marker(int index) => markers[index];
+    public Quaternion MirrorOffset(int slot) => mirror[slot];
+
+    /// <summary>
+    /// Call once, with both hands still in the imported rest pose. Records how each right bone
+    /// differs from its mirrored left twin, so mirrored markers can drive the right hand.
+    /// </summary>
+    public static void BuildMirror(Transform frame, Hd2GripHand left, Hd2GripHand right)
+    {
+        if (left == null || right == null || left.hand == null || right.hand == null)
+            return;
+
+        Vector3 normal = LateralNormal(frame, left.hand.position, right.hand.position);
+        if (normal.sqrMagnitude < 0.0001f)
+            return;
+
+        right.mirror[HandSlot] = Offset(left.hand, right.hand, normal);
+        for (int i = 0; i < Hd2GripFingers.BoneCount; i++)
+            right.mirror[i] = Offset(left.bones[i], right.bones[i], normal);
+    }
+
+    static Quaternion Offset(Transform leftBone, Transform rightBone, Vector3 normal)
+    {
+        if (leftBone == null || rightBone == null)
+            return Quaternion.identity;
+        Quaternion mirroredLeft = Hd2GripFingers.MirrorRotation(leftBone.rotation, normal);
+        return Quaternion.Inverse(mirroredLeft) * rightBone.rotation;
+    }
+
+    // The body axis the two hands are spread along. Snapping to the frame's axis keeps
+    // small rest-pose asymmetry from tilting the mirror plane.
+    static Vector3 LateralNormal(Transform frame, Vector3 left, Vector3 right)
+    {
+        Vector3 across = right - left;
+        if (frame == null)
+            return across.sqrMagnitude > 0.0001f ? across.normalized : Vector3.zero;
+
+        Vector3 local = frame.InverseTransformDirection(across);
+        Vector3 axis = Mathf.Abs(local.x) >= Mathf.Abs(local.y) && Mathf.Abs(local.x) >= Mathf.Abs(local.z)
+            ? Vector3.right
+            : Mathf.Abs(local.y) >= Mathf.Abs(local.z) ? Vector3.up : Vector3.forward;
+        return frame.TransformDirection(axis).normalized;
+    }
+
+    /// <summary>Forces the next Track call to look the gun's markers up again.</summary>
+    public void Rebind()
+    {
+        gun = null;
+        wrist = null;
+        pose = null;
+        fingersReady = false;
+    }
+
+    /// <summary>Rebinds markers when the held gun changes. Pass null when the hand is empty.</summary>
+    public void Track(Transform heldGun)
+    {
+        if (heldGun == gun)
+            return;
+
+        gun = heldGun;
+        wrist = null;
+        pose = null;
+        fingersReady = false;
+        if (gun == null)
+            return;
+
+        pose = gun.GetComponentInChildren<Hd2GripPose>(true);
+        if (pose == null)
+            pose = gun.GetComponentInParent<Hd2GripPose>();
+        wrist = Hd2GripFingers.Find(gun, "Wrist");
+        fingersReady = Hd2GripFingers.Bind(hand, gun, bones, markers, axes);
+    }
+
+    /// <summary>Baked guns only: puts the hand bone exactly on the Wrist marker and sizes it to the gun.</summary>
+    public bool PinHand()
+    {
+        if (!Baked)
+            return false;
+
+        hand.SetPositionAndRotation(wrist.position, wrist.rotation * mirror[HandSlot]);
+        float rootScale = Mathf.Abs(pose.transform.lossyScale.x);
+        SetWorldScale(hand, Mathf.Max(0.01f, pose.handScale * rootScale));
+        return true;
+    }
+
+    /// <summary>Poses the fingers from the markers. Returns false when the gun has no GripFingers.</summary>
+    public bool ApplyFingers()
+    {
+        if (!fingersReady)
+            return false;
+
+        if (pose != null && pose.baked)
+        {
+            for (int i = 0; i < Hd2GripFingers.BoneCount; i++)
+            {
+                if (bones[i] != null && markers[i] != null)
+                    bones[i].rotation = markers[i].rotation * mirror[i];
+            }
+
+            return true;
+        }
+
+        Hd2GripFingers.Apply(bones, markers, axes);
+        return true;
+    }
+
+    public static void SetWorldScale(Transform bone, float world)
+    {
+        Transform parent = bone.parent;
+        Vector3 parentScale = parent != null ? parent.lossyScale : Vector3.one;
+        bone.localScale = new Vector3(
+            world / Mathf.Max(0.0001f, Mathf.Abs(parentScale.x)),
+            world / Mathf.Max(0.0001f, Mathf.Abs(parentScale.y)),
+            world / Mathf.Max(0.0001f, Mathf.Abs(parentScale.z)));
     }
 }

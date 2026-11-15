@@ -116,16 +116,13 @@ public class Hd2Body : MonoBehaviour
     readonly Dictionary<Transform, Vector3> palmAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> lengthAxis = new Dictionary<Transform, Vector3>();
     readonly Dictionary<Transform, Vector3> indexSpread = new Dictionary<Transform, Vector3>();
-    readonly Transform[] gripBonesL = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripBonesR = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripMarksL = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripMarksR = new Transform[Hd2GripFingers.BoneCount];
-    readonly Vector3[] gripAxesL = new Vector3[Hd2GripFingers.BoneCount];
-    readonly Vector3[] gripAxesR = new Vector3[Hd2GripFingers.BoneCount];
-    Transform gripGunL;
-    Transform gripGunR;
-    bool gripReadyL;
-    bool gripReadyR;
+    Hd2GripHand gripHandL;
+    Hd2GripHand gripHandR;
+    // Empty children of the forearms where the hand bones used to sit. The hand bones
+    // themselves are moved under the body so forearm stretch can never skew them.
+    Transform armEndL;
+    Transform armEndR;
+    bool handsDetached;
     InputAction leftTrigger;
     InputAction leftGrip;
     InputAction rightTrigger;
@@ -780,7 +777,64 @@ public class Hd2Body : MonoBehaviour
             chainL = BuildChain(upperArmL, handL);
         if (chainR == null)
             chainR = BuildChain(upperArmR, handR);
+        DetachHands();
         EnsureHandVisuals();
+    }
+
+    // Runs once, while the robot is still in its imported rest pose.
+    void DetachHands()
+    {
+        if (handsDetached || body == null || handL == null || handR == null)
+            return;
+
+        gripHandL = new Hd2GripHand(handL, false);
+        gripHandR = new Hd2GripHand(handR, true);
+        Hd2GripHand.BuildMirror(body, gripHandL, gripHandR);
+        if (forearmL != null && forearmR != null)
+        {
+            armEndL = DetachHand(handL);
+            armEndR = DetachHand(handR);
+        }
+
+        handsDetached = true;
+    }
+
+    // Skinning reads each bone's world matrix, not its parent, so the mesh still follows.
+    Transform DetachHand(Transform hand)
+    {
+        var end = new GameObject(hand.name + " ArmEnd").transform;
+        end.SetParent(hand.parent, false);
+        end.localPosition = hand.localPosition;
+        end.localRotation = hand.localRotation;
+        end.localScale = Vector3.one;
+        hand.SetParent(body, true);
+        return end;
+    }
+
+    Transform ArmEnd(Transform hand)
+    {
+        if (hand == handL && armEndL != null)
+            return armEndL;
+        if (hand == handR && armEndR != null)
+            return armEndR;
+        return hand;
+    }
+
+    /// <summary>The grip state of one hand. Used by the Grip Baker editor window.</summary>
+    public Hd2GripHand GripHand(bool right)
+    {
+        return right ? gripHandR : gripHandL;
+    }
+
+    Hd2GripHand GripFor(Transform hand)
+    {
+        if (hand == null)
+            return null;
+        if (hand == handL)
+            return gripHandL;
+        if (hand == handR)
+            return gripHandR;
+        return null;
     }
 
     static Transform[] BuildChain(Transform upper, Transform hand)
@@ -1290,10 +1344,16 @@ public class Hd2Body : MonoBehaviour
         if (upper == null || forearm == null || hand == null || target == null || body == null)
             return;
 
-        Vector3 wrist = GripAtForearmEnd(forearm, hand, GripPoint(target));
-        StretchArm(upper, forearm, hand, wrist);
+        // A baked gun owns the hand: pin it to the Wrist marker first, then reach the arm to it.
+        Transform end = ArmEnd(hand);
+        Hd2GripHand grip = GripFor(hand);
+        if (grip != null)
+            grip.Track(GunInHand(target));
+        bool pinned = end != hand && grip != null && grip.PinHand();
+        Vector3 wrist = pinned ? hand.position : GripAtForearmEnd(forearm, end, hand, GripPoint(target));
+        StretchArm(upper, forearm, end, wrist);
         float upperLength = Vector3.Distance(upper.position, forearm.position);
-        float foreLength = Vector3.Distance(forearm.position, hand.position);
+        float foreLength = Vector3.Distance(forearm.position, end.position);
         if (upperLength < 0.02f || foreLength < 0.02f)
             return;
 
@@ -1306,8 +1366,9 @@ public class Hd2Body : MonoBehaviour
         Vector3 direction = toTarget.sqrMagnitude > 0.0001f ? toTarget.normalized : body.forward;
         Vector3 aim = direction * distance;
 
-        // Closer hands fold the elbow out to the side. The forearm is not shortened to reach them.
-        Vector3 pole = shoulder + body.right * side + Vector3.up * -0.35f;
+        // Closer hands fold the elbow out to the side. Past 45 degrees of gun
+        // yaw, the elbow swings further out so the forearm comes in from the side.
+        Vector3 pole = ElbowHint(shoulder, side, target, pinned ? hand : null);
         Vector3 bend = Vector3.Cross(aim, pole - shoulder);
         if (bend.sqrMagnitude < 0.0001f)
             bend = Vector3.Cross(aim, Vector3.up);
@@ -1327,7 +1388,7 @@ public class Hd2Body : MonoBehaviour
         {
             int upperAxis = LengthAxis(upper, forearm);
             SetAxisScale(upper, upperAxis, Mathf.Clamp(stopped / upperLength, 0.3f, 1f));
-            int foreAxis = LengthAxis(forearm, hand);
+            int foreAxis = LengthAxis(forearm, end);
             Vector3 foreScaleNow = forearm.localScale;
             float foreScale = foreAxis == 0 ? foreScaleNow.x : foreAxis == 1 ? foreScaleNow.y : foreScaleNow.z;
             float restFore = foreScale > 0.01f ? foreLength / foreScale : foreLength;
@@ -1338,11 +1399,51 @@ public class Hd2Body : MonoBehaviour
 
         PointAt(upper, forearm, elbow);
         SeatAgainstBody(upper, forearm, upper == upperArmL);
-        PointAt(forearm, hand, wrist);
-        AlignForearmToWrist(forearm, hand, target);
-        KeepForearmStraight(hand);
+        PointAt(forearm, end, wrist);
+        if (pinned)
+        {
+            TwistForearmToHand(forearm, end, hand);
+            PlaceHandOnGun(hand, target);
+            PoseHandMesh(hand, target);
+            return;
+        }
+
+        FollowArmEnd(hand, end);
+        MatchHandPlane(hand, forearm, WristMarker(target));
         PlaceHandOnGun(hand, target);
+        KeepHandSize(hand);
         PoseHandMesh(hand, target);
+    }
+
+    // Unpinned hands ride on the end of the forearm, at their rest angle to it.
+    void FollowArmEnd(Transform hand, Transform end)
+    {
+        if (end == hand)
+        {
+            KeepForearmStraight(hand);
+            return;
+        }
+
+        hand.SetPositionAndRotation(end.position, end.rotation);
+    }
+
+    // Rolls the forearm about its own length so its end faces the way the pinned hand does.
+    // The end stays put because it sits on the roll axis.
+    static void TwistForearmToHand(Transform forearm, Transform end, Transform hand)
+    {
+        Vector3 axis = end.position - forearm.position;
+        if (axis.sqrMagnitude < 0.000001f)
+            return;
+        axis.Normalize();
+
+        Quaternion delta = hand.rotation * Quaternion.Inverse(end.rotation);
+        Vector3 along = Vector3.Dot(new Vector3(delta.x, delta.y, delta.z), axis) * axis;
+        var twist = new Quaternion(along.x, along.y, along.z, delta.w);
+        float length = Mathf.Sqrt(twist.x * twist.x + twist.y * twist.y + twist.z * twist.z + twist.w * twist.w);
+        if (length < 0.0001f)
+            return;
+        twist = new Quaternion(twist.x / length, twist.y / length, twist.z / length, twist.w / length);
+        forearm.rotation = twist * forearm.rotation;
     }
 
     // Upper arms may meet in front of the chest, but neither elbow may cross
@@ -1481,7 +1582,7 @@ public class Hd2Body : MonoBehaviour
 
     // Hand.L/R is the end of the forearm. The grip should meet that tip,
     // not the bone origin in the middle of the piece.
-    Vector3 GripAtForearmEnd(Transform forearm, Transform hand, Vector3 grip)
+    Vector3 GripAtForearmEnd(Transform forearm, Transform end, Transform hand, Vector3 grip)
     {
         Transform tip = null;
         for (int i = 0; i < hand.childCount; i++)
@@ -1492,7 +1593,7 @@ public class Hd2Body : MonoBehaviour
         }
 
         float extra = tip != null ? Vector3.Distance(hand.position, tip.position) : 0.06f;
-        Vector3 along = hand.position - forearm.position;
+        Vector3 along = end.position - forearm.position;
         if (along.sqrMagnitude < 0.0001f)
             along = grip - forearm.position;
         if (along.sqrMagnitude < 0.0001f)
@@ -1517,51 +1618,23 @@ public class Hd2Body : MonoBehaviour
         hand.localRotation = hand == handR ? restHandR : restHandL;
     }
 
+    // Hands holding a gun with GripFingers take their finger pose from its markers.
+    // Baked guns already pinned the hand in SolveArm. Unbaked ones aim the hand at the
+    // Wrist marker first, so the legacy finger aim starts from the right place.
     bool PoseGripFingers(Transform hand, Transform gun)
     {
-        bool right = hand == handR;
-        if (hand == null || gun == null)
-        {
-            ClearGrip(right);
-            return false;
-        }
-
-        if ((right ? gripGunR : gripGunL) != gun)
-        {
-            if (right)
-            {
-                gripGunR = gun;
-                gripReadyR = Hd2GripFingers.Bind(hand, gun, gripBonesR, gripMarksR, gripAxesR);
-            }
-            else
-            {
-                gripGunL = gun;
-                gripReadyL = Hd2GripFingers.Bind(hand, gun, gripBonesL, gripMarksL, gripAxesL);
-            }
-        }
-
-        if (!(right ? gripReadyR : gripReadyL))
+        Hd2GripHand grip = GripFor(hand);
+        if (grip == null)
             return false;
 
-        if (right)
-            Hd2GripFingers.Apply(gripBonesR, gripMarksR, gripAxesR);
-        else
-            Hd2GripFingers.Apply(gripBonesL, gripMarksL, gripAxesL);
+        grip.Track(gun);
+        if (gun == null || (!grip.HasFingers && !grip.Baked))
+            return false;
+
+        if (!grip.Baked && grip.Wrist != null)
+            AimHandAtWrist(hand, grip.Wrist, grip.right);
+        grip.ApplyFingers();
         return true;
-    }
-
-    void ClearGrip(bool right)
-    {
-        if (right)
-        {
-            gripGunR = null;
-            gripReadyR = false;
-        }
-        else
-        {
-            gripGunL = null;
-            gripReadyL = false;
-        }
     }
 
     void PlaceHandOnGun(Transform hand, Transform target)
@@ -1575,6 +1648,9 @@ public class Hd2Body : MonoBehaviour
                 PullGunTrigger(gun, indexPull);
             return;
         }
+
+        if (hand != null)
+            hand.localScale = Vector3.one;
 
         bool pistol = gun != null && (gun.GetComponent<Hd2Pistol>() != null || gun.GetComponent<Hd2Shocks>() != null || gun.GetComponent<Hd2LaserPistol>() != null);
         if (fingers.Count == 0)
@@ -1664,6 +1740,116 @@ public class Hd2Body : MonoBehaviour
         return wrist + up * 0.04f;
     }
 
+    Vector3 ElbowHint(Vector3 shoulder, float side, Transform target, Transform pinnedHand)
+    {
+        Vector3 outward = body.right * side + Vector3.down * 0.35f;
+        if (outward.sqrMagnitude < 0.0001f)
+            outward = body.right * side;
+        outward.Normalize();
+
+        // Unbaked Wrist markers point forward along the hand. A baked Wrist is the hand
+        // bone's own frame, so read the pinned hand's length axis instead.
+        Transform marker = WristMarker(target);
+        bool hasYaw = marker != null;
+        Vector3 gunForward = marker != null ? marker.forward : Vector3.zero;
+        if (pinnedHand != null && lengthAxis.TryGetValue(pinnedHand, out Vector3 handLength) && handLength.sqrMagnitude > 0.0001f)
+        {
+            gunForward = pinnedHand.TransformDirection(handLength);
+            hasYaw = true;
+        }
+
+        if (hasYaw)
+        {
+            Vector3 flatForward = Vector3.ProjectOnPlane(body.forward, Vector3.up);
+            Vector3 flatGun = Vector3.ProjectOnPlane(gunForward, Vector3.up);
+            if (flatForward.sqrMagnitude > 0.0001f && flatGun.sqrMagnitude > 0.0001f)
+            {
+                float yaw = Vector3.SignedAngle(flatForward, flatGun, Vector3.up);
+                float excess = yaw - Mathf.Clamp(yaw, -45f, 45f);
+                if (Mathf.Abs(excess) > 0.5f)
+                    outward = Quaternion.AngleAxis(excess, Vector3.up) * outward;
+            }
+        }
+
+        return shoulder + outward;
+    }
+
+    Transform WristMarker(Transform target)
+    {
+        Transform gun = GunInHand(target);
+        if (gun == null || !UsesWristMarker(gun))
+            return null;
+        return Find(gun, "Wrist");
+    }
+
+    readonly Dictionary<Transform, Vector3> gripFingerLocal = new Dictionary<Transform, Vector3>();
+    readonly Dictionary<Transform, Vector3> gripBackLocal = new Dictionary<Transform, Vector3>();
+
+    void MatchHandPlane(Transform hand, Transform forearm, Transform marker)
+    {
+        if (hand == null || forearm == null || marker == null)
+            return;
+
+        CacheGripAxes(hand);
+        Vector3 axis = hand.position - forearm.position;
+        if (axis.sqrMagnitude < 0.0001f)
+            return;
+        axis.Normalize();
+
+        Vector3 back = gripBackLocal.TryGetValue(hand, out Vector3 cached) ? cached : Vector3.up;
+        Vector3 current = Vector3.ProjectOnPlane(hand.TransformDirection(back), axis);
+        Vector3 desired = Vector3.ProjectOnPlane(marker.up, axis);
+        if (current.sqrMagnitude < 0.0001f || desired.sqrMagnitude < 0.0001f)
+            return;
+
+        hand.rotation = Quaternion.FromToRotation(current, desired) * hand.rotation;
+    }
+
+    void KeepHandSize(Transform hand)
+    {
+        if (hand == null)
+            return;
+
+        Vector3 lossy = hand.lossyScale;
+        float x = Mathf.Max(0.05f, Mathf.Abs(lossy.x));
+        float y = Mathf.Max(0.05f, Mathf.Abs(lossy.y));
+        float z = Mathf.Max(0.05f, Mathf.Abs(lossy.z));
+        hand.localScale = new Vector3(
+            hand.localScale.x / x,
+            hand.localScale.y / y,
+            hand.localScale.z / z);
+    }
+
+    void CacheGripAxes(Transform hand)
+    {
+        if (hand == null || gripFingerLocal.ContainsKey(hand))
+            return;
+
+        string side = hand.name.EndsWith("R") || hand.name.EndsWith("_R") ? ".R" : ".L";
+        Transform middle = Find(hand, "Middle" + side);
+        Transform thumb = Find(hand, "Thumb" + side);
+        if (middle == null)
+            return;
+
+        Vector3 finger = middle.localPosition;
+        if (finger.sqrMagnitude < 0.0001f)
+            return;
+        finger.Normalize();
+        gripFingerLocal[hand] = finger;
+
+        Vector3 back = Vector3.up;
+        if (thumb != null && thumb.localPosition.sqrMagnitude > 0.0001f)
+        {
+            back = Vector3.Cross(finger, thumb.localPosition.normalized);
+            if (back.sqrMagnitude < 0.0001f)
+                back = Vector3.up;
+            else
+                back.Normalize();
+        }
+
+        gripBackLocal[hand] = back;
+    }
+
     // The grip wrist is aimed like the SMG: up leaves the back of the hand,
     // forward points down the barrel. The forearm follows that aim.
     void AlignForearmToWrist(Transform forearm, Transform hand, Transform target)
@@ -1701,6 +1887,18 @@ public class Hd2Body : MonoBehaviour
             return;
 
         hand.rotation = MapAxes(length, spread, marker.forward, marker.right);
+    }
+
+    // MirrorGrip keeps forward and up true on the right-hand copy but flips right,
+    // so the index-spread target has to be flipped back for that hand.
+    void AimHandAtWrist(Transform hand, Transform marker, bool mirrored)
+    {
+        if (!lengthAxis.TryGetValue(hand, out Vector3 length) || length.sqrMagnitude < 0.0001f)
+            return;
+        if (!indexSpread.TryGetValue(hand, out Vector3 spread) || spread.sqrMagnitude < 0.0001f)
+            return;
+
+        hand.rotation = MapAxes(length, spread, marker.forward, mirrored ? -marker.right : marker.right);
     }
 
     void AimPistolGrip(Transform hand, Transform gun)

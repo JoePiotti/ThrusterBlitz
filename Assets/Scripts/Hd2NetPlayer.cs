@@ -61,16 +61,8 @@ public class Hd2NetPlayer : NetworkBehaviour
     Transform handVisualR;
     Transform remoteWristL;
     Transform remoteWristR;
-    readonly Transform[] gripBonesL = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripBonesR = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripMarksL = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripMarksR = new Transform[Hd2GripFingers.BoneCount];
-    readonly Vector3[] gripAxesL = new Vector3[Hd2GripFingers.BoneCount];
-    readonly Vector3[] gripAxesR = new Vector3[Hd2GripFingers.BoneCount];
-    Transform gripGunL;
-    Transform gripGunR;
-    bool gripReadyL;
-    bool gripReadyR;
+    Hd2GripHand gripHandL;
+    Hd2GripHand gripHandR;
 
     public override void Spawned()
     {
@@ -242,53 +234,26 @@ public class Hd2NetPlayer : NetworkBehaviour
         SwingLeg(thighR, shinR, restThighR, restShinR, -step);
         AimArm(upperL, foreL, handL, restUpperL, restForeL, leftPos);
         AimArm(upperR, foreR, handR, restUpperR, restForeR, rightPos);
-        ShowGun(ref gunL, ref shownL, leftPos, leftRot, leftGun, ref remoteWristL);
-        ShowGun(ref gunR, ref shownR, rightPos, rightRot, rightGun, ref remoteWristR);
+        ShowGun(ref gunL, ref shownL, leftPos, leftRot, leftGun, ref remoteWristL, false);
+        ShowGun(ref gunR, ref shownR, rightPos, rightRot, rightGun, ref remoteWristR, true);
         RefineRemoteArm(true);
         RefineRemoteArm(false);
-        PoseGripFingers(handL, gunL, true);
-        PoseGripFingers(handR, gunR, false);
+        PoseGripFingers(gripHandL, gunL);
+        PoseGripFingers(gripHandR, gunR);
     }
 
-    void PoseGripFingers(Transform hand, GameObject gun, bool left)
+    // Baked guns put the hand exactly on the Wrist marker; the fingers follow the markers.
+    static void PoseGripFingers(Hd2GripHand grip, GameObject gun)
     {
-        Transform gunTransform = gun != null ? gun.transform : null;
-        if (hand == null || gunTransform == null)
-        {
-            if (left)
-            {
-                gripGunL = null;
-                gripReadyL = false;
-            }
-            else
-            {
-                gripGunR = null;
-                gripReadyR = false;
-            }
-            return;
-        }
-
-        if ((left ? gripGunL : gripGunR) != gunTransform)
-        {
-            if (left)
-            {
-                gripGunL = gunTransform;
-                gripReadyL = Hd2GripFingers.Bind(hand, gunTransform, gripBonesL, gripMarksL, gripAxesL);
-            }
-            else
-            {
-                gripGunR = gunTransform;
-                gripReadyR = Hd2GripFingers.Bind(hand, gunTransform, gripBonesR, gripMarksR, gripAxesR);
-            }
-        }
-
-        if (!(left ? gripReadyL : gripReadyR))
+        if (grip == null)
             return;
 
-        if (left)
-            Hd2GripFingers.Apply(gripBonesL, gripMarksL, gripAxesL);
-        else
-            Hd2GripFingers.Apply(gripBonesR, gripMarksR, gripAxesR);
+        grip.Track(gun != null ? gun.transform : null);
+        if (gun == null)
+            return;
+
+        grip.PinHand();
+        grip.ApplyFingers();
     }
 
     void CacheLimbs(Transform robot)
@@ -331,6 +296,13 @@ public class Hd2NetPlayer : NetworkBehaviour
         restShinL = Local(shinL);
         restThighR = Local(thighR);
         restShinR = Local(shinR);
+        if (handL != null && handR != null)
+        {
+            gripHandL = new Hd2GripHand(handL, false);
+            gripHandR = new Hd2GripHand(handR, true);
+            Hd2GripHand.BuildMirror(robot, gripHandL, gripHandR);
+        }
+
         EnsureRemoteHandVisuals();
     }
 
@@ -424,7 +396,7 @@ public class Hd2NetPlayer : NetworkBehaviour
             fore.rotation = Quaternion.FromToRotation(fromHand.normalized, toHand.normalized) * fore.rotation;
     }
 
-    void ShowGun(ref GameObject shown, ref int shownId, Vector3 position, Quaternion rotation, int gun, ref Transform wristCache)
+    void ShowGun(ref GameObject shown, ref int shownId, Vector3 position, Quaternion rotation, int gun, ref Transform wristCache, bool right)
     {
         if (shownId != gun)
         {
@@ -452,6 +424,10 @@ public class Hd2NetPlayer : NetworkBehaviour
                         cols[i].enabled = false;
                 }
 
+                // Grip prefabs are authored for the left hand. Mirror them for the right,
+                // the same way the local pickup does, so the finger markers fit that hand.
+                if (right && Hd2GripFingers.Find(shown.transform, "GripFingers") != null)
+                    Hd2ShotgunPickup.MirrorGrip(shown.transform);
                 wristCache = FindWrist(shown.transform);
             }
         }

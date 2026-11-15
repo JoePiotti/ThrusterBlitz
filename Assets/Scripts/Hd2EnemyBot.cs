@@ -316,16 +316,8 @@ public class Hd2EnemyBot : MonoBehaviour
     Transform upperR;
     Transform foreR;
     Transform handR;
-    readonly Transform[] gripBonesL = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripBonesR = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripMarksL = new Transform[Hd2GripFingers.BoneCount];
-    readonly Transform[] gripMarksR = new Transform[Hd2GripFingers.BoneCount];
-    readonly Vector3[] gripAxesL = new Vector3[Hd2GripFingers.BoneCount];
-    readonly Vector3[] gripAxesR = new Vector3[Hd2GripFingers.BoneCount];
-    Transform gripGunL;
-    Transform gripGunR;
-    bool gripReadyL;
-    bool gripReadyR;
+    Hd2GripHand gripHandL;
+    Hd2GripHand gripHandR;
     float tipReachL = 0.06f;
     float tipReachR = 0.06f;
     Vector3 tipLocalL = new Vector3(0f, 0.06f, 0f);
@@ -2163,33 +2155,18 @@ public class Hd2EnemyBot : MonoBehaviour
         PoseGripFingers(bone, gun);
     }
 
+    // Bots place the hand themselves, so only the fingers come from the gun's markers.
     void PoseGripFingers(Transform bone, Transform gun)
     {
         if (bone == null || gun == null)
             return;
 
-        bool right = bone == handR;
-        if ((right ? gripGunR : gripGunL) != gun)
-        {
-            if (right)
-            {
-                gripGunR = gun;
-                gripReadyR = Hd2GripFingers.Bind(bone, gun, gripBonesR, gripMarksR, gripAxesR);
-            }
-            else
-            {
-                gripGunL = gun;
-                gripReadyL = Hd2GripFingers.Bind(bone, gun, gripBonesL, gripMarksL, gripAxesL);
-            }
-        }
-
-        if (!(right ? gripReadyR : gripReadyL))
+        Hd2GripHand grip = bone == handR ? gripHandR : bone == handL ? gripHandL : null;
+        if (grip == null)
             return;
 
-        if (right)
-            Hd2GripFingers.Apply(gripBonesR, gripMarksR, gripAxesR);
-        else
-            Hd2GripFingers.Apply(gripBonesL, gripMarksL, gripAxesL);
+        grip.Track(gun);
+        grip.ApplyFingers();
     }
 
     static bool IsPistolGrip(Transform gun)
@@ -3577,6 +3554,12 @@ public class Hd2EnemyBot : MonoBehaviour
         handR = FindBone(robot, "Hand.R", "Hand_R");
         RememberHandTip(handL, ref tipReachL, ref tipLocalL);
         RememberHandTip(handR, ref tipReachR, ref tipLocalR);
+        if (handL != null && handR != null)
+        {
+            gripHandL = new Hd2GripHand(handL, false);
+            gripHandR = new Hd2GripHand(handR, true);
+            Hd2GripHand.BuildMirror(robot, gripHandL, gripHandR);
+        }
         thighL = FindBone(robot, "Thigh.L", "Thigh_L");
         shinL = FindBone(robot, "Shin.L", "Shin_L");
         footL = FindBone(robot, "Foot.L", "Foot_L");
