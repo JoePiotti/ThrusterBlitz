@@ -477,14 +477,20 @@ public class Hd2GripBaker : EditorWindow
             return null;
 
         string path = AssetDatabase.GetAssetPath(picked);
-        if (path.EndsWith(".prefab", System.StringComparison.OrdinalIgnoreCase))
+        if (path.StartsWith(Folder) && path.EndsWith(".prefab", System.StringComparison.OrdinalIgnoreCase))
             return picked;
 
+        // Models, and older copies elsewhere (Assets/Prefabs/GripSmg.prefab), are not what the
+        // pickups equip. Use the GripWeapons prefab with the same name.
         var match = AssetDatabase.LoadAssetAtPath<GameObject>(Folder + picked.name + ".prefab");
         if (match != null)
+        {
+            if (match != picked)
+                Debug.Log($"Grip Baker: using {Folder}{picked.name}.prefab instead of {path}.");
             return match;
+        }
 
-        Debug.LogWarning($"Grip Baker: {path} is a model, not a prefab. Pick the prefab from {Folder}.");
+        Debug.LogWarning($"Grip Baker: {path} is not in {Folder}. Pick the grip prefab the pickup equips.");
         return null;
     }
 
