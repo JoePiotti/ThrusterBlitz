@@ -2,16 +2,22 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Bakes a grip from the robot hand you posed in Play mode into a GripWeapons prefab.
-/// 1. Play, pick the gun up, then pause.
-/// 2. Rotate or move Hand.L / Hand.R and its finger bones in the Scene view until the grip looks right.
-/// 3. Tools > HD2 > Grip Baker > Bake. The Wrist and GripFingers markers in the prefab take the
-///    hand's pose (mirrored back to left-hand space if you posed the right hand), and the prefab
-///    gets an Hd2GripPose marked baked. The gun in hand updates right away.
+/// Bakes a grip from a posed robot hand into a GripWeapons prefab.
+///
+/// Edit mode (no headset):
+/// 1. Tools > HD2 > Grip Baker. Pick the grip prefab, press Start Posing.
+///    A temporary gun and robot appear at the scene origin (never saved with the scene).
+/// 2. Rotate or move the hand and its finger bones in the Scene view.
+/// 3. Bake. The prefab's Wrist and GripFingers markers take the hand's pose and the prefab
+///    gets an Hd2GripPose marked baked. Build and test, then repeat.
+///
+/// Play mode works too: hold the gun, pause, pose Hand.L / Hand.R, Bake.
 /// </summary>
 public class Hd2GripBaker : EditorWindow
 {
     const string Folder = "Assets/Prefabs/GripWeapons/";
+    const string DefaultRobotPath = "Assets/Models/Bot/PlayerBotRobot.fbx";
+    const string PosingName = "~GripPosing (temporary)";
 
     static readonly string[,] PrefabByComponent =
     {
@@ -27,12 +33,43 @@ public class Hd2GripBaker : EditorWindow
 
     bool right;
     GameObject prefab;
+    GameObject robotModel;
     Transform lastGun;
+
+    // Edit-mode posing session. Serialized so it survives script recompiles.
+    [SerializeField] GameObject posingRoot;
+    [SerializeField] Transform posingGun;
+    Hd2GripHand posingGrip;
 
     [MenuItem("Tools/HD2/Grip Baker")]
     static void Open()
     {
         GetWindow<Hd2GripBaker>("Grip Baker");
+    }
+
+    void OnEnable()
+    {
+        EditorApplication.playModeStateChanged += OnPlayModeChanged;
+        if (robotModel == null)
+            robotModel = AssetDatabase.LoadAssetAtPath<GameObject>(DefaultRobotPath);
+        if (prefab == null)
+            prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Folder + "GripSmg.prefab");
+    }
+
+    void OnDisable()
+    {
+        EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+    }
+
+    void OnDestroy()
+    {
+        EndPosing();
+    }
+
+    void OnPlayModeChanged(PlayModeStateChange change)
+    {
+        if (change == PlayModeStateChange.ExitingEditMode)
+            EndPosing();
     }
 
     void OnInspectorUpdate()
@@ -42,16 +79,225 @@ public class Hd2GripBaker : EditorWindow
 
     void OnGUI()
     {
+        if (EditorApplication.isPlaying)
+            PlayModeGUI();
+        else
+            EditModeGUI();
+    }
+
+    // ---------- Edit mode ----------
+
+    void EditModeGUI()
+    {
+        RestorePosing();
+        bool posing = posingRoot != null && posingGrip != null && posingGun != null;
         EditorGUILayout.HelpBox(
-            "Play, pick the gun up, pause, then pose the hand and finger bones in the Scene view. " +
-            "Bake writes that pose into the prefab's Wrist and GripFingers markers.",
+            posing
+                ? "Pose the hand and finger bones in the Scene view, then Bake. The posing objects are never saved with the scene."
+                : "Pick a grip prefab and press Start Posing. A temporary gun and robot appear at the scene origin, with the left hand on the gun.",
             MessageType.Info);
 
-        if (!EditorApplication.isPlaying)
+        using (new EditorGUI.DisabledScope(posing))
         {
-            EditorGUILayout.HelpBox("Enter Play mode and hold the gun to bake.", MessageType.Warning);
+            prefab = (GameObject)EditorGUILayout.ObjectField("Grip prefab", prefab, typeof(GameObject), false);
+            robotModel = (GameObject)EditorGUILayout.ObjectField("Robot model", robotModel, typeof(GameObject), false);
+        }
+
+        if (!posing)
+        {
+            using (new EditorGUI.DisabledScope(prefab == null || robotModel == null))
+            {
+                if (GUILayout.Button("Start Posing", GUILayout.Height(32)))
+                    StartPosing();
+            }
+
             return;
         }
+
+        EditorGUILayout.LabelField("Baked", posingGrip.Baked ? "yes" : "no (starting from the old markers)");
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Select hand bone"))
+                Selection.activeTransform = posingGrip.hand;
+            if (GUILayout.Button("Frame"))
+            {
+                Selection.activeTransform = posingGrip.hand;
+                SceneView.lastActiveSceneView?.FrameSelected();
+            }
+        }
+
+        if (GUILayout.Button("Reset to prefab markers"))
+            PoseFromMarkers(posingGrip, posingGun);
+
+        if (GUILayout.Button("Bake", GUILayout.Height(32)))
+            Bake(posingGrip, posingGun, prefab);
+
+        if (GUILayout.Button("End Posing"))
+            EndPosing();
+    }
+
+    // After a recompile the plain C# grip state is gone; rebuild it from the scene objects.
+    void RestorePosing()
+    {
+        if (posingGrip != null || posingRoot == null || posingGun == null)
+            return;
+
+        Transform hand = posingRoot.transform.Find("Hand.L");
+        if (hand == null)
+            hand = posingRoot.transform.Find("Hand_L");
+        if (hand == null)
+            return;
+
+        posingGrip = new Hd2GripHand(hand, false);
+        posingGrip.Track(posingGun);
+    }
+
+    void StartPosing()
+    {
+        EndPosing();
+        GameObject stale = GameObject.Find(PosingName);
+        if (stale != null)
+            DestroyImmediate(stale);
+
+        posingRoot = new GameObject(PosingName);
+        posingRoot.hideFlags = HideFlags.DontSave;
+
+        // The gun keeps its prefab root rotation and scale, as it does when equipped.
+        GameObject gun = Instantiate(prefab);
+        gun.name = prefab.name;
+        gun.transform.SetParent(posingRoot.transform, false);
+        gun.transform.localPosition = Vector3.zero;
+        gun.transform.localRotation = prefab.transform.localRotation;
+        gun.transform.localScale = prefab.transform.localScale;
+        DisableBehaviours(gun);
+
+        // A whole robot; only its left hand bone is posed on the gun.
+        GameObject robot = Instantiate(robotModel);
+        robot.name = "Robot";
+        robot.transform.SetParent(posingRoot.transform, false);
+        Animator[] animators = robot.GetComponentsInChildren<Animator>(true);
+        for (int i = 0; i < animators.Length; i++)
+            animators[i].enabled = false;
+        SkinnedMeshRenderer[] skins = robot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < skins.Length; i++)
+            skins[i].updateWhenOffscreen = true;
+
+        Transform hand = Hd2GripFingers.Find(robot.transform, "Hand.L");
+        if (hand == null)
+            hand = Hd2GripFingers.Find(robot.transform, "Hand_L");
+        if (hand == null)
+        {
+            Debug.LogError("Grip Baker: the robot model has no Hand.L bone.");
+            EndPosing();
+            return;
+        }
+
+        // Bring the robot over so its wrist starts at the gun, which keeps the skinned
+        // wrist from stretching across the scene.
+        Transform wristMarker = Hd2GripFingers.Find(gun.transform, "Wrist");
+        if (wristMarker != null)
+            robot.transform.position += wristMarker.position - hand.position;
+
+        // Same as the game: the hand bone hangs off the body, not the forearm.
+        hand.SetParent(posingRoot.transform, true);
+        SetHideFlagsRecursive(posingRoot.transform, HideFlags.DontSave);
+
+        posingGun = gun.transform;
+        posingGrip = new Hd2GripHand(hand, false);
+        posingGrip.Track(posingGun);
+        if (posingGrip.Wrist == null)
+            Debug.LogWarning($"Grip Baker: {prefab.name} has no Wrist marker. Bake needs one.");
+        PoseFromMarkers(posingGrip, posingGun);
+
+        Selection.activeTransform = hand;
+        SceneView.lastActiveSceneView?.FrameSelected();
+    }
+
+    void EndPosing()
+    {
+        if (posingRoot != null)
+            DestroyImmediate(posingRoot);
+        posingRoot = null;
+        posingGun = null;
+        posingGrip = null;
+    }
+
+    // Starting pose: the baked pose if there is one, otherwise the old Wrist convention
+    // (forward = along the fingers, right = toward the index side) and aimed fingers.
+    static void PoseFromMarkers(Hd2GripHand grip, Transform gun)
+    {
+        grip.Rebind();
+        grip.Track(gun);
+        if (grip.Wrist == null)
+            return;
+
+        if (!grip.PinHand())
+        {
+            Transform hand = grip.hand;
+            hand.position = grip.Wrist.position;
+            if (TryLegacyAxes(grip, out Vector3 length, out Vector3 spread))
+                hand.rotation = MapAxes(length, spread, grip.Wrist.forward, grip.Wrist.right);
+            Hd2GripHand.SetWorldScale(hand, 1f);
+        }
+
+        grip.ApplyFingers();
+    }
+
+    // The hand's length and index-spread axes in hand space, measured like Hd2Body does.
+    static bool TryLegacyAxes(Hd2GripHand grip, out Vector3 length, out Vector3 spread)
+    {
+        length = Vector3.zero;
+        spread = Vector3.zero;
+        Transform index = grip.Bone(3);
+        Transform indexMid = grip.Bone(4);
+        Transform middle = grip.Bone(6);
+        if (index == null || indexMid == null || middle == null)
+            return false;
+
+        Transform hand = grip.hand;
+        length = hand.InverseTransformDirection(indexMid.position - index.position).normalized;
+        spread = hand.InverseTransformDirection(index.position - middle.position).normalized;
+        return length.sqrMagnitude > 0.5f && spread.sqrMagnitude > 0.5f;
+    }
+
+    static Quaternion MapAxes(Vector3 fromPrimary, Vector3 fromSecondary, Vector3 toPrimary, Vector3 toSecondary)
+    {
+        Vector3 from = fromPrimary.normalized;
+        Vector3 fromSide = Vector3.ProjectOnPlane(fromSecondary, from).normalized;
+        Vector3 to = toPrimary.normalized;
+        Vector3 toSide = Vector3.ProjectOnPlane(toSecondary, to).normalized;
+        Quaternion swing = Quaternion.FromToRotation(from, to);
+        if (fromSide.sqrMagnitude < 0.0001f || toSide.sqrMagnitude < 0.0001f)
+            return swing;
+        Quaternion roll = Quaternion.FromToRotation(swing * fromSide, toSide);
+        return roll * swing;
+    }
+
+    static void DisableBehaviours(GameObject root)
+    {
+        MonoBehaviour[] parts = root.GetComponentsInChildren<MonoBehaviour>(true);
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (parts[i] != null && !(parts[i] is Hd2GripPose))
+                parts[i].enabled = false;
+        }
+    }
+
+    static void SetHideFlagsRecursive(Transform root, HideFlags flags)
+    {
+        root.gameObject.hideFlags = flags;
+        for (int i = 0; i < root.childCount; i++)
+            SetHideFlagsRecursive(root.GetChild(i), flags);
+    }
+
+    // ---------- Play mode ----------
+
+    void PlayModeGUI()
+    {
+        EditorGUILayout.HelpBox(
+            "Hold the gun, pause, then pose the hand and finger bones in the Scene view. " +
+            "Bake writes that pose into the prefab's Wrist and GripFingers markers.",
+            MessageType.Info);
 
         var body = FindFirstObjectByType<Hd2Body>();
         if (body == null)
@@ -113,6 +359,8 @@ public class Hd2GripBaker : EditorWindow
         return null;
     }
 
+    // ---------- Bake ----------
+
     struct Baked
     {
         public string path;
@@ -122,6 +370,12 @@ public class Hd2GripBaker : EditorWindow
 
     static void Bake(Hd2GripHand grip, Transform gun, GameObject prefabAsset)
     {
+        if (grip.Wrist == null)
+        {
+            Debug.LogError("Grip Baker: the gun has no Wrist marker.");
+            return;
+        }
+
         Transform root = gun;
         int count = Hd2GripFingers.BoneCount + 1;
         var baked = new Baked[count];
@@ -191,7 +445,8 @@ public class Hd2GripBaker : EditorWindow
         UpdateHeldGun(grip, gun, handScale);
     }
 
-    // The gun in hand is a copy of the prefab, so give it the same markers to see the bake now.
+    // The gun in hand (or on the posing stand) is a copy of the prefab. Give it the same
+    // markers so it matches the bake right away.
     static void UpdateHeldGun(Hd2GripHand grip, Transform gun, float handScale)
     {
         int count = Hd2GripFingers.BoneCount + 1;
@@ -207,9 +462,14 @@ public class Hd2GripBaker : EditorWindow
 
         var pose = gun.GetComponent<Hd2GripPose>();
         if (pose == null)
+        {
             pose = gun.gameObject.AddComponent<Hd2GripPose>();
+            pose.hideFlags = gun.gameObject.hideFlags;
+        }
+
         pose.baked = true;
         pose.handScale = handScale;
         grip.Rebind();
+        grip.Track(gun);
     }
 }
