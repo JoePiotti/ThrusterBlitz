@@ -99,7 +99,7 @@ public class Hd2GripBaker : EditorWindow
 
         using (new EditorGUI.DisabledScope(posing))
         {
-            prefab = (GameObject)EditorGUILayout.ObjectField("Grip prefab", prefab, typeof(GameObject), false);
+            prefab = ResolvePrefab((GameObject)EditorGUILayout.ObjectField("Grip prefab", prefab, typeof(GameObject), false));
             robotModel = (GameObject)EditorGUILayout.ObjectField("Robot model", robotModel, typeof(GameObject), false);
         }
 
@@ -326,7 +326,7 @@ public class Hd2GripBaker : EditorWindow
             prefab = GuessPrefab(gun);
         }
 
-        prefab = (GameObject)EditorGUILayout.ObjectField("Grip prefab", prefab, typeof(GameObject), false);
+        prefab = ResolvePrefab((GameObject)EditorGUILayout.ObjectField("Grip prefab", prefab, typeof(GameObject), false));
 
         using (new EditorGUILayout.HorizontalScope())
         {
@@ -344,6 +344,25 @@ public class Hd2GripBaker : EditorWindow
 
         if (gun != null && grip.Wrist == null)
             EditorGUILayout.HelpBox("The held gun has no Wrist marker.", MessageType.Error);
+    }
+
+    // The model files share names with the grip prefabs (GripSmg.fbx vs GripSmg.prefab),
+    // so a model picked by mistake is swapped for the prefab of the same name.
+    static GameObject ResolvePrefab(GameObject picked)
+    {
+        if (picked == null)
+            return null;
+
+        string path = AssetDatabase.GetAssetPath(picked);
+        if (path.EndsWith(".prefab", System.StringComparison.OrdinalIgnoreCase))
+            return picked;
+
+        var match = AssetDatabase.LoadAssetAtPath<GameObject>(Folder + picked.name + ".prefab");
+        if (match != null)
+            return match;
+
+        Debug.LogWarning($"Grip Baker: {path} is a model, not a prefab. Pick the prefab from {Folder}.");
+        return null;
     }
 
     static GameObject GuessPrefab(Transform gun)
@@ -407,6 +426,13 @@ public class Hd2GripBaker : EditorWindow
         }
 
         float handScale = Mathf.Abs(grip.hand.lossyScale.x) / Mathf.Max(0.0001f, Mathf.Abs(root.lossyScale.x));
+
+        prefabAsset = ResolvePrefab(prefabAsset);
+        if (prefabAsset == null)
+        {
+            Debug.LogError("Grip Baker: pick a .prefab from " + Folder + ", not a model file.");
+            return;
+        }
 
         string assetPath = AssetDatabase.GetAssetPath(prefabAsset);
         GameObject contents = PrefabUtility.LoadPrefabContents(assetPath);
