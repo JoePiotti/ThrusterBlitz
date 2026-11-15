@@ -44,6 +44,7 @@ public class Hd2GripBaker : EditorWindow
     [SerializeField] Transform posingArmEnd;
     [SerializeField] Vector3 posingRight;
     Hd2GripHand posingGrip;
+    string autoGripReport;
 
     [MenuItem("Tools/HD2/Grip Baker")]
     static void Open()
@@ -137,7 +138,19 @@ public class Hd2GripBaker : EditorWindow
         {
             PoseFromMarkers(posingGrip, posingGun);
             ReachPosingArm();
+            autoGripReport = null;
         }
+
+        if (GUILayout.Button("Auto Grip (index on trigger, fingers wrap the gun)"))
+        {
+            autoGripReport = Hd2AutoGrip.Apply(posingGrip, posingGun, robotModel);
+            Debug.Log("Grip Baker auto grip:\n" + autoGripReport);
+            ReachPosingArm();
+            SceneView.RepaintAll();
+        }
+
+        if (!string.IsNullOrEmpty(autoGripReport))
+            EditorGUILayout.HelpBox(autoGripReport, MessageType.None);
 
         if (GUILayout.Button("Bake", GUILayout.Height(32)))
             Bake(posingGrip, posingGun, prefab);
