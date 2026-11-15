@@ -333,7 +333,7 @@ public class Hd2GripBaker : EditorWindow
         TwistToHand(posingFore, posingArmEnd, hand);
     }
 
-    static void PointAt(Transform bone, Transform child, Vector3 point)
+    internal static void PointAt(Transform bone, Transform child, Vector3 point)
     {
         Vector3 current = child.position - bone.position;
         Vector3 desired = point - bone.position;
@@ -342,7 +342,7 @@ public class Hd2GripBaker : EditorWindow
         bone.rotation = Quaternion.FromToRotation(current, desired) * bone.rotation;
     }
 
-    static void TwistToHand(Transform forearm, Transform end, Transform hand)
+    internal static void TwistToHand(Transform forearm, Transform end, Transform hand)
     {
         Vector3 axis = end.position - forearm.position;
         if (axis.sqrMagnitude < 0.000001f)
@@ -360,7 +360,7 @@ public class Hd2GripBaker : EditorWindow
 
     // Starting pose: the baked pose if there is one, otherwise the old Wrist convention
     // (forward = along the fingers, right = toward the index side) and aimed fingers.
-    static void PoseFromMarkers(Hd2GripHand grip, Transform gun)
+    internal static void PoseFromMarkers(Hd2GripHand grip, Transform gun)
     {
         grip.Rebind();
         grip.Track(gun);
@@ -373,7 +373,7 @@ public class Hd2GripBaker : EditorWindow
             hand.position = grip.Wrist.position;
             if (TryLegacyAxes(grip, out Vector3 length, out Vector3 spread))
                 hand.rotation = MapAxes(length, spread, grip.Wrist.forward, grip.Wrist.right);
-            Hd2GripHand.SetWorldScale(hand, 1f);
+            Hd2GripHand.SetWorldScale(hand, Hd2GripHand.HandWorldScale);
         }
 
         grip.ApplyFingers();

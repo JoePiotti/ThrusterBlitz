@@ -197,6 +197,9 @@ public sealed class Hd2GripHand
 {
     public const int HandSlot = Hd2GripFingers.BoneCount;
 
+    /// <summary>World scale of a hand holding a gun. Fixed, so every gun gets the same size hand.</summary>
+    public const float HandWorldScale = 1f;
+
     public readonly Transform hand;
     public readonly bool right;
     readonly Transform[] bones = new Transform[Hd2GripFingers.BoneCount];
@@ -308,16 +311,22 @@ public sealed class Hd2GripHand
         fingersReady = Hd2GripFingers.Bind(hand, gun, bones, markers, axes);
     }
 
-    /// <summary>Baked guns only: puts the hand bone exactly on the Wrist marker and sizes it to the gun.</summary>
+    /// <summary>Baked guns only: puts the hand bone exactly on the Wrist marker at the fixed hand size.</summary>
     public bool PinHand()
     {
         if (!Baked)
             return false;
 
-        hand.SetPositionAndRotation(wrist.position, wrist.rotation * mirror[HandSlot]);
-        float rootScale = Mathf.Abs(pose.transform.lossyScale.x);
-        SetWorldScale(hand, Mathf.Max(0.01f, pose.handScale * rootScale));
+        PinHandTo(wrist);
         return true;
+    }
+
+    public void PinHandTo(Transform wristMarker)
+    {
+        if (hand == null || wristMarker == null)
+            return;
+        hand.SetPositionAndRotation(wristMarker.position, wristMarker.rotation * mirror[HandSlot]);
+        SetWorldScale(hand, HandWorldScale);
     }
 
     /// <summary>Poses the fingers from the markers. Returns false when the gun has no GripFingers.</summary>
