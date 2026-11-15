@@ -39,6 +39,10 @@ public class Hd2GripBaker : EditorWindow
     // Edit-mode posing session. Serialized so it survives script recompiles.
     [SerializeField] GameObject posingRoot;
     [SerializeField] Transform posingGun;
+    [SerializeField] Transform posingUpper;
+    [SerializeField] Transform posingFore;
+    [SerializeField] Transform posingArmEnd;
+    [SerializeField] Vector3 posingRight;
     Hd2GripHand posingGrip;
 
     [MenuItem("Tools/HD2/Grip Baker")]
@@ -74,6 +78,9 @@ public class Hd2GripBaker : EditorWindow
 
     void OnInspectorUpdate()
     {
+        // Keep the arm reaching for the hand while you move it around.
+        if (!EditorApplication.isPlaying && posingRoot != null && posingGrip != null)
+            ReachPosingArm();
         Repaint();
     }
 
@@ -127,7 +134,10 @@ public class Hd2GripBaker : EditorWindow
         }
 
         if (GUILayout.Button("Reset to prefab markers"))
+        {
             PoseFromMarkers(posingGrip, posingGun);
+            ReachPosingArm();
+        }
 
         if (GUILayout.Button("Bake", GUILayout.Height(32)))
             Bake(posingGrip, posingGun, prefab);
@@ -192,13 +202,24 @@ public class Hd2GripBaker : EditorWindow
             return;
         }
 
-        // Bring the robot over so its wrist starts at the gun, which keeps the skinned
-        // wrist from stretching across the scene.
         Transform wristMarker = Hd2GripFingers.Find(gun.transform, "Wrist");
-        if (wristMarker != null)
-            robot.transform.position += wristMarker.position - hand.position;
+        posingUpper = Hd2GripFingers.Find(robot.transform, "Arm.L");
+        if (posingUpper == null)
+            posingUpper = Hd2GripFingers.Find(robot.transform, "UpperArm_L");
+        posingFore = Hd2GripFingers.Find(robot.transform, "Arm.L.002");
+        if (posingFore == null)
+            posingFore = Hd2GripFingers.Find(robot.transform, "Forearm_L");
+        Transform handR = Hd2GripFingers.Find(robot.transform, "Hand.R");
+        if (handR == null)
+            handR = Hd2GripFingers.Find(robot.transform, "Hand_R");
+        PlaceRobot(robot.transform, gun.transform, wristMarker, hand, handR);
 
-        // Same as the game: the hand bone hangs off the body, not the forearm.
+        // Same as the game: the hand bone hangs off the body, not the forearm, and an
+        // empty ArmEnd keeps its old place on the forearm.
+        posingArmEnd = new GameObject("Hand.L ArmEnd").transform;
+        posingArmEnd.SetParent(hand.parent, false);
+        posingArmEnd.localPosition = hand.localPosition;
+        posingArmEnd.localRotation = hand.localRotation;
         hand.SetParent(posingRoot.transform, true);
         SetHideFlagsRecursive(posingRoot.transform, HideFlags.DontSave);
 
@@ -208,6 +229,7 @@ public class Hd2GripBaker : EditorWindow
         if (posingGrip.Wrist == null)
             Debug.LogWarning($"Grip Baker: {prefab.name} has no Wrist marker. Bake needs one.");
         PoseFromMarkers(posingGrip, posingGun);
+        ReachPosingArm();
 
         Selection.activeTransform = hand;
         SceneView.lastActiveSceneView?.FrameSelected();
@@ -219,7 +241,108 @@ public class Hd2GripBaker : EditorWindow
             DestroyImmediate(posingRoot);
         posingRoot = null;
         posingGun = null;
+        posingUpper = null;
+        posingFore = null;
+        posingArmEnd = null;
         posingGrip = null;
+    }
+
+    // Only for looks: the bake stores the hand relative to the gun, not the body.
+    // Turns the robot to face down the barrel and stands it so the left shoulder is
+    // behind and above the grip, with the elbow bent.
+    void PlaceRobot(Transform robot, Transform gun, Transform wrist, Transform hand, Transform handR)
+    {
+        posingRight = Vector3.right;
+        if (wrist == null)
+            return;
+
+        if (posingUpper == null || posingFore == null || handR == null)
+        {
+            robot.position += wrist.position - hand.position;
+            return;
+        }
+
+        Vector3 right = Vector3.ProjectOnPlane(handR.position - hand.position, Vector3.up);
+        Transform muzzle = Hd2GripFingers.Find(gun, "Muzzle");
+        Vector3 barrel = Vector3.ProjectOnPlane(muzzle != null ? muzzle.position - wrist.position : gun.forward, Vector3.up);
+        if (right.sqrMagnitude > 0.0001f && barrel.sqrMagnitude > 0.0001f)
+        {
+            Vector3 facing = Vector3.Cross(right.normalized, Vector3.up);
+            robot.rotation = Quaternion.FromToRotation(facing, barrel.normalized) * robot.rotation;
+            right = Quaternion.FromToRotation(facing, barrel.normalized) * right;
+        }
+
+        posingRight = right.sqrMagnitude > 0.0001f ? right.normalized : Vector3.right;
+        Vector3 forward = barrel.sqrMagnitude > 0.0001f ? barrel.normalized : Vector3.Cross(posingRight, Vector3.up);
+        float reach = Vector3.Distance(posingUpper.position, posingFore.position)
+            + Vector3.Distance(posingFore.position, hand.position);
+        Vector3 shoulder = wrist.position
+            - forward * (reach * 0.65f)
+            + Vector3.up * (reach * 0.3f)
+            - posingRight * (reach * 0.15f);
+        robot.position += shoulder - posingUpper.position;
+    }
+
+    // Two-bone reach from the shoulder to the hand bone, elbow down and out to the left,
+    // then the forearm rolls to match the hand.
+    void ReachPosingArm()
+    {
+        if (posingUpper == null || posingFore == null || posingArmEnd == null || posingGrip == null || posingGrip.hand == null)
+            return;
+
+        Transform hand = posingGrip.hand;
+        Vector3 shoulder = posingUpper.position;
+        float upperLength = Vector3.Distance(shoulder, posingFore.position);
+        float foreLength = Vector3.Distance(posingFore.position, posingArmEnd.position);
+        if (upperLength < 0.01f || foreLength < 0.01f)
+            return;
+
+        Vector3 target = hand.position;
+        Vector3 toTarget = target - shoulder;
+        if (toTarget.sqrMagnitude < 0.0001f)
+            return;
+        float distance = Mathf.Clamp(toTarget.magnitude, 0.02f, upperLength + foreLength - 0.001f);
+        Vector3 direction = toTarget.normalized;
+        Vector3 pole = Vector3.ProjectOnPlane(Vector3.down - posingRight * 0.6f, direction);
+        if (pole.sqrMagnitude < 0.0001f)
+            pole = Vector3.ProjectOnPlane(-posingRight, direction);
+        pole.Normalize();
+
+        float cos = Mathf.Clamp(
+            (upperLength * upperLength + distance * distance - foreLength * foreLength) / (2f * upperLength * distance),
+            -1f,
+            1f);
+        float sin = Mathf.Sqrt(Mathf.Max(0f, 1f - cos * cos));
+        Vector3 elbow = shoulder + direction * (upperLength * cos) + pole * (upperLength * sin);
+
+        PointAt(posingUpper, posingFore, elbow);
+        PointAt(posingFore, posingArmEnd, target);
+        TwistToHand(posingFore, posingArmEnd, hand);
+    }
+
+    static void PointAt(Transform bone, Transform child, Vector3 point)
+    {
+        Vector3 current = child.position - bone.position;
+        Vector3 desired = point - bone.position;
+        if (current.sqrMagnitude < 0.000001f || desired.sqrMagnitude < 0.000001f)
+            return;
+        bone.rotation = Quaternion.FromToRotation(current, desired) * bone.rotation;
+    }
+
+    static void TwistToHand(Transform forearm, Transform end, Transform hand)
+    {
+        Vector3 axis = end.position - forearm.position;
+        if (axis.sqrMagnitude < 0.000001f)
+            return;
+        axis.Normalize();
+
+        Quaternion delta = hand.rotation * Quaternion.Inverse(end.rotation);
+        Vector3 along = Vector3.Dot(new Vector3(delta.x, delta.y, delta.z), axis) * axis;
+        var twist = new Quaternion(along.x, along.y, along.z, delta.w);
+        float length = Mathf.Sqrt(twist.x * twist.x + twist.y * twist.y + twist.z * twist.z + twist.w * twist.w);
+        if (length < 0.0001f)
+            return;
+        forearm.rotation = new Quaternion(twist.x / length, twist.y / length, twist.z / length, twist.w / length) * forearm.rotation;
     }
 
     // Starting pose: the baked pose if there is one, otherwise the old Wrist convention
