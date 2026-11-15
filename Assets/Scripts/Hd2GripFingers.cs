@@ -203,6 +203,8 @@ public sealed class Hd2GripHand
     readonly Transform[] markers = new Transform[Hd2GripFingers.BoneCount];
     readonly Vector3[] axes = new Vector3[Hd2GripFingers.BoneCount];
     readonly Quaternion[] mirror = new Quaternion[Hd2GripFingers.BoneCount + 1];
+    // Each bone's direction to its child bone, in its own space, from the rest pose.
+    readonly Vector3[] lengthLocal = new Vector3[Hd2GripFingers.BoneCount];
     Transform gun;
     Transform wrist;
     Hd2GripPose pose;
@@ -215,6 +217,16 @@ public sealed class Hd2GripHand
         for (int i = 0; i < mirror.Length; i++)
             mirror[i] = Quaternion.identity;
         Hd2GripFingers.FindBones(hand, bones);
+        for (int i = 0; i < Hd2GripFingers.BoneCount; i++)
+        {
+            Transform bone = bones[i];
+            Transform child = i % 3 < 2 ? bones[i + 1] : null;
+            if (bone == null || child == null)
+                continue;
+            Vector3 along = child.position - bone.position;
+            if (along.sqrMagnitude > 0.0000001f)
+                lengthLocal[i] = bone.InverseTransformDirection(along).normalized;
+        }
     }
 
     public Transform Gun => gun;
@@ -316,10 +328,24 @@ public sealed class Hd2GripHand
 
         if (pose != null && pose.baked)
         {
+            // Copy each marker's rotation, then swing the bone to point at the next marker.
+            // A fresh bake makes the swing zero; it only matters after you move markers by
+            // hand in the prefab, so those edits show up in game without baking again.
             for (int i = 0; i < Hd2GripFingers.BoneCount; i++)
             {
-                if (bones[i] != null && markers[i] != null)
-                    bones[i].rotation = markers[i].rotation * mirror[i];
+                if (bones[i] == null || markers[i] == null)
+                    continue;
+
+                Quaternion rotation = markers[i].rotation * mirror[i];
+                Transform next = i % 3 < 2 ? markers[i + 1] : null;
+                if (next != null && lengthLocal[i].sqrMagnitude > 0.5f)
+                {
+                    Vector3 want = next.position - markers[i].position;
+                    if (want.sqrMagnitude > 0.0000001f)
+                        rotation = Quaternion.FromToRotation(rotation * lengthLocal[i], want) * rotation;
+                }
+
+                bones[i].rotation = rotation;
             }
 
             return true;

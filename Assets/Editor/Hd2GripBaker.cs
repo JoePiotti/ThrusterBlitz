@@ -134,11 +134,11 @@ public class Hd2GripBaker : EditorWindow
             }
         }
 
-        if (GUILayout.Button("Reset to prefab markers"))
+        if (GUILayout.Button("Reload from prefab (shows your prefab edits)"))
         {
-            PoseFromMarkers(posingGrip, posingGun);
-            ReachPosingArm();
+            StartPosing();
             autoGripReport = null;
+            return;
         }
 
         if (GUILayout.Button("Auto Grip (index on trigger, fingers wrap the gun)"))
@@ -577,6 +577,21 @@ public class Hd2GripBaker : EditorWindow
         }
 
         string assetPath = AssetDatabase.GetAssetPath(prefabAsset);
+        var stage = UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+        if (stage != null && stage.assetPath == assetPath)
+        {
+            EditorUtility.DisplayDialog("Grip Baker",
+                "Close " + prefabAsset.name + " in Prefab Mode first. Saving it there afterwards would overwrite the bake.",
+                "OK");
+            return;
+        }
+
+        if (prefabAsset.GetComponent<Hd2GripPose>() != null && prefabAsset.GetComponent<Hd2GripPose>().baked
+            && !EditorUtility.DisplayDialog("Grip Baker",
+                prefabAsset.name + " is already baked. Baking replaces its Wrist and finger markers with the posed hand, including any edits you made in the prefab since. Use Reload from prefab first to keep them.",
+                "Bake", "Cancel"))
+            return;
+
         GameObject contents = PrefabUtility.LoadPrefabContents(assetPath);
         try
         {
