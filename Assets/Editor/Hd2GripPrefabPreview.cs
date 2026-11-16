@@ -361,21 +361,38 @@ static class Hd2GripPrefabPreview
             return;
         }
 
-        Vector3 right = Vector3.ProjectOnPlane(handR.position - hand.position, Vector3.up);
+        // Which way the robot faces: along its feet (heel to toe), else from its hands.
+        Vector3 facing = Facing(robot, hand, handR);
         Transform muzzle = Hd2GripFingers.Find(gun, "Muzzle");
         Vector3 barrel = Vector3.ProjectOnPlane(muzzle != null ? muzzle.position - wrist.position : gun.forward, Vector3.up);
-        if (right.sqrMagnitude > 0.0001f && barrel.sqrMagnitude > 0.0001f)
-        {
-            Quaternion turn = Quaternion.FromToRotation(Vector3.Cross(right.normalized, Vector3.up), barrel.normalized);
-            robot.rotation = turn * robot.rotation;
-            right = turn * right;
-        }
+        if (facing.sqrMagnitude > 0.0001f && barrel.sqrMagnitude > 0.0001f)
+            robot.rotation = Quaternion.FromToRotation(facing.normalized, barrel.normalized) * robot.rotation;
 
+        // The robot's own right, after turning: toward its right hand.
+        Vector3 right = Vector3.ProjectOnPlane(handR.position - hand.position, Vector3.up);
         lateral = right.sqrMagnitude > 0.0001f ? right.normalized : Vector3.right;
         Vector3 forward = barrel.sqrMagnitude > 0.0001f ? barrel.normalized : Vector3.Cross(lateral, Vector3.up);
         float reach = Vector3.Distance(upper.position, fore.position) + Vector3.Distance(fore.position, hand.position);
         Vector3 shoulder = wrist.position - forward * (reach * 0.65f) + Vector3.up * (reach * 0.3f) - lateral * (reach * 0.15f);
         robot.position += shoulder - upper.position;
+    }
+
+    static Vector3 Facing(Transform robot, Transform hand, Transform handR)
+    {
+        Vector3 feet = Vector3.zero;
+        foreach (string side in new[] { "L", "R" })
+        {
+            Transform foot = Hd2GripFingers.Find(robot, "Foot." + side);
+            Transform toe = foot != null ? Hd2GripFingers.Find(foot, "Foot." + side + ".Tip") : null;
+            if (foot != null && toe != null)
+                feet += Vector3.ProjectOnPlane(toe.position - foot.position, Vector3.up);
+        }
+
+        if (feet.sqrMagnitude > 0.000001f)
+            return feet;
+
+        Vector3 right = Vector3.ProjectOnPlane(handR.position - hand.position, Vector3.up);
+        return right.sqrMagnitude > 0.0001f ? Vector3.Cross(right.normalized, Vector3.up) : robot.forward;
     }
 
     // Two-bone reach from the shoulder to the hand, elbow down and out, forearm rolled to the hand.
