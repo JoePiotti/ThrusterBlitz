@@ -137,10 +137,17 @@ public static class Hd2AutoGrip
             goal /= count;
         else
         {
-            var renderers = gun.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0)
+            // No markers: curl toward the middle of the gun's biggest mesh.
+            Renderer biggest = null;
+            foreach (Renderer renderer in gun.GetComponentsInChildren<Renderer>())
+            {
+                if (biggest == null || renderer.bounds.size.sqrMagnitude > biggest.bounds.size.sqrMagnitude)
+                    biggest = renderer;
+            }
+
+            if (biggest == null)
                 return Vector3.zero;
-            goal = renderers[0].bounds.center;
+            goal = biggest.bounds.center;
         }
 
         Vector3 toward = Vector3.ProjectOnPlane(goal - joints[0].position, along);

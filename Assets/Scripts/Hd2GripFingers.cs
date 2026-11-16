@@ -308,7 +308,8 @@ public sealed class Hd2GripHand
         if (pose == null)
             pose = gun.GetComponentInParent<Hd2GripPose>();
         wrist = Hd2GripFingers.Find(gun, "Wrist");
-        fingersReady = Hd2GripFingers.Bind(hand, gun, bones, markers, axes);
+        fingersReady = Hd2GripFingers.Bind(hand, gun, bones, markers, axes)
+            || (pose != null && pose.HasFingers);
     }
 
     /// <summary>Baked guns only: puts the hand bone exactly on the Wrist marker at the fixed hand size.</summary>
@@ -334,6 +335,12 @@ public sealed class Hd2GripHand
     {
         if (!fingersReady)
             return false;
+
+        if (pose != null && pose.HasFingers && wrist != null)
+        {
+            ApplyFingerData();
+            return true;
+        }
 
         if (pose != null && pose.baked)
         {
@@ -362,6 +369,48 @@ public sealed class Hd2GripHand
 
         Hd2GripFingers.Apply(bones, markers, axes);
         return true;
+    }
+
+    // Rebuilds each finger from the stored left-hand rotations, starting from the Wrist.
+    // On the mirrored right-hand gun the Wrist is already mirrored, and mirroring a chain
+    // of rotations is the same as mirroring each link, so each stored rotation is mirrored
+    // (x, -y, -z, w) and the right rig's rest offset applied last.
+    void ApplyFingerData()
+    {
+        Quaternion[] data = pose.fingers;
+        for (int finger = 0; finger < Hd2GripFingers.Names.Length; finger++)
+        {
+            Quaternion world = wrist.rotation;
+            for (int joint = 0; joint < 3; joint++)
+            {
+                int i = finger * 3 + joint;
+                Quaternion local = data[i];
+                if (right)
+                    local = new Quaternion(local.x, -local.y, -local.z, local.w);
+                world = world * local;
+                if (bones[i] != null)
+                    bones[i].rotation = world * mirror[i];
+            }
+        }
+    }
+
+    /// <summary>Left-hand finger rotations, each relative to the bone before it, as Hd2GripPose stores them.</summary>
+    public Quaternion[] ReadFingerData()
+    {
+        var data = new Quaternion[Hd2GripFingers.BoneCount];
+        for (int finger = 0; finger < Hd2GripFingers.Names.Length; finger++)
+        {
+            Quaternion parent = hand.rotation;
+            for (int joint = 0; joint < 3; joint++)
+            {
+                int i = finger * 3 + joint;
+                Quaternion world = bones[i] != null ? bones[i].rotation * Quaternion.Inverse(mirror[i]) : parent;
+                data[i] = Quaternion.Inverse(parent) * world;
+                parent = world;
+            }
+        }
+
+        return data;
     }
 
     public static void SetWorldScale(Transform bone, float world)
