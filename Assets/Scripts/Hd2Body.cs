@@ -1450,76 +1450,51 @@ public class Hd2Body : MonoBehaviour
             centeredGunL = gun;
     }
 
-    // The gun's own frame from its shape, so every prefab works however it was authored:
-    // forward = from the middle of its biggest mesh toward the Muzzle, snapped to that mesh's
-    // nearest axis (the barrel runs along one); up = from the trigger toward the body, snapped
-    // the same way. Then the gun is turned so that frame matches the controller's.
     static void TurnGunToController(Transform gun, Transform controller)
     {
         Transform muzzle = Find(gun, "Muzzle");
-        Transform body = BiggestMesh(gun, out Vector3 bodyCenter);
-        if (muzzle == null || body == null)
+        if (muzzle == null)
             return;
 
-        Vector3 forward = SnapToAxis(muzzle.position - bodyCenter, body, Vector3.zero);
-        if (forward.sqrMagnitude < 0.5f)
-            return;
-
-        Vector3 up = Vector3.zero;
-        Transform trigger = Find(gun, "Trigger");
-        if (trigger == null)
-            trigger = Find(gun, "trigger");
-        if (trigger != null && trigger != body && TryMeshCenter(trigger, out Vector3 triggerCenter, out _))
-            up = SnapToAxis(Vector3.ProjectOnPlane(bodyCenter - triggerCenter, forward), body, forward);
-
+        Vector3 forward = muzzle.forward;
+        Vector3 up = Vector3.ProjectOnPlane(GunTopDirection(gun), forward);
         Quaternion turn;
-        if (up.sqrMagnitude > 0.5f)
-            turn = Quaternion.LookRotation(controller.forward, controller.up) * Quaternion.Inverse(Quaternion.LookRotation(forward, up));
+        if (up.sqrMagnitude > 0.000001f)
+        {
+            Quaternion gunFrame = Quaternion.LookRotation(forward, up.normalized);
+            Quaternion controllerFrame = Quaternion.LookRotation(controller.forward, controller.up);
+            turn = controllerFrame * Quaternion.Inverse(gunFrame);
+        }
         else
             turn = Quaternion.FromToRotation(forward, controller.forward);
+
         gun.rotation = turn * gun.rotation;
     }
 
-    // The part's axis (+/- right, up, forward) closest to the direction, skipping one along 'not'.
-    static Vector3 SnapToAxis(Vector3 direction, Transform part, Vector3 not)
+    // Which way is the top of the gun: from the trigger toward the middle of the gun's biggest
+    // mesh, since the body sits above the trigger. Zero if the gun has no trigger mesh.
+    static Vector3 GunTopDirection(Transform gun)
     {
-        if (direction.sqrMagnitude < 0.000001f)
+        Transform trigger = Find(gun, "Trigger");
+        if (trigger == null)
+            trigger = Find(gun, "trigger");
+        if (trigger == null || !TryMeshCenter(trigger, out Vector3 triggerCenter, out _))
             return Vector3.zero;
-        direction.Normalize();
-        Vector3[] axes = { part.right, part.up, part.forward };
-        Vector3 best = Vector3.zero;
-        float bestDot = 0f;
-        for (int i = 0; i < axes.Length; i++)
-        {
-            Vector3 axis = axes[i].normalized;
-            if (not.sqrMagnitude > 0.5f && Mathf.Abs(Vector3.Dot(axis, not)) > 0.7f)
-                continue;
-            float dot = Vector3.Dot(axis, direction);
-            if (Mathf.Abs(dot) > Mathf.Abs(bestDot))
-            {
-                bestDot = dot;
-                best = dot >= 0f ? axis : -axis;
-            }
-        }
 
-        return best;
-    }
-
-    static Transform BiggestMesh(Transform gun, out Vector3 center)
-    {
-        Transform best = null;
-        center = gun.position;
+        Vector3 body = Vector3.zero;
         float biggest = -1f;
         foreach (MeshFilter filter in gun.GetComponentsInChildren<MeshFilter>(true))
         {
-            if (!TryMeshCenter(filter.transform, out Vector3 c, out float size) || size <= biggest)
+            if (filter.transform == trigger || !TryMeshCenter(filter.transform, out Vector3 center, out float size))
                 continue;
-            biggest = size;
-            best = filter.transform;
-            center = c;
+            if (size > biggest)
+            {
+                biggest = size;
+                body = center;
+            }
         }
 
-        return best;
+        return biggest < 0f ? Vector3.zero : body - triggerCenter;
     }
 
     static bool TryMeshCenter(Transform part, out Vector3 center, out float size)
