@@ -43,6 +43,8 @@ public class Hd2GripBaker : EditorWindow
     [SerializeField] Transform posingFore;
     [SerializeField] Transform posingArmEnd;
     [SerializeField] Vector3 posingRight;
+    // When the prefab file was last written as of Start Posing (or our own last bake).
+    [SerializeField] long posingStamp;
     Hd2GripHand posingGrip;
     string autoGripReport;
 
@@ -153,7 +155,26 @@ public class Hd2GripBaker : EditorWindow
             EditorGUILayout.HelpBox(autoGripReport, MessageType.None);
 
         if (GUILayout.Button("Bake", GUILayout.Height(32)))
-            Bake(posingGrip, posingGun, prefab);
+        {
+            // The posing copy is a snapshot. If the prefab was edited since (in Prefab Mode),
+            // baking would replace those edits with the older pose, so refuse.
+            if (PrefabStamp(prefab) > posingStamp)
+            {
+                if (EditorUtility.DisplayDialog("Grip Baker",
+                        prefab.name + " was edited after you started posing. Baking now would throw those edits away.\n\n" +
+                        "Reload shows the prefab's current markers on the robot hand. Nothing is written.",
+                        "Reload", "Cancel"))
+                {
+                    StartPosing();
+                    GUIUtility.ExitGUI();
+                }
+            }
+            else
+            {
+                Bake(posingGrip, posingGun, prefab);
+                posingStamp = PrefabStamp(prefab);
+            }
+        }
 
         if (GUILayout.Button("End Posing"))
             EndPosing();
@@ -237,6 +258,7 @@ public class Hd2GripBaker : EditorWindow
         SetHideFlagsRecursive(posingRoot.transform, HideFlags.DontSave);
 
         posingGun = gun.transform;
+        posingStamp = PrefabStamp(prefab);
         posingGrip = new Hd2GripHand(hand, false);
         posingGrip.Track(posingGun);
         if (posingGrip.Wrist == null)
@@ -507,6 +529,14 @@ public class Hd2GripBaker : EditorWindow
         return null;
     }
 
+    static long PrefabStamp(GameObject prefabAsset)
+    {
+        string path = prefabAsset != null ? AssetDatabase.GetAssetPath(prefabAsset) : null;
+        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+            return 0;
+        return System.IO.File.GetLastWriteTimeUtc(path).Ticks;
+    }
+
     static GameObject GuessPrefab(Transform gun)
     {
         if (gun == null)
@@ -585,12 +615,6 @@ public class Hd2GripBaker : EditorWindow
                 "OK");
             return;
         }
-
-        if (prefabAsset.GetComponent<Hd2GripPose>() != null && prefabAsset.GetComponent<Hd2GripPose>().baked
-            && !EditorUtility.DisplayDialog("Grip Baker",
-                prefabAsset.name + " is already baked. Baking replaces its Wrist and finger markers with the posed hand, including any edits you made in the prefab since. Use Reload from prefab first to keep them.",
-                "Bake", "Cancel"))
-            return;
 
         GameObject contents = PrefabUtility.LoadPrefabContents(assetPath);
         try
