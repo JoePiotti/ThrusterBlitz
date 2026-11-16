@@ -11,7 +11,7 @@ public static class Hd2AmmoReadout
         if (gun == null)
             return null;
 
-        Transform display = gun.Find("display");
+        Transform display = FindChild(gun, "display");
         if (display != null)
             return Style(display);
 
@@ -75,5 +75,21 @@ public static class Hd2AmmoReadout
             return;
 
         label.text = reloading ? "R" : rounds.ToString();
+    }
+
+    static Transform FindChild(Transform root, string name)
+    {
+        if (root == null)
+            return null;
+        if (root.name == name)
+            return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindChild(root.GetChild(i), name);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 }

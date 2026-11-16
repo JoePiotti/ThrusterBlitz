@@ -222,14 +222,10 @@ public class Hd2SmgPickup : MonoBehaviour
 
         var smg = gun.AddComponent<Hd2Smg>();
         smg.SetHand(hand.name == "LeftHand" ? Hd2Pistol.Hand.Left : Hd2Pistol.Hand.Right);
-        var muzzle = gun.transform.Find("Muzzle");
+        Transform muzzle = FindChild(gun.transform, "Muzzle");
         if (muzzle != null)
         {
-            if (prefabGrip || !gripped)
-            {
-                muzzle.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            }
-            else
+            if (!prefabGrip && gripped)
             {
                 float side = hand.name == "RightHand" ? -1f : 1f;
                 muzzle.localPosition = new Vector3(0.016f * side, 0.43f, 0.21f);
@@ -241,6 +237,22 @@ public class Hd2SmgPickup : MonoBehaviour
 
         Hd2Pistol.PulseEquip(hand);
         return true;
+    }
+
+    static Transform FindChild(Transform root, string name)
+    {
+        if (root == null)
+            return null;
+        if (root.name == name)
+            return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindChild(root.GetChild(i), name);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 
     public void RepairSavedMaterials()
