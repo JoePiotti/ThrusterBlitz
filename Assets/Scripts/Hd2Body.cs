@@ -61,6 +61,9 @@ public class Hd2Body : MonoBehaviour
     public GameObject handMeshLeftPrefab;
     [Tooltip("Decimated right-hand mesh spawned on Hand.R.")]
     public GameObject handMeshRightPrefab;
+    [Tooltip("Meters to raise every held gun along the controller's up, after its fist is centered on the controller. " +
+             "The controller's tracked point sits above the middle of a real fist; raise this if guns look low.")]
+    public float gripRaise = 0.04f;
     [Tooltip("Extra euler rotation applied after the grip Wrist aim on the left hand mesh.")]
     public Vector3 handMeshEulerOffsetL;
     [Tooltip("Extra euler rotation applied after the grip Wrist aim on the right hand mesh.")]
@@ -1438,7 +1441,7 @@ public class Hd2Body : MonoBehaviour
         {
             grip.ApplyFingers();
             if (grip.TryGripCenter(out Vector3 center))
-                gun.position += controller.position - center;
+                gun.position += controller.position - center + controller.up * gripRaise;
         }
 
         if (grip.right)
