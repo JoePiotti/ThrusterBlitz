@@ -38,6 +38,7 @@ static class Hd2GripPrefabPreview
     static Transform armEnd;
     static Vector3 lateral = Vector3.right;
     static double nextUpdate;
+    static bool rebuild;
     static string status;
 
     // What the preview looked like the last time we set it, to tell your edits from ours.
@@ -53,6 +54,19 @@ static class Hd2GripPrefabPreview
         PrefabStage.prefabStageClosing += _ => Clear();
         AssemblyReloadEvents.beforeAssemblyReload += Clear;
         EditorApplication.playModeStateChanged += _ => Clear();
+    }
+
+    // Where the preview robot stands, relative to facing down the barrel. Remembered per user.
+    static float TurnDegrees
+    {
+        get => EditorPrefs.GetFloat(PrefKey + ".Turn", 0f);
+        set => EditorPrefs.SetFloat(PrefKey + ".Turn", value);
+    }
+
+    static float SideMeters
+    {
+        get => EditorPrefs.GetFloat(PrefKey + ".Side", 0.2f);
+        set => EditorPrefs.SetFloat(PrefKey + ".Side", value);
     }
 
     static bool Enabled
@@ -102,8 +116,11 @@ static class Hd2GripPrefabPreview
             return;
         }
 
-        if (container == null || shownFor != stage || grip == null || grip.hand == null)
+        if (rebuild || container == null || shownFor != stage || grip == null || grip.hand == null)
+        {
+            rebuild = false;
             Build(stage, gun, wrist);
+        }
         if (grip == null)
             return;
 
@@ -241,12 +258,22 @@ static class Hd2GripPrefabPreview
         Handles.zTest = previousZ;
 
         Handles.BeginGUI();
-        GUILayout.BeginArea(new Rect(10, 10, 260, 140), EditorStyles.helpBox);
+        GUILayout.BeginArea(new Rect(10, 10, 260, 200), EditorStyles.helpBox);
         GUILayout.Label("Robot hand: click a joint, then rotate it", EditorStyles.boldLabel);
         if (GUILayout.Button("Auto Grip (index on trigger)"))
             RunAutoGrip(gun);
         if (GUILayout.Button("Straighten fingers"))
             Straighten();
+
+        EditorGUI.BeginChangeCheck();
+        float turn = EditorGUILayout.Slider("Robot turn", TurnDegrees, -180f, 180f);
+        float side = EditorGUILayout.Slider("Robot right (m)", SideMeters, -0.5f, 0.5f);
+        if (EditorGUI.EndChangeCheck())
+        {
+            TurnDegrees = turn;
+            SideMeters = side;
+            rebuild = true;
+        }
         if (!string.IsNullOrEmpty(status))
             GUILayout.Label(status, EditorStyles.wordWrappedMiniLabel);
         GUILayout.EndArea();
@@ -367,6 +394,7 @@ static class Hd2GripPrefabPreview
         Vector3 barrel = Vector3.ProjectOnPlane(muzzle != null ? muzzle.position - wrist.position : gun.forward, Vector3.up);
         if (facing.sqrMagnitude > 0.0001f && barrel.sqrMagnitude > 0.0001f)
             robot.rotation = Quaternion.FromToRotation(facing.normalized, barrel.normalized) * robot.rotation;
+        robot.rotation = Quaternion.AngleAxis(TurnDegrees, Vector3.up) * robot.rotation;
 
         // The robot's own right, after turning: toward its right hand.
         Vector3 right = Vector3.ProjectOnPlane(handR.position - hand.position, Vector3.up);
@@ -374,7 +402,7 @@ static class Hd2GripPrefabPreview
         Vector3 forward = barrel.sqrMagnitude > 0.0001f ? barrel.normalized : Vector3.Cross(lateral, Vector3.up);
         float reach = Vector3.Distance(upper.position, fore.position) + Vector3.Distance(fore.position, hand.position);
         Vector3 shoulder = wrist.position - forward * (reach * 0.65f) + Vector3.up * (reach * 0.3f) - lateral * (reach * 0.15f);
-        robot.position += shoulder - upper.position;
+        robot.position += shoulder - upper.position + lateral * SideMeters;
     }
 
     static Vector3 Facing(Transform robot, Transform hand, Transform handR)
