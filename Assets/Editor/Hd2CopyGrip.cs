@@ -96,7 +96,6 @@ static class Hd2CopyGrip
                 pose = root.AddComponent<Hd2GripPose>();
             pose.baked = true;
             pose.fingers = (Quaternion[])sourcePose.fingers.Clone();
-            pose.handOffset = sourcePose.handOffset;
 
             Transform markers = Hd2GripFingers.Find(root.transform, "GripFingers");
             if (markers != null)

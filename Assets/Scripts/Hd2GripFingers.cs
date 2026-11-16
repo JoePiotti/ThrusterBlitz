@@ -413,6 +413,28 @@ public sealed class Hd2GripHand
         return data;
     }
 
+    /// <summary>
+    /// Middle of the closed fist: the average of the index-to-pinky joints, which wrap around
+    /// whatever the hand holds. That is where the controller sits in a real hand.
+    /// </summary>
+    public bool TryGripCenter(out Vector3 center)
+    {
+        center = Vector3.zero;
+        int count = 0;
+        for (int i = 3; i < Hd2GripFingers.BoneCount; i++)
+        {
+            if (bones[i] == null)
+                continue;
+            center += bones[i].position;
+            count++;
+        }
+
+        if (count == 0)
+            return false;
+        center /= count;
+        return true;
+    }
+
     public static void SetWorldScale(Transform bone, float world)
     {
         Transform parent = bone.parent;

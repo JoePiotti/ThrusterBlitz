@@ -1349,6 +1349,8 @@ public class Hd2Body : MonoBehaviour
         Hd2GripHand grip = GripFor(hand);
         if (grip != null)
             grip.Track(GunInHand(target));
+        if (grip != null)
+            CenterGripOnController(grip, target);
         bool pinned = end != hand && grip != null && grip.PinHand();
         Vector3 wrist = pinned ? hand.position : GripAtForearmEnd(forearm, end, hand, GripPoint(target));
         StretchArm(upper, forearm, end, wrist);
@@ -1413,6 +1415,33 @@ public class Hd2Body : MonoBehaviour
         PlaceHandOnGun(hand, target);
         KeepHandSize(hand);
         PoseHandMesh(hand, target);
+    }
+
+    Transform centeredGunL;
+    Transform centeredGunR;
+
+    // Once per gun picked up: pose the hand on it, then slide the gun inside the controller so
+    // the middle of the closed fist sits exactly on the controller, where your real hand is.
+    // The gun keeps the angle its pickup gave it; only its position changes.
+    void CenterGripOnController(Hd2GripHand grip, Transform controller)
+    {
+        Transform gun = grip.Gun;
+        if (gun == null || controller == null || !grip.Baked || gun.parent != controller)
+            return;
+        if (grip.right ? centeredGunR == gun : centeredGunL == gun)
+            return;
+
+        if (grip.PinHand())
+        {
+            grip.ApplyFingers();
+            if (grip.TryGripCenter(out Vector3 center))
+                gun.position += controller.position - center;
+        }
+
+        if (grip.right)
+            centeredGunR = gun;
+        else
+            centeredGunL = gun;
     }
 
     // Unpinned hands ride on the end of the forearm, at their rest angle to it.
