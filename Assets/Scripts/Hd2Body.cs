@@ -1420,9 +1420,11 @@ public class Hd2Body : MonoBehaviour
     Transform centeredGunL;
     Transform centeredGunR;
 
-    // Once per gun picked up: pose the hand on it, then slide the gun inside the controller so
-    // the middle of the closed fist sits exactly on the controller, where your real hand is.
-    // The gun keeps the angle its pickup gave it; only its position changes.
+    // Once per gun picked up, the gun is lined up with the controller:
+    // 1. Turned so it shoots straight down the controller's forward (shots leave along the
+    //    Muzzle's forward) and its top faces the controller's up. A level controller holds a
+    //    level gun; the robot hand, fixed to the gun, shows whatever angle that leaves.
+    // 2. Slid so the middle of the closed fist sits exactly on the controller, where your real hand is.
     void CenterGripOnController(Hd2GripHand grip, Transform controller)
     {
         Transform gun = grip.Gun;
@@ -1431,6 +1433,7 @@ public class Hd2Body : MonoBehaviour
         if (grip.right ? centeredGunR == gun : centeredGunL == gun)
             return;
 
+        TurnGunToController(gun, controller);
         if (grip.PinHand())
         {
             grip.ApplyFingers();
@@ -1442,6 +1445,67 @@ public class Hd2Body : MonoBehaviour
             centeredGunR = gun;
         else
             centeredGunL = gun;
+    }
+
+    static void TurnGunToController(Transform gun, Transform controller)
+    {
+        Transform muzzle = Find(gun, "Muzzle");
+        if (muzzle == null)
+            return;
+
+        Vector3 forward = muzzle.forward;
+        Vector3 up = Vector3.ProjectOnPlane(GunTopDirection(gun), forward);
+        Quaternion turn;
+        if (up.sqrMagnitude > 0.000001f)
+        {
+            Quaternion gunFrame = Quaternion.LookRotation(forward, up.normalized);
+            Quaternion controllerFrame = Quaternion.LookRotation(controller.forward, controller.up);
+            turn = controllerFrame * Quaternion.Inverse(gunFrame);
+        }
+        else
+            turn = Quaternion.FromToRotation(forward, controller.forward);
+
+        gun.rotation = turn * gun.rotation;
+    }
+
+    // Which way is the top of the gun: from the trigger toward the middle of the gun's biggest
+    // mesh, since the body sits above the trigger. Zero if the gun has no trigger mesh.
+    static Vector3 GunTopDirection(Transform gun)
+    {
+        Transform trigger = Find(gun, "Trigger");
+        if (trigger == null)
+            trigger = Find(gun, "trigger");
+        if (trigger == null || !TryMeshCenter(trigger, out Vector3 triggerCenter, out _))
+            return Vector3.zero;
+
+        Vector3 body = Vector3.zero;
+        float biggest = -1f;
+        foreach (MeshFilter filter in gun.GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (filter.transform == trigger || !TryMeshCenter(filter.transform, out Vector3 center, out float size))
+                continue;
+            if (size > biggest)
+            {
+                biggest = size;
+                body = center;
+            }
+        }
+
+        return biggest < 0f ? Vector3.zero : body - triggerCenter;
+    }
+
+    static bool TryMeshCenter(Transform part, out Vector3 center, out float size)
+    {
+        center = part.position;
+        size = 0f;
+        var filter = part.GetComponent<MeshFilter>();
+        Mesh mesh = filter != null ? filter.sharedMesh : null;
+        if (mesh == null)
+            return false;
+        Bounds bounds = mesh.bounds;
+        center = part.TransformPoint(bounds.center);
+        size = Vector3.Scale(bounds.size, part.lossyScale).sqrMagnitude;
+        return true;
     }
 
     // Unpinned hands ride on the end of the forearm, at their rest angle to it.
