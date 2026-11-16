@@ -7,36 +7,15 @@ using UnityEngine;
 /// Copies the SMG's grip (hand pose and fingers) onto the other GripWeapons prefabs as a starting point.
 /// The hand is placed relative to each gun's own trigger and barrel, so it lands in roughly the same
 /// spot on every gun: same distance from the trigger, same angle to the barrel. Fine-tune each gun after.
-/// Runs once automatically after this script first compiles, and any time from
-/// Tools > HD2 > Copy SMG Grip To Other Guns. Writes a report to Logs/Hd2CopyGrip.txt.
+/// Run it from HD2 > Copy SMG Grip To Other Guns. Writes a report to Logs/Hd2CopyGrip.txt.
 /// </summary>
-[InitializeOnLoad]
 static class Hd2CopyGrip
 {
     const string Folder = "Assets/Prefabs/GripWeapons/";
     const string Source = "GripSmg";
-    const string RanKey = "Hd2CopyGrip.Ran.v1";
     static readonly string[] Targets = { "GripPistol", "GripBurst", "GripLaser", "GripShock", "GripShotgun", "GripRocket", "GripDropShield" };
 
-    static Hd2CopyGrip()
-    {
-        if (!EditorPrefs.GetBool(RanKey, false))
-            EditorApplication.delayCall += RunOnce;
-    }
-
-    static void RunOnce()
-    {
-        if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling || EditorApplication.isUpdating)
-        {
-            EditorApplication.delayCall += RunOnce;
-            return;
-        }
-
-        EditorPrefs.SetBool(RanKey, true);
-        Run();
-    }
-
-    [MenuItem("Tools/HD2/Copy SMG Grip To Other Guns")]
+    [MenuItem("HD2/Copy SMG Grip To Other Guns")]
     static void RunFromMenu()
     {
         if (EditorUtility.DisplayDialog("Copy SMG grip",
