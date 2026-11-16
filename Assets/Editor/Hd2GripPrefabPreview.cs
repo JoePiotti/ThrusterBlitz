@@ -38,6 +38,9 @@ static class Hd2GripPrefabPreview
     static Transform armEnd;
     static Vector3 lateral = Vector3.right;
     static double nextUpdate;
+    // Which joint the Scene view handles act on: 0-14 fingers, 15 the hand, -1 none.
+    // Our own handles, because Prefab Mode keeps the preview objects read-only.
+    static int selectedJoint = -1;
     static bool rebuild;
     static string status;
 
@@ -238,7 +241,7 @@ static class Hd2GripPrefabPreview
         var previousZ = Handles.zTest;
         Handles.zTest = UnityEngine.Rendering.CompareFunction.Always;
 
-        JointButton(grip.hand, Color.white, 0.09f);
+        JointButton(Hd2GripHand.HandSlot, grip.hand, Color.white, 0.09f);
         for (int finger = 0; finger < Hd2GripFingers.Names.Length; finger++)
         {
             for (int joint = 0; joint < 3; joint++)
@@ -251,15 +254,16 @@ static class Hd2GripPrefabPreview
                     : bone.childCount > 0 ? bone.GetChild(0).position : bone.position;
                 Handles.color = FingerColors[finger];
                 Handles.DrawAAPolyLine(4f, bone.position, next);
-                JointButton(bone, FingerColors[finger], 0.06f);
+                JointButton(finger * 3 + joint, bone, FingerColors[finger], 0.06f);
             }
         }
 
         Handles.zTest = previousZ;
+        JointHandles(gun);
 
         Handles.BeginGUI();
         GUILayout.BeginArea(new Rect(10, 10, 260, 200), EditorStyles.helpBox);
-        GUILayout.Label("Robot hand: click a joint, then rotate it", EditorStyles.boldLabel);
+        GUILayout.Label("Click a joint sphere, drag its rings", EditorStyles.boldLabel);
         if (GUILayout.Button("Auto Grip (index on trigger)"))
             RunAutoGrip(gun);
         if (GUILayout.Button("Straighten fingers"))
@@ -280,25 +284,81 @@ static class Hd2GripPrefabPreview
         Handles.EndGUI();
     }
 
-    static void JointButton(Transform bone, Color color, float size)
+    static void JointButton(int slot, Transform bone, Color color, float size)
     {
         float handleSize = HandleUtility.GetHandleSize(bone.position) * size;
-        Handles.color = Selection.activeTransform == bone ? Color.red : color;
+        Handles.color = selectedJoint == slot ? Color.red : color;
         if (Handles.Button(bone.position, Quaternion.identity, handleSize, handleSize, Handles.SphereHandleCap))
         {
-            Selection.activeTransform = bone;
-            Tools.current = Tool.Rotate;
-            Tools.pivotRotation = PivotRotation.Local;
+            selectedJoint = selectedJoint == slot ? -1 : slot;
+            // Hide Unity's own tool so it doesn't fight ours.
+            Tools.hidden = selectedJoint >= 0;
+        }
+    }
+
+    // Rotate rings on the selected finger joint; move arrows and rotate rings on the hand.
+    static void JointHandles(Transform gun)
+    {
+        if (selectedJoint < 0)
+            return;
+
+        bool isHand = selectedJoint == Hd2GripHand.HandSlot;
+        Transform bone = isHand ? grip.hand : grip.Bone(selectedJoint);
+        if (bone == null)
+            return;
+
+        EditorGUI.BeginChangeCheck();
+        Vector3 position = bone.position;
+        Quaternion rotation = bone.rotation;
+        if (isHand)
+            Handles.TransformHandle(ref position, ref rotation);
+        else
+            rotation = Handles.RotationHandle(rotation, position);
+        if (!EditorGUI.EndChangeCheck())
+            return;
+
+        // Undo works on the prefab's own objects; the next update writes the new pose into them.
+        Transform wrist = Hd2GripFingers.Find(gun, "Wrist");
+        if (wrist != null)
+            Undo.RecordObject(wrist, "Pose grip");
+        var pose = gun.GetComponent<Hd2GripPose>();
+        if (pose != null)
+            Undo.RecordObject(pose, "Pose grip");
+
+        if (isHand)
+            bone.SetPositionAndRotation(position, rotation);
+        else
+            bone.rotation = rotation;
+
+        if (TryStage(out PrefabStage stage, out _, out Transform stageWrist))
+        {
+            WriteToPrefab(stage, gun, stageWrist);
+            TakeShot();
         }
     }
 
     static void RunAutoGrip(Transform gun)
     {
         var model = AssetDatabase.LoadAssetAtPath<GameObject>(RobotPath);
-        Undo.RegisterFullObjectHierarchyUndo(grip.hand.gameObject, "Auto Grip");
+        RecordPrefabUndo(gun, "Auto Grip");
         string report = Hd2AutoGrip.Apply(grip, gun, model);
+        if (TryStage(out PrefabStage stage, out _, out Transform wrist))
+        {
+            WriteToPrefab(stage, gun, wrist);
+            TakeShot();
+        }
         status = report.Replace("\n", " · ");
         Debug.Log("Auto Grip:\n" + report);
+    }
+
+    static void RecordPrefabUndo(Transform gun, string label)
+    {
+        Transform wrist = Hd2GripFingers.Find(gun, "Wrist");
+        if (wrist != null)
+            Undo.RecordObject(wrist, label);
+        var pose = gun.GetComponent<Hd2GripPose>();
+        if (pose != null)
+            Undo.RecordObject(pose, label);
     }
 
     static void Straighten()
@@ -306,13 +366,20 @@ static class Hd2GripPrefabPreview
         var model = AssetDatabase.LoadAssetAtPath<GameObject>(RobotPath);
         if (model == null)
             return;
-        Undo.RegisterFullObjectHierarchyUndo(grip.hand.gameObject, "Straighten fingers");
+        if (TryStage(out _, out Transform gun, out _))
+            RecordPrefabUndo(gun, "Straighten fingers");
         for (int i = 0; i < Hd2GripFingers.BoneCount; i++)
         {
             Transform bone = grip.Bone(i);
             Transform rest = bone != null ? Hd2GripFingers.Find(model.transform, bone.name) : null;
             if (rest != null)
                 bone.localRotation = rest.localRotation;
+        }
+
+        if (TryStage(out PrefabStage stage, out Transform stageGun, out Transform wrist))
+        {
+            WriteToPrefab(stage, stageGun, wrist);
+            TakeShot();
         }
     }
 
@@ -367,6 +434,9 @@ static class Hd2GripPrefabPreview
 
     static void Clear()
     {
+        if (selectedJoint >= 0)
+            Tools.hidden = false;
+        selectedJoint = -1;
         if (container != null)
             Object.DestroyImmediate(container);
         container = null;
