@@ -187,7 +187,7 @@ public class Hd2LaserPickup : MonoBehaviour
 
         var laser = gun.AddComponent<Hd2LaserPistol>();
         laser.SetHand(hand.name == "LeftHand" ? Hd2Pistol.Hand.Left : Hd2Pistol.Hand.Right);
-        Transform muzzle = gun.transform.Find("Muzzle");
+        Transform muzzle = Hd2GripFingers.Find(gun.transform, "Muzzle");
         if (muzzle != null)
             laser.muzzle = muzzle;
         gun.SetActive(true);

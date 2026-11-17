@@ -87,7 +87,7 @@ public class Hd2Smg : MonoBehaviour
     {
         if (muzzle == null)
         {
-            var found = transform.Find("Muzzle");
+            var found = Hd2GripFingers.Find(transform, "Muzzle");
             if (found != null)
                 muzzle = found;
         }

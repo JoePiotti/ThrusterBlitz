@@ -1439,6 +1439,17 @@ public class Hd2Body : MonoBehaviour
         if (grip.right ? centeredGunR == gun : centeredGunL == gun)
             return;
 
+        // Grip prefabs are built for the left hand. Some pickups mirror them for the right
+        // hand and some don't (they only did when the gun carried its own old hand mesh),
+        // so make sure every right-hand copy is mirrored before lining it up.
+        var pose = gun.GetComponent<Hd2GripPose>();
+        if (grip.right && pose != null && !pose.mirrored)
+        {
+            Hd2ShotgunPickup.MirrorGrip(gun);
+            grip.Rebind();
+            grip.Track(gun);
+        }
+
         TurnGunToController(gun, controller);
         // Guns with recoil keep their own rest angle; give them the turned one.
         gun.SendMessage("RebaseRestRotation", SendMessageOptions.DontRequireReceiver);

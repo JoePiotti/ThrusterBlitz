@@ -18,5 +18,8 @@ public class Hd2GripPose : MonoBehaviour
     [Tooltip("Left-hand finger rotations, each relative to the bone before it. Written by the Prefab Mode hand preview.")]
     public Quaternion[] fingers = new Quaternion[0];
 
+    // Set once MirrorGrip has turned this copy into a right-hand gun. Not saved.
+    [System.NonSerialized] public bool mirrored;
+
     public bool HasFingers => fingers != null && fingers.Length == Hd2GripFingers.BoneCount;
 }

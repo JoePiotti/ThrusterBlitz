@@ -171,7 +171,7 @@ public class Hd2ShocksPickup : MonoBehaviour
 
         var shocks = gun.AddComponent<Hd2Shocks>();
         shocks.SetHand(hand.name == "LeftHand" ? Hd2Pistol.Hand.Left : Hd2Pistol.Hand.Right);
-        Transform muzzle = gun.transform.Find("Muzzle");
+        Transform muzzle = Hd2GripFingers.Find(gun.transform, "Muzzle");
         if (muzzle != null)
             shocks.muzzle = muzzle;
         gun.SetActive(true);

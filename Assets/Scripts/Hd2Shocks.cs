@@ -93,7 +93,7 @@ public class Hd2Shocks : MonoBehaviour
 
         if (muzzle == null)
         {
-            Transform found = transform.Find("Muzzle");
+            Transform found = Hd2GripFingers.Find(transform, "Muzzle");
             if (found != null)
                 muzzle = found;
         }

@@ -329,6 +329,15 @@ public class Hd2ShotgunPickup : MonoBehaviour
 
     public static void MirrorGrip(Transform root)
     {
+        // Mirroring twice would turn it back into a left-hand gun.
+        var gripPose = root.GetComponent<Hd2GripPose>();
+        if (gripPose != null)
+        {
+            if (gripPose.mirrored)
+                return;
+            gripPose.mirrored = true;
+        }
+
         SkinnedMeshRenderer[] skins = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
         var skinWorlds = new Vector3[skins.Length][];
         var skinNormalWorlds = new Vector3[skins.Length][];

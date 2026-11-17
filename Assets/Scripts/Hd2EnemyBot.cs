@@ -648,6 +648,9 @@ public class Hd2EnemyBot : MonoBehaviour
         gun.SetActive(false);
         var pistol = gun.AddComponent<Hd2Pistol>();
         pistol.hand = hand.name == "LeftHand" ? Hd2Pistol.Hand.Left : Hd2Pistol.Hand.Right;
+        // Grip prefabs are left-handed; mirror the right-hand copy like the player's.
+        if (pistol.hand == Hd2Pistol.Hand.Right && gun.GetComponent<Hd2GripPose>() != null)
+            Hd2ShotgunPickup.MirrorGrip(gun.transform);
         Transform muzzle = FindNamed(gun.transform, "Muzzle");
         if (muzzle != null)
             pistol.muzzle = muzzle;
