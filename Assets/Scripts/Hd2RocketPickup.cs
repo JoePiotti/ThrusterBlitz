@@ -191,6 +191,16 @@ public class Hd2RocketPickup : MonoBehaviour
 
     static void MirrorAcrossLocalX(Transform root)
     {
+        // Hd2Body mirrors any right-hand grip gun that isn't marked mirrored yet;
+        // mark this one so it isn't mirrored a second time (that flips the grip upside down).
+        var gripPose = root.GetComponent<Hd2GripPose>();
+        if (gripPose != null)
+        {
+            if (gripPose.mirrored)
+                return;
+            gripPose.mirrored = true;
+        }
+
         SkinnedMeshRenderer[] skins = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
         var worlds = new Vector3[skins.Length][];
         var normalWorlds = new Vector3[skins.Length][];
