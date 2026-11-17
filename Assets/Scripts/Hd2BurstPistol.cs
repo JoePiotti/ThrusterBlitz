@@ -53,7 +53,19 @@ public class Hd2BurstPistol : MonoBehaviour
     public void RebaseRestRotation()
     {
         restLocalRotation = transform.localRotation;
+        // Kick about the Muzzle's own axes, so the barrel climbs toward the top of the gun
+        // however this prefab's root happens to be rotated.
+        if (muzzle != null)
+        {
+            kickPitchAxis = transform.InverseTransformDirection(muzzle.right);
+            kickYawAxis = transform.InverseTransformDirection(muzzle.up);
+            kickAxesReady = true;
+        }
     }
+
+    Vector3 kickPitchAxis = Vector3.right;
+    Vector3 kickYawAxis = Vector3.up;
+    bool kickAxesReady;
     AudioSource shotSource;
     AudioClip shotClip;
     AudioClip reloadClip;
@@ -192,7 +204,9 @@ public class Hd2BurstPistol : MonoBehaviour
         }
 
         float wobble = firing ? Mathf.Sin(Time.time * 36f) * vibrationDegrees : 0f;
-        transform.localRotation = restLocalRotation * Quaternion.Euler(-climb, wobble, 0f);
+        transform.localRotation = kickAxesReady
+            ? restLocalRotation * Quaternion.AngleAxis(-climb, kickPitchAxis) * Quaternion.AngleAxis(wobble, kickYawAxis)
+            : restLocalRotation * Quaternion.Euler(-climb, wobble, 0f);
     }
 
     public void Reload()
