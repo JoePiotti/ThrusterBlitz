@@ -1437,6 +1437,8 @@ public class Hd2Body : MonoBehaviour
             return;
 
         TurnGunToController(gun, controller);
+        // Guns with recoil keep their own rest angle; give them the turned one.
+        gun.SendMessage("RebaseRestRotation", SendMessageOptions.DontRequireReceiver);
         if (grip.PinHand())
         {
             grip.ApplyFingers();

@@ -47,6 +47,13 @@ public class Hd2BurstPistol : MonoBehaviour
     bool waitForTriggerRelease = true;
     [SerializeField] bool gripMirrored;
     Quaternion restLocalRotation;
+
+    // Hd2Body turns a held gun to match the controller once it is picked up. Recoil puts the
+    // gun back to restLocalRotation every frame, so take the turned angle as the new rest.
+    public void RebaseRestRotation()
+    {
+        restLocalRotation = transform.localRotation;
+    }
     AudioSource shotSource;
     AudioClip shotClip;
     AudioClip reloadClip;

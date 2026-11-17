@@ -68,6 +68,13 @@ public class Hd2Shotgun : MonoBehaviour
     bool waitForTriggerRelease = true;
     float kick;
     Quaternion restLocalRotation;
+
+    // Hd2Body turns a held gun to match the controller once it is picked up. Recoil puts the
+    // gun back to restLocalRotation every frame, so take the turned angle as the new rest.
+    public void RebaseRestRotation()
+    {
+        restLocalRotation = transform.localRotation;
+    }
     InputAction triggerAction;
     InputAction reloadAction;
     InputAction editorFireAction;
