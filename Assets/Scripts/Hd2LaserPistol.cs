@@ -85,8 +85,6 @@ public class Hd2LaserPistol : MonoBehaviour
                 muzzle = found;
         }
 
-        if (transform.Find("Hand") == null)
-            TintGreen(gameObject);
         restLocalRotation = transform.localRotation;
         pointer = CreateBeam("LaserPointer", false);
         shot = CreateBeam("LaserShot", true);
