@@ -85,7 +85,7 @@ public class Hd2RocketLauncher : MonoBehaviour
                 muzzle = found;
         }
 
-        AimMuzzle();
+        // The prefab's Muzzle already points out of the tube; don't re-aim it.
         PaintSight();
         BuildLaser();
         reloadClip = Resources.Load<AudioClip>("Audio/RocketReload");
@@ -688,6 +688,10 @@ public class Hd2RocketLauncher : MonoBehaviour
 
     public Vector3 Barrel()
     {
+        // The Muzzle's forward is the barrel on every grip gun, mirrored copies included.
+        if (muzzle != null)
+            return muzzle.forward;
+
         // The tube runs along local X. The muzzle is the +X end on the left
         // launcher. The right launcher is mirrored, so its muzzle is the -X end.
         Vector3 local = hand == Hd2Pistol.Hand.Right ? Vector3.left : Vector3.right;
@@ -740,17 +744,6 @@ public class Hd2RocketLauncher : MonoBehaviour
 
         front = center + barrel * reach;
         return true;
-    }
-
-    void AimMuzzle()
-    {
-        if (muzzle == null)
-            return;
-
-        Vector3 along = muzzle.position - transform.position;
-        if (along.sqrMagnitude < 0.0004f)
-            return;
-        muzzle.rotation = Quaternion.LookRotation(along.normalized, transform.up);
     }
 
     void PaintSight()
