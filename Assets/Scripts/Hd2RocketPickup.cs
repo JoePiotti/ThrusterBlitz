@@ -16,7 +16,6 @@ public class Hd2RocketPickup : MonoBehaviour
     static readonly Color pickupColor = new Color(0.98f, 0.961f, 0.847f, 1f);
     static readonly Vector3 equippedPosition = new Vector3(0f, 0.01f, 0.05f);
     static readonly Vector3 equippedEuler = new Vector3(0f, 90f, 90f);
-    const float equippedScale = 0.27f;
 
     Transform sphere;
     Transform iconQuad;
@@ -176,7 +175,8 @@ public class Hd2RocketPickup : MonoBehaviour
         gun.transform.localRotation = Quaternion.Euler(equippedEuler);
         if (hand.name == "LeftHand")
             gun.transform.localRotation *= Quaternion.AngleAxis(180f, Vector3.up);
-        gun.transform.localScale = Vector3.one * equippedScale;
+        // Same size as the prefab, so what you see posing the grip in Prefab Mode is what you get.
+        gun.transform.localScale = rocketModel.transform.localScale;
         StripColliders(gun);
 
         var launcher = gun.GetComponent<Hd2RocketLauncher>();
