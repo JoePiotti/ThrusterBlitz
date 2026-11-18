@@ -843,6 +843,7 @@ public class Hd2EnemyBot : MonoBehaviour
         FaceKillMark();
         if (health != null && health.IsDead)
             return;
+        TickReach();
         PoseLegs();
     }
 
@@ -2946,7 +2947,7 @@ public class Hd2EnemyBot : MonoBehaviour
         moveDir = StayOnMap(moveDir);
         moveDir = StayInShelter(moveDir);
         moveDir = Hd2Payload.SteerBot(transform.position, moveDir);
-        Vector3 wish = moveDir;
+        Vector3 wish = Reaching ? Vector3.zero : moveDir;
         if (wish.sqrMagnitude > 1f)
             wish.Normalize();
         float blend = 1f - Mathf.Exp(-6f * Time.deltaTime);
@@ -3406,10 +3407,60 @@ public class Hd2EnemyBot : MonoBehaviour
         return Vector3.Distance(from, center) <= radius + BotArmReach;
     }
 
+    // Reaching for a pickup: the arm swings out to the sphere over ReachSeconds, the bot
+    // stands still, and the weapon is only taken once the hand gets there.
+    const float ReachSeconds = 0.35f;
+    Component reachSource;
+    Transform reachHolder;
+    float reachStarted;
+
     bool TakeWeapon(Component source, Transform hand)
     {
-        if (source == null || hand == null || !CanReach(source, hand))
+        if (source == null || hand == null || reachSource != null || !CanReach(source, hand))
             return false;
+        reachSource = source;
+        reachHolder = hand;
+        reachStarted = Time.time;
+        return true;
+    }
+
+    bool Reaching => reachSource != null;
+
+    void TickReach()
+    {
+        if (reachSource == null)
+            return;
+
+        Component source = reachSource;
+        Transform holder = reachHolder;
+        Transform sphere = source != null ? source.transform.Find("Sphere") : null;
+        bool gone = source == null || holder == null || (sphere != null && !sphere.gameObject.activeInHierarchy);
+        if (gone || !CanReach(source, holder) || (health != null && health.IsDead))
+        {
+            reachSource = null;
+            reachHolder = null;
+            return;
+        }
+
+        bool right = holder == rightHand;
+        Transform upper = right ? upperR : upperL;
+        Transform fore = right ? foreR : foreL;
+        Transform bone = right ? handR : handL;
+        Vector3 center = sphere != null ? sphere.position : PickupPoint(source);
+        float t = Mathf.Clamp01((Time.time - reachStarted) / ReachSeconds);
+        float eased = t * t * (3f - 2f * t);
+        if (bone != null)
+            PoseArm(upper, fore, bone, Vector3.Lerp(bone.position, center, eased), right ? 1f : -1f);
+        if (t < 1f)
+            return;
+
+        reachSource = null;
+        reachHolder = null;
+        DoTakeWeapon(source, holder);
+    }
+
+    bool DoTakeWeapon(Component source, Transform hand)
+    {
         bool took = false;
         if (source is Hd2SmgPickup smg)
             took = smg.BotTake(hand);
