@@ -776,6 +776,7 @@ public class Hd2EnemyBot : MonoBehaviour
             }
 
             StopBlitzTrail();
+            blitzPending = false;
             blitzSmokeUntil = 0f;
             RetractPress();
             ReleaseGuns();
@@ -830,6 +831,7 @@ public class Hd2EnemyBot : MonoBehaviour
         else
             TickCombat();
 
+        TickBlitzAim();
         TickTravel();
         if (!traveling && !grinding)
             TickWalk();
@@ -865,6 +867,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (health != null && health.IsDead)
             return;
         TickReach();
+        PoseBlitzAim();
         PoseLegs();
     }
 
@@ -1114,10 +1117,8 @@ public class Hd2EnemyBot : MonoBehaviour
         Vector3 mount = rail.PointAlong(along);
         float sign = SignToward(rail, along, goal);
         float mountGap = Horizontal(mount);
-        if (mountGap >= 0.8f && mountGap <= BlitzRange)
+        if (mountGap >= 0.8f && mountGap <= BlitzRange && !blitzPending && (meter == null || meter.TrySpend()))
         {
-            if (meter != null && meter.Charges >= 1f)
-                meter.TrySpend();
             BeginTravel(mount, rail, sign);
             return true;
         }
@@ -1174,7 +1175,7 @@ public class Hd2EnemyBot : MonoBehaviour
     void BlitzOverFront()
     {
         Hd2Payload cart = Hd2Payload.Current;
-        if (cart == null || cart.rail == null || traveling)
+        if (cart == null || cart.rail == null || traveling || blitzPending)
             return;
         if (meter != null && !meter.TrySpend())
             return;
@@ -2075,6 +2076,8 @@ public class Hd2EnemyBot : MonoBehaviour
 
     void StopMotion()
     {
+        StopBlitzTrail();
+        blitzPending = false;
         traveling = false;
         grinding = false;
         grindRail = null;
@@ -2721,7 +2724,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
     bool TryBlitz(Vector3 landing, Hd2GrindRail rail, float sign)
     {
-        if (Hd2SpawnField.Locked)
+        if (Hd2SpawnField.Locked || blitzPending || traveling)
             return false;
         Vector3 flat = landing - transform.position;
         flat.y = 0f;
@@ -2736,7 +2739,50 @@ public class Hd2EnemyBot : MonoBehaviour
         return true;
     }
 
+    // Like a player, a bot points an arm at where it will land before it blitzes there.
+    // The thrust is spent when the aim starts; the blitz launches BlitzAimSeconds later.
+    const float BlitzAimSeconds = 0.4f;
+    bool blitzPending;
+    float blitzLaunchAt;
+    Vector3 pendingLanding;
+    Hd2GrindRail pendingRail;
+    float pendingSign;
+
     void BeginTravel(Vector3 landing, Hd2GrindRail rail, float sign)
+    {
+        if (blitzPending || traveling)
+            return;
+        blitzPending = true;
+        blitzLaunchAt = Time.time + BlitzAimSeconds;
+        pendingLanding = landing;
+        pendingRail = rail;
+        pendingSign = sign;
+    }
+
+    void TickBlitzAim()
+    {
+        if (!blitzPending || Time.time < blitzLaunchAt)
+            return;
+        blitzPending = false;
+        if (traveling || (health != null && health.IsDead))
+            return;
+        LaunchTravel(pendingLanding, pendingRail, pendingSign);
+    }
+
+    // Arm out toward the landing while aiming: the arm on that side of the body.
+    void PoseBlitzAim()
+    {
+        if (!blitzPending)
+            return;
+        bool right = Vector3.Dot(pendingLanding - transform.position, transform.right) >= 0f;
+        Transform upper = right ? upperR : upperL;
+        Transform fore = right ? foreR : foreL;
+        Transform bone = right ? handR : handL;
+        if (upper != null && fore != null)
+            PoseArm(upper, fore, bone, pendingLanding, right ? 1f : -1f);
+    }
+
+    void LaunchTravel(Vector3 landing, Hd2GrindRail rail, float sign)
     {
         grinding = false;
         grindRail = null;
@@ -2812,11 +2858,7 @@ public class Hd2EnemyBot : MonoBehaviour
                 continue;
 
             if (meter != null && meter.Charges < 1f)
-            {
-                BeginTravel(landing, null, 1f);
-                moveDir = flat.normalized;
                 return;
-            }
 
             if (TryBlitz(landing, null, 1f))
             {
