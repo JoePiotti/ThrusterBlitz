@@ -2721,6 +2721,8 @@ public class Hd2EnemyBot : MonoBehaviour
 
     bool TryBlitz(Vector3 landing, Hd2GrindRail rail, float sign)
     {
+        if (Hd2SpawnField.Locked)
+            return false;
         Vector3 flat = landing - transform.position;
         flat.y = 0f;
         if (flat.magnitude < 0.8f || flat.magnitude > BlitzRange || StandingOnWater(landing) || OutsidePlay(landing))
@@ -2969,7 +2971,10 @@ public class Hd2EnemyBot : MonoBehaviour
         moveDir = StayOnMap(moveDir);
         moveDir = StayInShelter(moveDir);
         moveDir = Hd2Payload.SteerBot(transform.position, moveDir);
-        Vector3 wish = Reaching ? Vector3.zero : moveDir;
+        // Before the gates open the spawn shields stop everyone. A bot that kept walking
+        // pressed into the shield and ended up standing on its bottom edge out over the
+        // drop, then fell when the gates opened. Hold still until then, like a player would.
+        Vector3 wish = Reaching || Hd2SpawnField.Locked ? Vector3.zero : moveDir;
         if (wish.sqrMagnitude > 1f)
             wish.Normalize();
         float blend = 1f - Mathf.Exp(-6f * Time.deltaTime);
@@ -2987,7 +2992,7 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         ClearSmallLedge();
-        if (!jumpBoosting)
+        if (!jumpBoosting && !Hd2SpawnField.Locked)
             ConsiderHop();
 
         float dt = Time.deltaTime;
