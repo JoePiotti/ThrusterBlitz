@@ -183,6 +183,12 @@ public class Hd2Locomotion : MonoBehaviour
     float jumpOriginY;
     float jumpTime;
     ParticleSystem[] jumpExhaust;
+    // Blitz smoke: the same two back vents aimed straight back, a short burst when a
+    // blitz starts; momentum carries the rest of the way.
+    public const float BlitzSmokeSeconds = 0.4f;
+    ParticleSystem[] blitzExhaust;
+    float blitzSmokeUntil;
+    bool blitzSmokeOn;
     AudioSource jumpThrustSource;
     float jumpThrustFade;
     const float JumpThrustFadeTime = 0.75f;
@@ -240,6 +246,8 @@ public class Hd2Locomotion : MonoBehaviour
         jumpThrustFade = 0f;
         if (jumpThrustSource != null && jumpThrustSource.isPlaying)
             jumpThrustSource.Stop();
+        blitzSmokeUntil = 0f;
+        UpdateBlitzSmoke();
         jumpSpent = false;
         UpdateGrindAudio();
     }
@@ -1170,6 +1178,7 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         UpdateJumpThrustAudio(dt);
+        UpdateBlitzSmoke();
 
         float snap = ReadSnapDegrees();
         if (EditorFallback)
@@ -2418,7 +2427,24 @@ public class Hd2Locomotion : MonoBehaviour
         if (blitzSource != null && blitzSource.clip != null)
             blitzSource.PlayOneShot(blitzSource.clip);
         PlayBlitzTrail();
+        blitzSmokeUntil = Time.time + BlitzSmokeSeconds;
+        UpdateBlitzSmoke();
         return true;
+    }
+
+    void UpdateBlitzSmoke()
+    {
+        bool on = Time.time < blitzSmokeUntil;
+        if (on == blitzSmokeOn)
+            return;
+        if (on && blitzExhaust == null)
+        {
+            var avatar = GetComponent<Hd2Body>();
+            blitzExhaust = BuildBlitzExhaust(avatar != null && avatar.body != null ? avatar.body : transform);
+        }
+
+        DriveJumpExhaust(blitzExhaust, on);
+        blitzSmokeOn = on;
     }
 
     void AdvanceThrust(float dt)
@@ -3386,6 +3412,40 @@ public class Hd2Locomotion : MonoBehaviour
         var avatar = GetComponent<Hd2Body>();
         Transform root = avatar != null && avatar.body != null ? avatar.body : transform;
         jumpExhaust = BuildJumpExhaust(root);
+    }
+
+    /// <summary>The jump vents again, aimed straight out of the robot's back for a blitz.</summary>
+    public static ParticleSystem[] BuildBlitzExhaust(Transform root)
+    {
+        ParticleSystem[] exhaust = BuildJumpExhaust(root);
+        if (root == null)
+            return exhaust;
+        Vector3 back = -RobotForward(root);
+        for (int i = 0; i < exhaust.Length; i++)
+        {
+            if (exhaust[i] == null)
+                continue;
+            exhaust[i].gameObject.name = i == 0 ? "BlitzExhaustL" : "BlitzExhaustR";
+            exhaust[i].transform.rotation = Quaternion.LookRotation(back, root.up);
+        }
+
+        return exhaust;
+    }
+
+    // The way the robot faces: along its toes, else the root's forward.
+    public static Vector3 RobotForward(Transform root)
+    {
+        Vector3 forward = Vector3.zero;
+        foreach (string side in new[] { "L", "R" })
+        {
+            Transform foot = FindNamed(root, "Foot." + side);
+            Transform toe = foot != null ? FindNamed(foot, "Foot." + side + ".Tip") : null;
+            if (foot != null && toe != null)
+                forward += toe.position - foot.position;
+        }
+
+        forward = Vector3.ProjectOnPlane(forward, root.up);
+        return forward.sqrMagnitude > 0.000001f ? forward.normalized : root.forward;
     }
 
     public static ParticleSystem[] BuildJumpExhaust(Transform root)

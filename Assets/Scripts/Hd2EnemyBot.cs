@@ -380,6 +380,9 @@ public class Hd2EnemyBot : MonoBehaviour
     AudioSource landSource;
     float airborneTime;
     ParticleSystem[] jumpExhaust;
+    ParticleSystem[] blitzExhaust;
+    float blitzSmokeUntil;
+    bool blitzSmokeOn;
     ParticleSystem blitzTrail;
     bool jumpExhaustOn;
 
@@ -527,6 +530,7 @@ public class Hd2EnemyBot : MonoBehaviour
         SetLoop(grindLoop, !dead && grinding && grindRail != null);
         SetLoop(thrustLoop, !dead && (traveling || jumpBoosting));
         SetJumpExhaust(!dead && jumpBoosting);
+        SetBlitzSmoke(!dead && Time.time < blitzSmokeUntil);
         if (dead)
         {
             airborneTime = 0f;
@@ -543,6 +547,22 @@ public class Hd2EnemyBot : MonoBehaviour
         if (airborneTime > 0.2f && landSource != null && landSource.clip != null)
             landSource.PlayOneShot(landSource.clip, 0.85f);
         airborneTime = 0f;
+    }
+
+    void SetBlitzSmoke(bool playing)
+    {
+        if (playing == blitzSmokeOn)
+            return;
+        if (playing && blitzExhaust == null)
+        {
+            Transform robot = transform.Find("Body");
+            if (robot == null)
+                return;
+            blitzExhaust = Hd2Locomotion.BuildBlitzExhaust(robot);
+        }
+
+        Hd2Locomotion.DriveJumpExhaust(blitzExhaust, playing);
+        blitzSmokeOn = playing;
     }
 
     void SetJumpExhaust(bool playing)
@@ -756,6 +776,7 @@ public class Hd2EnemyBot : MonoBehaviour
             }
 
             StopBlitzTrail();
+            blitzSmokeUntil = 0f;
             RetractPress();
             ReleaseGuns();
             UpdateBodyAudio();
@@ -2720,6 +2741,7 @@ public class Hd2EnemyBot : MonoBehaviour
         traveling = true;
         smoothedMove = Vector3.zero;
         PlayBlitzTrail();
+        blitzSmokeUntil = Time.time + Hd2Locomotion.BlitzSmokeSeconds;
         if (blitzSource != null && blitzSource.clip != null)
             blitzSource.PlayOneShot(blitzSource.clip);
         travelStart = transform.position;
