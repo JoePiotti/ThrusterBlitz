@@ -203,6 +203,19 @@ public class Hd2DropShield : MonoBehaviour
         }
     }
 
+    // A falling shield only lands on the level, never on a player or a bot. It falls
+    // through them to the ground below.
+    static bool IsCharacter(Collider collider)
+    {
+        if (collider is CharacterController)
+            return true;
+        return collider.GetComponentInParent<Hd2Locomotion>() != null
+            || collider.GetComponentInParent<Hd2Body>() != null
+            || collider.GetComponentInParent<Hd2EnemyBot>() != null
+            || collider.GetComponentInParent<Hd2PracticeBot>() != null
+            || collider.GetComponentInParent<Hd2NetPlayer>() != null;
+    }
+
     public static bool PassesBody(Collider collider)
     {
         if (collider == null)
@@ -338,6 +351,8 @@ public class Hd2DropShield : MonoBehaviour
             if (collider == null || collider.transform == transform || collider.transform.IsChildOf(transform))
                 continue;
             if (PassesBody(collider))
+                continue;
+            if (IsCharacter(collider))
                 continue;
             if (groundHits[i].normal.y < 0.45f || groundHits[i].distance >= best)
                 continue;
