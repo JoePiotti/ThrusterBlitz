@@ -2449,6 +2449,8 @@ public class Hd2Locomotion : MonoBehaviour
 
     void AdvanceThrust(float dt)
     {
+        if (blitzRibbon != null && blitzRibbon.emitting)
+            PlaceBlitzRibbon(blitzRibbon, RibbonRobot(), thrustEnd - thrustStart);
         float distance = Vector3.Distance(thrustStart, thrustEnd);
         float speed = Mathf.Max(0.01f, thrustSpeed);
         float duration = distance / speed;
@@ -2482,25 +2484,120 @@ public class Hd2Locomotion : MonoBehaviour
         thrustLanded = false;
     }
 
+    TrailRenderer blitzRibbon;
+
+    Transform RibbonRobot()
+    {
+        var avatar = GetComponent<Hd2Body>();
+        return avatar != null && avatar.body != null ? avatar.body : transform;
+    }
+
     void PlayBlitzTrail()
     {
-        EnsureBlitzTrail();
-        if (blitzTrail == null)
-            return;
-
-        var main = blitzTrail.main;
-        Color edge = teamColor;
-        edge.a = 0.95f;
-        Color spark = Color.Lerp(teamColor, Color.white, 0.18f);
-        spark.a = 1f;
-        main.startColor = new ParticleSystem.MinMaxGradient(spark, edge);
-        blitzTrail.Play();
+        if (blitzRibbon == null)
+            blitzRibbon = CreateBlitzRibbon(transform);
+        StartBlitzRibbon(blitzRibbon, RibbonRobot(), thrustEnd - thrustStart, teamColor);
     }
 
     void StopBlitzTrail()
     {
-        if (blitzTrail != null && blitzTrail.isPlaying)
-            blitzTrail.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+        if (blitzRibbon != null)
+            blitzRibbon.emitting = false;
+    }
+
+    // ---- Blitz ribbon (players and bots) ----
+    // A flat light ribbon the height of the robot's torso, standing upright along the blitz
+    // path: solid at the robot, fading to clear behind it, gone a few seconds after the blitz.
+    // One TrailRenderer instead of hundreds of particles, which is much cheaper on Quest.
+    public const float BlitzRibbonSeconds = 3f;
+
+    public static TrailRenderer CreateBlitzRibbon(Transform owner)
+    {
+        var holder = new GameObject("BlitzRibbon");
+        holder.hideFlags = HideFlags.DontSave;
+        holder.transform.SetParent(owner, false);
+        var ribbon = holder.AddComponent<TrailRenderer>();
+        ribbon.emitting = false;
+        ribbon.alignment = LineAlignment.TransformZ;
+        ribbon.time = BlitzRibbonSeconds;
+        ribbon.minVertexDistance = 0.2f;
+        ribbon.numCapVertices = 0;
+        ribbon.numCornerVertices = 0;
+        ribbon.autodestruct = false;
+        ribbon.textureMode = LineTextureMode.Stretch;
+        ribbon.widthCurve = AnimationCurve.Constant(0f, 1f, 1f);
+        ribbon.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        ribbon.receiveShadows = false;
+        Material material = RibbonMaterial();
+        if (material != null)
+            ribbon.sharedMaterial = material;
+        return ribbon;
+    }
+
+    static Material ribbonMaterial;
+
+    // Plain glowing strip: unlit, no texture, additive, drawn from both sides.
+    static Material RibbonMaterial()
+    {
+        if (ribbonMaterial != null)
+            return ribbonMaterial;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null)
+            return Hd2Shot.ParticleMaterial();
+
+        ribbonMaterial = new Material(shader) { name = "BlitzRibbon" };
+        if (ribbonMaterial.HasProperty("_BaseColor"))
+            ribbonMaterial.SetColor("_BaseColor", Color.white);
+        ribbonMaterial.SetFloat("_Surface", 1f);
+        ribbonMaterial.SetFloat("_Blend", 2f);
+        ribbonMaterial.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        ribbonMaterial.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+        ribbonMaterial.SetFloat("_ZWrite", 0f);
+        ribbonMaterial.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
+        ribbonMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        ribbonMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        return ribbonMaterial;
+    }
+
+    public static void StartBlitzRibbon(TrailRenderer ribbon, Transform robot, Vector3 travel, Color color)
+    {
+        if (ribbon == null)
+            return;
+
+        var gradient = new Gradient();
+        Color bright = Color.Lerp(color, Color.white, 0.15f);
+        gradient.SetKeys(
+            new[] { new GradientColorKey(bright, 0f), new GradientColorKey(color, 1f) },
+            new[] { new GradientAlphaKey(0.85f, 0f), new GradientAlphaKey(0.35f, 0.4f), new GradientAlphaKey(0f, 1f) });
+        ribbon.colorGradient = gradient;
+
+        // Move it to the torso before it starts drawing, so no streak from where it was.
+        ribbon.emitting = false;
+        PlaceBlitzRibbon(ribbon, robot, travel);
+        ribbon.emitting = true;
+    }
+
+    /// <summary>Keep the ribbon on the torso and standing upright along the path. Call every frame of a blitz.</summary>
+    public static void PlaceBlitzRibbon(TrailRenderer ribbon, Transform robot, Vector3 travel)
+    {
+        if (ribbon == null || robot == null)
+            return;
+
+        Transform hips = FindNamed(robot, "Hips");
+        Transform neck = FindNamed(robot, "Neck");
+        Vector3 bottom = hips != null ? hips.position : robot.position + Vector3.up * 0.9f;
+        Vector3 top = neck != null ? neck.position : bottom + Vector3.up * 0.6f;
+        ribbon.transform.position = (bottom + top) * 0.5f;
+        ribbon.widthMultiplier = Mathf.Max(0.1f, Vector3.Distance(bottom, top));
+
+        Vector3 flat = Vector3.ProjectOnPlane(travel, Vector3.up);
+        if (flat.sqrMagnitude < 0.0001f)
+            flat = Vector3.ProjectOnPlane(robot.forward, Vector3.up);
+        if (flat.sqrMagnitude < 0.0001f)
+            return;
+        // Facing sideways to the path makes the ribbon's width run straight up.
+        ribbon.transform.rotation = Quaternion.LookRotation(Vector3.Cross(Vector3.up, flat.normalized), Vector3.up);
     }
 
     void EnsureBlitzTrail()

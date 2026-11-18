@@ -1201,25 +1201,25 @@ public class Hd2EnemyBot : MonoBehaviour
             body.enabled = true;
     }
 
+    TrailRenderer blitzRibbon;
+
+    Transform RibbonRobot()
+    {
+        Transform robot = transform.Find("Body");
+        return robot != null ? robot : transform;
+    }
+
     void PlayBlitzTrail()
     {
-        EnsureBlitzTrail();
-        if (blitzTrail == null)
-            return;
-
-        var main = blitzTrail.main;
-        Color edge = bodyColor;
-        edge.a = 0.95f;
-        Color spark = Color.Lerp(bodyColor, Color.white, 0.18f);
-        spark.a = 1f;
-        main.startColor = new ParticleSystem.MinMaxGradient(spark, edge);
-        blitzTrail.Play();
+        if (blitzRibbon == null)
+            blitzRibbon = Hd2Locomotion.CreateBlitzRibbon(transform);
+        Hd2Locomotion.StartBlitzRibbon(blitzRibbon, RibbonRobot(), travelEnd - travelStart, bodyColor);
     }
 
     void StopBlitzTrail()
     {
-        if (blitzTrail != null && blitzTrail.isPlaying)
-            blitzTrail.Stop(false, ParticleSystemStopBehavior.StopEmitting);
+        if (blitzRibbon != null)
+            blitzRibbon.emitting = false;
     }
 
     void EnsureBlitzTrail()
@@ -2742,12 +2742,12 @@ public class Hd2EnemyBot : MonoBehaviour
         grindRail = null;
         traveling = true;
         smoothedMove = Vector3.zero;
-        PlayBlitzTrail();
         blitzSmokeUntil = Time.time + Hd2Locomotion.BlitzSmokeSeconds;
         if (blitzSource != null && blitzSource.clip != null)
             blitzSource.PlayOneShot(blitzSource.clip);
         travelStart = transform.position;
         travelEnd = landing;
+        PlayBlitzTrail();
         travelElapsed = 0f;
         travelRail = rail;
         travelSign = sign;
@@ -2830,6 +2830,8 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         if (traveling)
         {
+            if (blitzRibbon != null && blitzRibbon.emitting)
+                Hd2Locomotion.PlaceBlitzRibbon(blitzRibbon, RibbonRobot(), travelEnd - travelStart);
             float distance = Vector3.Distance(travelStart, travelEnd);
             float duration = distance / MoveAt(BlitzSpeed);
             travelElapsed += Time.deltaTime;
