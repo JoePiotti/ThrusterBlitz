@@ -236,6 +236,10 @@ public class Hd2Locomotion : MonoBehaviour
         wasOffGround = false;
         EndJumpBoost();
         StopBlitzTrail();
+        // Cut the jump thrust sound now instead of letting it fade out (death, respawn).
+        jumpThrustFade = 0f;
+        if (jumpThrustSource != null && jumpThrustSource.isPlaying)
+            jumpThrustSource.Stop();
         jumpSpent = false;
         UpdateGrindAudio();
     }

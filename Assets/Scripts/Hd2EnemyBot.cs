@@ -747,6 +747,15 @@ public class Hd2EnemyBot : MonoBehaviour
         FaceKillMark();
         if (health != null && health.IsDead)
         {
+            // Dead bots stop thrusting at once: no blitz trail, jump boost or thrust sound.
+            if (traveling || jumpBoosting)
+            {
+                traveling = false;
+                jumpBoosting = false;
+                jumpTime = 0f;
+            }
+
+            StopBlitzTrail();
             RetractPress();
             ReleaseGuns();
             UpdateBodyAudio();
