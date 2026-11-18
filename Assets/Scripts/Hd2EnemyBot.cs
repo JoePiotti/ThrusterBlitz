@@ -1217,15 +1217,15 @@ public class Hd2EnemyBot : MonoBehaviour
         main.playOnAwake = false;
         main.loop = true;
         main.duration = 1f;
-        main.startLifetime = new ParticleSystem.MinMaxCurve(4.2f, 5f);
+        main.startLifetime = 2.5f;
         main.startSpeed = new ParticleSystem.MinMaxCurve(0.04f, 0.16f);
         main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.1f);
         main.gravityModifier = 0f;
-        main.maxParticles = 240;
+        main.maxParticles = 500; // 200 a second for 2.5 seconds
         main.simulationSpace = ParticleSystemSimulationSpace.World;
 
         var emission = blitzTrail.emission;
-        emission.rateOverTime = 150f;
+        emission.rateOverTime = 200f;
 
         var shape = blitzTrail.shape;
         shape.shapeType = ParticleSystemShapeType.Sphere;
