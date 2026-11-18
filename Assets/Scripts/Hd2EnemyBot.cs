@@ -3383,8 +3383,24 @@ public class Hd2EnemyBot : MonoBehaviour
         }
     }
 
+    // A player has to reach into a pickup's sphere with a hand. A bot gets the same
+    // reach: the sphere has to be within an arm's length of that hand's shoulder.
+    const float BotArmReach = 0.75f;
+
+    bool CanReach(Component source, Transform hand)
+    {
+        Transform sphere = source.transform.Find("Sphere");
+        Vector3 center = sphere != null ? sphere.position : PickupPoint(source);
+        float radius = sphere != null ? Mathf.Abs(sphere.lossyScale.x) * 0.5f : 0.35f;
+        Transform shoulder = hand == rightHand ? upperR : hand == leftHand ? upperL : null;
+        Vector3 from = shoulder != null ? shoulder.position : transform.position + Vector3.up * 1.4f;
+        return Vector3.Distance(from, center) <= radius + BotArmReach;
+    }
+
     bool TakeWeapon(Component source, Transform hand)
     {
+        if (source == null || hand == null || !CanReach(source, hand))
+            return false;
         bool took = false;
         if (source is Hd2SmgPickup smg)
             took = smg.BotTake(hand);
