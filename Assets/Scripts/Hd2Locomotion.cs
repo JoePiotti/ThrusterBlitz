@@ -3404,6 +3404,15 @@ public class Hd2Locomotion : MonoBehaviour
             };
         }
 
+        if (TryMeasuredNozzles(root, out Transform chest, out Vector3 leftAt, out Vector3 rightAt))
+        {
+            return new[]
+            {
+                CreateJumpExhaust(AttachVentAt(chest, leftAt, "JumpExhaustL")),
+                CreateJumpExhaust(AttachVentAt(chest, rightAt, "JumpExhaustR"))
+            };
+        }
+
         Vector3[] nozzles = FindJumpNozzles(root);
         var exhaust = new ParticleSystem[nozzles.Length];
         for (int i = 0; i < nozzles.Length; i++)
@@ -3417,6 +3426,58 @@ public class Hd2Locomotion : MonoBehaviour
         }
 
         return exhaust;
+    }
+
+    // Where the two back thrusters' nozzles are on the Tripo robot, measured from its
+    // segmented export (the "left thruster" / "right thruster" parts), as fractions of the
+    // robot's height: the Chest bone sits at 0.697, the nozzle bottoms at 0.733, 0.0485 to
+    // each side of center and 0.1225 behind the Chest bone.
+    const float ChestHeightFraction = 0.697f;
+    const float NozzleHeightFraction = 0.733f;
+    const float NozzleSideFraction = 0.0485f;
+    const float NozzleBackFraction = 0.1225f;
+
+    static bool TryMeasuredNozzles(Transform root, out Transform chest, out Vector3 left, out Vector3 right)
+    {
+        left = right = Vector3.zero;
+        chest = FindNamed(root, "Chest");
+        if (chest == null)
+            return false;
+
+        // Front is the way the toes point; the robot's height follows from the Chest bone.
+        Vector3 forward = Vector3.zero;
+        foreach (string side in new[] { "L", "R" })
+        {
+            Transform foot = FindNamed(root, "Foot." + side);
+            Transform toe = foot != null ? FindNamed(foot, "Foot." + side + ".Tip") : null;
+            if (foot != null && toe != null)
+                forward += root.InverseTransformDirection(toe.position - foot.position);
+        }
+
+        forward.y = 0f;
+        float facing = forward.sqrMagnitude > 0.000001f && forward.z < 0f ? -1f : 1f;
+        Vector3 chestLocal = root.InverseTransformPoint(chest.position);
+        float height = chestLocal.y / ChestHeightFraction;
+        if (height < 0.3f)
+            return false;
+
+        float y = NozzleHeightFraction * height;
+        float z = chestLocal.z - facing * NozzleBackFraction * height;
+        float x = NozzleSideFraction * height * facing;
+        left = root.TransformPoint(new Vector3(-x, y, z));
+        right = root.TransformPoint(new Vector3(x, y, z));
+        return true;
+    }
+
+    // A vent at a world point that rides on the given bone, pointing straight down.
+    static GameObject AttachVentAt(Transform bone, Vector3 world, string name)
+    {
+        var vent = new GameObject(name);
+        vent.hideFlags = HideFlags.DontSave;
+        vent.transform.SetParent(bone, false);
+        vent.transform.position = world;
+        vent.transform.rotation = Quaternion.LookRotation(Vector3.down, Vector3.forward);
+        return vent;
     }
 
     static GameObject AttachVent(Transform nozzle, string name)
