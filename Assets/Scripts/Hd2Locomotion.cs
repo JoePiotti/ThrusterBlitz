@@ -1011,12 +1011,23 @@ public class Hd2Locomotion : MonoBehaviour
         if (jumpThrustSource == null)
             return;
 
-        if (jumpBoosting)
+        // The same thrust sound plays while a jump boosts and while a blitz puffs its smoke.
+        bool blitzPuff = Time.time < blitzSmokeUntil;
+        if (jumpBoosting || blitzPuff)
         {
             jumpThrustFade = 0f;
             jumpThrustSource.volume = 1f;
             if (!jumpThrustSource.isPlaying)
                 jumpThrustSource.Play();
+            blitzThrustSounding = blitzPuff && !jumpBoosting;
+            return;
+        }
+
+        // A blitz's thrust lasts exactly as long as its smoke.
+        if (blitzThrustSounding)
+        {
+            blitzThrustSounding = false;
+            jumpThrustSource.Stop();
             return;
         }
 
@@ -2485,6 +2496,7 @@ public class Hd2Locomotion : MonoBehaviour
     }
 
     TrailRenderer blitzRibbon;
+    bool blitzThrustSounding;
 
     Transform RibbonRobot()
     {
@@ -2509,7 +2521,7 @@ public class Hd2Locomotion : MonoBehaviour
     // A flat light ribbon the height of the robot's torso, standing upright along the blitz
     // path: solid at the robot, fading to clear behind it, gone a few seconds after the blitz.
     // One TrailRenderer instead of hundreds of particles, which is much cheaper on Quest.
-    public const float BlitzRibbonSeconds = 3f;
+    public const float BlitzRibbonSeconds = 1f;
 
     public static TrailRenderer CreateBlitzRibbon(Transform owner)
     {
@@ -2524,6 +2536,7 @@ public class Hd2Locomotion : MonoBehaviour
         ribbon.numCapVertices = 0;
         ribbon.numCornerVertices = 0;
         ribbon.autodestruct = false;
+        // Across its height the texture is a bright core fading to clear edges: a soft glow.
         ribbon.textureMode = LineTextureMode.Stretch;
         ribbon.widthCurve = AnimationCurve.Constant(0f, 1f, 1f);
         ribbon.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -2536,7 +2549,36 @@ public class Hd2Locomotion : MonoBehaviour
 
     static Material ribbonMaterial;
 
-    // Plain glowing strip: unlit, no texture, additive, drawn from both sides.
+    // Soft glow across the ribbon's height (texture V): white, opaque in a narrow core and
+    // falling off smoothly to clear at the top and bottom edges. Quest has no bloom, so the
+    // glow is painted in.
+    static Texture2D RibbonGlowTexture()
+    {
+        const int size = 64;
+        var texture = new Texture2D(4, size, TextureFormat.RGBA32, false)
+        {
+            name = "BlitzRibbonGlow",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+            hideFlags = HideFlags.DontSave
+        };
+        var pixels = new Color[4 * size];
+        for (int y = 0; y < size; y++)
+        {
+            float v = (y + 0.5f) / size * 2f - 1f;
+            float core = Mathf.Exp(-v * v * 18f);
+            float halo = Mathf.Exp(-v * v * 3.5f) * 0.45f;
+            float a = Mathf.Clamp01(core + halo) * (1f - Mathf.Pow(Mathf.Abs(v), 6f));
+            for (int x = 0; x < 4; x++)
+                pixels[y * 4 + x] = new Color(1f, 1f, 1f, a);
+        }
+
+        texture.SetPixels(pixels);
+        texture.Apply(false, true);
+        return texture;
+    }
+
+    // Glowing strip: unlit, additive, drawn from both sides.
     static Material RibbonMaterial()
     {
         if (ribbonMaterial != null)
@@ -2549,6 +2591,10 @@ public class Hd2Locomotion : MonoBehaviour
         ribbonMaterial = new Material(shader) { name = "BlitzRibbon" };
         if (ribbonMaterial.HasProperty("_BaseColor"))
             ribbonMaterial.SetColor("_BaseColor", Color.white);
+        Texture2D glow = RibbonGlowTexture();
+        if (ribbonMaterial.HasProperty("_BaseMap"))
+            ribbonMaterial.SetTexture("_BaseMap", glow);
+        ribbonMaterial.mainTexture = glow;
         ribbonMaterial.SetFloat("_Surface", 1f);
         ribbonMaterial.SetFloat("_Blend", 2f);
         ribbonMaterial.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
@@ -2566,7 +2612,7 @@ public class Hd2Locomotion : MonoBehaviour
             return;
 
         var gradient = new Gradient();
-        Color bright = Color.Lerp(color, Color.white, 0.15f);
+        Color bright = Color.Lerp(color, Color.white, 0.35f);
         gradient.SetKeys(
             new[] { new GradientColorKey(bright, 0f), new GradientColorKey(color, 1f) },
             new[] { new GradientAlphaKey(0.85f, 0f), new GradientAlphaKey(0.35f, 0.4f), new GradientAlphaKey(0f, 1f) });

@@ -528,7 +528,8 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         SetLoop(grindLoop, !dead && grinding && grindRail != null);
-        SetLoop(thrustLoop, !dead && (traveling || jumpBoosting));
+        // The thrust sound only while a jump boosts or a blitz puffs its smoke, like a player.
+        SetLoop(thrustLoop, !dead && (jumpBoosting || Time.time < blitzSmokeUntil));
         SetJumpExhaust(!dead && jumpBoosting);
         SetBlitzSmoke(!dead && Time.time < blitzSmokeUntil);
         if (dead)
