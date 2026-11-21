@@ -11,8 +11,8 @@ using UnityEngine.SceneManagement;
 public static class Hd2BotNames
 {
     static readonly string[] Hard = { "B. Shears", "Rita", "Lucy", "Mr. Kite", "Mr. Mustard" };
-    static readonly string[] Medium = { "Mr. Willson", "Mr. Heath", "Dr. Roberts", "D. Jones", "M. Jones" };
-    static readonly string[] Easy = { "Sadie", "Prudence", "Martha", "E. Rigby", "Michelle" };
+    static readonly string[] Medium = { "Mr. Willson", "Mr. Heath", "Dr. Roberts", "D. Jones", "M. Jones", "Rocky", "Magill", "Dan" };
+    static readonly string[] Easy = { "Sadie", "Prudence", "Martha", "E. Rigby", "Michelle", "Vera", "Chuck", "Dave" };
 
     static readonly Dictionary<Hd2BotDifficulty, List<string>> shuffled = new Dictionary<Hd2BotDifficulty, List<string>>();
     static readonly Dictionary<Hd2BotDifficulty, int> handedOut = new Dictionary<Hd2BotDifficulty, int>();
