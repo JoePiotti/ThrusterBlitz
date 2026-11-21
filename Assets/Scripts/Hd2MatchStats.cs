@@ -7,7 +7,7 @@ using UnityEngine.SceneManagement;
 /// Kills and deaths for every fighter in the current match, plus the roster rows the
 /// player menu's Game tab shows. Counts reset when a scene loads. Score is 0 until each
 /// game mode has a scoring system. Rank is a placeholder: 1 for players, 15/30/45 for
-/// easy/medium/hard bots.
+/// easy/medium/hard bots. Ping is for the HUD (LocalPingMs).
 /// </summary>
 public static class Hd2MatchStats
 {
@@ -18,7 +18,6 @@ public static class Hd2MatchStats
         public int Kills;
         public int Deaths;
         public int Score;
-        public string Ping;
         public Hd2Team Team;
         public bool IsYou;
     }
@@ -115,9 +114,6 @@ public static class Hd2MatchStats
     public static List<Row> Roster()
     {
         rows.Clear();
-        NetworkRunner runner = UnityEngine.Object.FindFirstObjectByType<NetworkRunner>();
-        bool online = runner != null && runner.IsRunning;
-
         var players = UnityEngine.Object.FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < players.Length; i++)
         {
@@ -129,7 +125,6 @@ public static class Hd2MatchStats
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
                 Score = 0,
-                Ping = online ? PingText(runner, runner.LocalPlayer) : "0 ms",
                 Team = players[i].team,
                 IsYou = true
             });
@@ -144,8 +139,6 @@ public static class Hd2MatchStats
                 continue;
 
             Tally tally = TallyOf(other);
-            // A client only knows its own round trip; the host knows everyone's.
-            string ping = online && runner.IsServer ? PingText(runner, other.Object.InputAuthority) : "n/a";
             rows.Add(new Row
             {
                 Rank = 1,
@@ -153,7 +146,6 @@ public static class Hd2MatchStats
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
                 Score = 0,
-                Ping = ping,
                 Team = other.team
             });
         }
@@ -169,7 +161,6 @@ public static class Hd2MatchStats
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
                 Score = 0,
-                Ping = "n/a",
                 Team = Hd2SpawnField.TeamOf(bots[i])
             });
         }
@@ -178,12 +169,13 @@ public static class Hd2MatchStats
         return rows;
     }
 
-    static string PingText(NetworkRunner runner, PlayerRef player)
+    /// <summary>This headset's round trip to the server in ms, or -1 when not online. For the HUD.</summary>
+    public static int LocalPingMs()
     {
-        if (player == PlayerRef.None)
-            return "n/a";
-        double seconds = runner.GetPlayerRtt(player);
-        return Mathf.RoundToInt((float)(seconds * 1000.0)) + " ms";
+        NetworkRunner runner = UnityEngine.Object.FindFirstObjectByType<NetworkRunner>();
+        if (runner == null || !runner.IsRunning || runner.LocalPlayer == PlayerRef.None)
+            return -1;
+        return Mathf.RoundToInt((float)(runner.GetPlayerRtt(runner.LocalPlayer) * 1000.0));
     }
 
     static int TeamOrder(Hd2Team team)
