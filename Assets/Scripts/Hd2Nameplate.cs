@@ -61,7 +61,7 @@ public class Hd2Nameplate : MonoBehaviour
         labelRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         labelRenderer.receiveShadows = false;
         if (label.font != null)
-            labelRenderer.sharedMaterial = label.font.material;
+            labelRenderer.sharedMaterial = Hd2AmmoReadout.WorldTextMaterial(label.font);
         labelRenderer.enabled = false;
     }
 

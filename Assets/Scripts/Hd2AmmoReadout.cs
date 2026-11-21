@@ -11,6 +11,13 @@ public static class Hd2AmmoReadout
         if (gun == null)
             return null;
 
+        // Bots' guns show no display: nobody reads it, and it saves the text updates.
+        if (gun.GetComponentInParent<Hd2EnemyBot>() != null)
+        {
+            HideDisplays(gun);
+            return null;
+        }
+
         Transform display = FindChild(gun, "display");
         if (display != null)
             return Style(display);
@@ -65,8 +72,52 @@ public static class Hd2AmmoReadout
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
             if (label.font != null)
-                renderer.sharedMaterial = label.font.material;
+                renderer.sharedMaterial = WorldTextMaterial(label.font);
         }
+    }
+
+    static void HideDisplays(Transform gun)
+    {
+        TextMesh[] texts = gun.GetComponentsInChildren<TextMesh>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            var renderer = texts[i].GetComponent<MeshRenderer>();
+            if (renderer != null)
+                renderer.enabled = false;
+            texts[i].enabled = false;
+        }
+    }
+
+    static Material worldText;
+    static Font worldTextFont;
+
+    /// <summary>
+    /// Material for 3D text that walls hide, like any other object. The built-in font
+    /// material draws on top of everything, so gun displays showed enemies through walls.
+    /// </summary>
+    public static Material WorldTextMaterial(Font font)
+    {
+        if (font == null)
+            return null;
+        if (worldText != null && worldTextFont == font)
+            return worldText;
+
+        Material source = Resources.Load<Material>("WorldText");
+        if (source == null)
+            return font.material;
+        worldText = new Material(source) { name = "WorldText (" + font.name + ")" };
+        worldTextFont = font;
+        worldText.mainTexture = font.material.mainTexture;
+        // A dynamic font can rebuild its glyph texture; keep pointing at the current one.
+        Font.textureRebuilt -= OnFontRebuilt;
+        Font.textureRebuilt += OnFontRebuilt;
+        return worldText;
+    }
+
+    static void OnFontRebuilt(Font font)
+    {
+        if (worldText != null && font == worldTextFont)
+            worldText.mainTexture = font.material.mainTexture;
     }
 
     /// <summary>Progress ring around the display, 0..1 (0 hides it). Call every frame.</summary>
