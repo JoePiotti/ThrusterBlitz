@@ -2584,6 +2584,12 @@ public class Hd2Locomotion : MonoBehaviour
         if (ribbonMaterial != null)
             return ribbonMaterial;
 
+        // HD2/BlitzRibbon: team color across the band, a white core down the middle,
+        // soft outer edges. The runtime-configured URP particle material drew mostly black on Quest.
+        ribbonMaterial = Resources.Load<Material>("BlitzRibbon");
+        if (ribbonMaterial != null)
+            return ribbonMaterial;
+
         Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
         if (shader == null)
             return Hd2Shot.ParticleMaterial();
@@ -2612,10 +2618,11 @@ public class Hd2Locomotion : MonoBehaviour
             return;
 
         var gradient = new Gradient();
-        Color bright = Color.Lerp(color, Color.white, 0.35f);
+        // Plain team color; the ribbon shader paints the white core itself.
+        color.a = 1f;
         gradient.SetKeys(
-            new[] { new GradientColorKey(bright, 0f), new GradientColorKey(color, 1f) },
-            new[] { new GradientAlphaKey(0.85f, 0f), new GradientAlphaKey(0.35f, 0.4f), new GradientAlphaKey(0f, 1f) });
+            new[] { new GradientColorKey(color, 0f), new GradientColorKey(color, 1f) },
+            new[] { new GradientAlphaKey(0.9f, 0f), new GradientAlphaKey(0.6f, 0.4f), new GradientAlphaKey(0f, 1f) });
         ribbon.colorGradient = gradient;
 
         // Move it to the torso before it starts drawing, so no streak from where it was.
