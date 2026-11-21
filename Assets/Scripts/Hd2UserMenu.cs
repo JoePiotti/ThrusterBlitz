@@ -84,16 +84,16 @@ public class Hd2UserMenu : MonoBehaviour
     readonly List<TeamHeader> teamHeaders = new List<TeamHeader>();
     float nextScoreRefresh;
 
-    // Game tab scoreboard: Rank, Name, Kills, Deaths, Score.
+    // Game tab scoreboard: Rank, Name, Kills, Deaths, KS (kill streak), Score.
     const int ScoreRowCount = 16;
     const float ScoreLeft = 344f;
     const float ScoreRowHeight = 34f;
     const float ScoreRowGap = 3f;
     const float ScoreTeamGap = 12f;
     const float TeamHeaderHeight = 36f;
-    static readonly float[] scoreColumns = { 0f, 70f, 470f, 570f, 680f };
-    static readonly float[] scoreWidths = { 66f, 396f, 96f, 106f, 106f };
-    static readonly string[] scoreHeaders = { "Rank", "Name", "Kills", "Deaths", "Score" };
+    static readonly float[] scoreColumns = { 0f, 70f, 400f, 490f, 600f, 680f };
+    static readonly float[] scoreWidths = { 66f, 326f, 86f, 106f, 76f, 106f };
+    static readonly string[] scoreHeaders = { "Rank", "Name", "Kills", "Deaths", "KS", "Score" };
 
     class TeamHeader
     {
@@ -871,7 +871,8 @@ public class Hd2UserMenu : MonoBehaviour
             SetCell(row, 1, data.Name, style);
             SetCell(row, 2, data.Kills.ToString(), style);
             SetCell(row, 3, data.Deaths.ToString(), style);
-            SetCell(row, 4, data.Score.ToString(), style);
+            SetCell(row, 4, data.Streak.ToString(), style);
+            SetCell(row, 5, data.Score.ToString(), style);
         }
 
         for (int h = headersUsed; h < teamHeaders.Count; h++)

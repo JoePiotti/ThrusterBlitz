@@ -24,6 +24,7 @@ public static class Hd2MatchStats
         public string Name;
         public int Kills;
         public int Deaths;
+        public int Streak;
         public int Score;
         public Hd2Team Team;
         public bool IsYou;
@@ -39,6 +40,7 @@ public static class Hd2MatchStats
     {
         public int Kills;
         public int Deaths;
+        public int Streak;
         public int Score;
         public float ScoreCarry;
     }
@@ -132,6 +134,10 @@ public static class Hd2MatchStats
         tallies.TryGetValue(key, out Tally tally);
         tally.Kills += kills;
         tally.Deaths += deaths;
+        // Kill streak: kills since this fighter last died.
+        if (deaths > 0)
+            tally.Streak = 0;
+        tally.Streak += kills;
         tallies[key] = tally;
     }
 
@@ -183,6 +189,7 @@ public static class Hd2MatchStats
                 Name = Hd2Identity.Display,
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
+                Streak = tally.Streak,
                 Score = tally.Score,
                 Team = players[i].team,
                 IsYou = true
@@ -203,6 +210,7 @@ public static class Hd2MatchStats
                 Name = other.DisplayName,
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
+                Streak = tally.Streak,
                 Score = tally.Score,
                 Team = other.team
             });
@@ -218,6 +226,7 @@ public static class Hd2MatchStats
                 Name = bots[i].FullName,
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
+                Streak = tally.Streak,
                 Score = tally.Score,
                 Team = Hd2SpawnField.TeamOf(bots[i])
             });

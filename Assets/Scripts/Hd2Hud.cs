@@ -550,6 +550,7 @@ public class Hd2Hud : MonoBehaviour
         SetShown(healthReadout, show);
         SetShown(blitzReadout, show);
         SetShown(micReadout, show);
+        SetShown(scoreReadout, show);
         SetShown(pointA, show);
         SetShown(pointB, show);
         SetShown(pointC, show);
