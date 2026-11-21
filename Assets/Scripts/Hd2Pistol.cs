@@ -74,6 +74,14 @@ public class Hd2Pistol : MonoBehaviour
     float kick;
     Quaternion restLocalRotation;
 
+    // Blue glow that swells at the muzzle while a charged shot builds, like the shocks' red one.
+    static readonly Color ChargeBlue = new Color(0.1f, 0.45f, 1f, 1f);
+    const float ChargeOrbWorldSize = 0.055f;
+    Transform chargeOrb;
+    Renderer chargeOrbRenderer;
+    Material chargeOrbMaterial;
+    Light chargeOrbLight;
+
     // Hd2Body turns a held gun to match the controller once it is picked up. Recoil puts the
     // gun back to restLocalRotation every frame, so take the turned angle as the new rest.
     public void RebaseRestRotation()
@@ -133,6 +141,108 @@ public class Hd2Pistol : MonoBehaviour
         }
 
         EnsureAmmoScreen();
+        EnsureChargeOrb();
+    }
+
+    void EnsureChargeOrb()
+    {
+        if (chargeOrb != null)
+            return;
+
+        // A respawn copy is cloned from a live pistol and brings that pistol's glow along.
+        Transform holderOf = muzzle != null ? muzzle : transform;
+        Transform copied = holderOf.Find("ChargeGlow");
+        if (copied != null)
+            Destroy(copied.gameObject);
+
+        var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        sphere.name = "ChargeGlow";
+        var collider = sphere.GetComponent<Collider>();
+        if (collider != null)
+            Destroy(collider);
+        chargeOrb = sphere.transform;
+        chargeOrb.SetParent(muzzle != null ? muzzle : transform, false);
+        chargeOrb.localScale = Vector3.zero;
+
+        chargeOrbRenderer = sphere.GetComponent<Renderer>();
+        Material source = Resources.Load<Material>("ShockOrbGlow");
+        if (source != null)
+            chargeOrbMaterial = new Material(source);
+        else
+        {
+            Shader shader = Shader.Find("HD2/ShockOrbGlow");
+            if (shader == null)
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader != null)
+                chargeOrbMaterial = new Material(shader);
+        }
+
+        if (chargeOrbRenderer != null)
+        {
+            if (chargeOrbMaterial != null)
+                chargeOrbRenderer.sharedMaterial = chargeOrbMaterial;
+            chargeOrbRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            chargeOrbRenderer.receiveShadows = false;
+            chargeOrbRenderer.enabled = false;
+        }
+
+        chargeOrbLight = sphere.AddComponent<Light>();
+        chargeOrbLight.type = LightType.Point;
+        chargeOrbLight.color = ChargeBlue;
+        chargeOrbLight.shadows = LightShadows.None;
+        chargeOrbLight.bounceIntensity = 0f;
+        chargeOrbLight.range = 0.6f;
+        chargeOrbLight.intensity = 0f;
+        chargeOrbLight.enabled = false;
+    }
+
+    void UpdateChargeOrb()
+    {
+        if (chargeOrb == null)
+            return;
+
+        float amount = 0f;
+        if (triggerPressedAt >= 0f && !reloading && rounds > 0)
+            amount = Mathf.Clamp01((Time.time - triggerPressedAt) / Mathf.Max(0.01f, chargeHoldTime));
+
+        bool on = amount > 0.001f;
+        if (chargeOrbRenderer != null)
+            chargeOrbRenderer.enabled = on;
+        if (chargeOrbLight != null)
+            chargeOrbLight.enabled = on;
+        if (!on)
+        {
+            chargeOrb.localScale = Vector3.zero;
+            return;
+        }
+
+        // Ease out so it reads early, then a gentle throb once the charged shot is ready.
+        float hot = amount * (2f - amount);
+        if (amount >= 1f)
+            hot *= 0.9f + 0.1f * Mathf.Sin(Time.time * 18f);
+
+        Transform holder = chargeOrb.parent;
+        float unit = holder != null ? Mathf.Abs(holder.lossyScale.x) : 1f;
+        if (unit < 0.0001f)
+            unit = 1f;
+        float size = ChargeOrbWorldSize * hot / unit;
+        chargeOrb.localScale = Vector3.one * size;
+        chargeOrb.localPosition = new Vector3(0f, 0f, size * 0.5f);
+
+        if (chargeOrbMaterial != null)
+        {
+            chargeOrbMaterial.SetColor("_Color", ChargeBlue * hot);
+            chargeOrbMaterial.SetColor("_Core", Color.white * hot);
+        }
+
+        if (chargeOrbLight != null)
+            chargeOrbLight.intensity = 40f * hot;
+    }
+
+    void OnDestroy()
+    {
+        if (chargeOrbMaterial != null)
+            Destroy(chargeOrbMaterial);
     }
 
     // Called after a respawn copy is parented to the hand, so the kick rests
@@ -285,6 +395,8 @@ public class Hd2Pistol : MonoBehaviour
             kick = Mathf.MoveTowards(kick, 0f, kickReturnSpeed * Time.deltaTime);
             transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
         }
+
+        UpdateChargeOrb();
     }
 
     public void BotTap()
