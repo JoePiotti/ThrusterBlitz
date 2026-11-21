@@ -3982,14 +3982,25 @@ public class Hd2EnemyBot : MonoBehaviour
 
         Vector3 stride = speed > 0.01f ? velocity / speed : transform.forward;
         float side = 0f;
+        float sideStep = 0f;
         Vector3 right = transform.right;
         right.y = 0f;
         if (speed > 0.01f && right.sqrMagnitude > 0.0001f)
-            side = Mathf.Clamp01(Mathf.Abs(Vector3.Dot(stride, right.normalized)));
+        {
+            sideStep = Mathf.Clamp(Vector3.Dot(stride, right.normalized), -1f, 1f);
+            side = Mathf.Abs(sideStep);
+        }
         stride *= Mathf.Lerp(1f, 1.85f, side);
         gait += speed * 1.6f * Time.deltaTime;
-        PoseWalkLeg(thighL, shinL, footL, restThighL, restShinL, restFootL, Mathf.Sin(gait), Mathf.Max(0f, Mathf.Cos(gait)), stride);
-        PoseWalkLeg(thighR, shinR, footR, restThighR, restShinR, restFootR, Mathf.Sin(gait + Mathf.PI), Mathf.Max(0f, Mathf.Cos(gait + Mathf.PI)), stride);
+
+        // Side steps swing the legs across each other; keep the trailing leg in front and the
+        // leading one behind so they cross instead of passing through.
+        Vector3 ahead = transform.forward;
+        ahead.y = 0f;
+        ahead = ahead.sqrMagnitude > 0.0001f ? ahead.normalized : Vector3.forward;
+        Vector3 cross = ahead * (0.22f * sideStep * gaitWeight);
+        PoseWalkLeg(thighL, shinL, footL, restThighL, restShinL, restFootL, Mathf.Sin(gait), Mathf.Max(0f, Mathf.Cos(gait)), stride, cross);
+        PoseWalkLeg(thighR, shinR, footR, restThighR, restShinR, restFootR, Mathf.Sin(gait + Mathf.PI), Mathf.Max(0f, Mathf.Cos(gait + Mathf.PI)), stride, -cross);
     }
 
     void PoseWalkLeg(
@@ -4001,7 +4012,8 @@ public class Hd2EnemyBot : MonoBehaviour
         Quaternion footRest,
         float cycle,
         float lift,
-        Vector3 stride)
+        Vector3 stride,
+        Vector3 cross = default)
     {
         SetLocal(thigh, thighRest);
         SetLocal(shin, shinRest);
@@ -4011,7 +4023,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         float amount = 0.55f * gaitWeight;
         Vector3 thighDir = shin.position - thigh.position;
-        AimBone(thigh, thighDir, Vector3.down + stride * cycle * amount);
+        AimBone(thigh, thighDir, Vector3.down + stride * cycle * amount + cross);
         if (foot == null)
             return;
 

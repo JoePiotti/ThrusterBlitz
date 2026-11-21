@@ -410,11 +410,17 @@ public class Hd2Body : MonoBehaviour
             return;
         }
 
-        PoseWalkLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, Mathf.Sin(gait), Mathf.Max(0f, Mathf.Cos(gait)), stride);
-        PoseWalkLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, Mathf.Sin(gait + Mathf.PI), Mathf.Max(0f, Mathf.Cos(gait + Mathf.PI)), stride);
+        // Side steps swing the legs across each other; keep the trailing leg in front and the
+        // leading one behind so they cross instead of passing through.
+        Vector3 cross = walkForward * (StrafeCrossDepth * walkSideStep * gaitWeight);
+        PoseWalkLeg(thighL, shinL, footL, toeL, restThighL, restShinL, restFootL, Mathf.Sin(gait), Mathf.Max(0f, Mathf.Cos(gait)), stride, cross);
+        PoseWalkLeg(thighR, shinR, footR, toeR, restThighR, restShinR, restFootR, Mathf.Sin(gait + Mathf.PI), Mathf.Max(0f, Mathf.Cos(gait + Mathf.PI)), stride, -cross);
     }
 
+    const float StrafeCrossDepth = 0.22f;
     Vector3 stepStride;
+    Vector3 walkForward = Vector3.forward;
+    float walkSideStep;
 
     bool AdvanceWalkGait(out Vector3 stride)
     {
@@ -435,6 +441,8 @@ public class Hd2Body : MonoBehaviour
         Vector3 bodyRight = Vector3.Cross(Vector3.up, bodyForward);
         float forward = Vector3.Dot(move, bodyForward);
         float strafe = Vector3.Dot(move, bodyRight);
+        walkForward = bodyForward;
+        walkSideStep = speed > 0.01f ? Mathf.Clamp(strafe / speed, -1f, 1f) : 0f;
         // Backing up plays the forward step in reverse. Feet stay pointed forward.
         bool backward = forward < 0f;
         stride = bodyForward * Mathf.Abs(forward) + bodyRight * strafe;
@@ -528,7 +536,8 @@ public class Hd2Body : MonoBehaviour
         Quaternion footRest,
         float cycle,
         float lift,
-        Vector3 stride)
+        Vector3 stride,
+        Vector3 cross = default)
     {
         SetLocal(thigh, thighRest);
         SetLocal(shin, shinRest);
@@ -538,7 +547,7 @@ public class Hd2Body : MonoBehaviour
 
         float amount = 0.5f * gaitWeight;
         Vector3 thighDir = shin.position - thigh.position;
-        Vector3 thighAim = Vector3.down + stride * cycle * amount;
+        Vector3 thighAim = Vector3.down + stride * cycle * amount + cross;
         AimBone(thigh, thighDir, thighAim);
 
         if (foot == null)
