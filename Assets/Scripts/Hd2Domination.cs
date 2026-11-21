@@ -171,6 +171,14 @@ public class Hd2Domination : MonoBehaviour
         else if (team == Hd2Team.Blue)
             BluePoints++;
 
+        // Everyone who turned one of the held points to this team's color shares the credit.
+        var points = Hd2TeamButton.All;
+        for (int i = 0; i < points.Count; i++)
+        {
+            if (points[i] != null && points[i].Owner == team)
+                Hd2MatchStats.AddScore(points[i].Claimer, Hd2MatchStats.ClaimPoints);
+        }
+
         pending = Hd2Team.None;
         heldFor = 0f;
         StopVoice();

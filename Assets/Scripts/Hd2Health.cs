@@ -99,6 +99,7 @@ public class Hd2Health : MonoBehaviour
 
         float before = health;
         health = Mathf.Max(0f, health - amount);
+        Hd2MatchStats.NoteDamage(this, LastAttacker, before - health);
         if (health <= 0f && blastArmed)
         {
             KilledByBlast = true;

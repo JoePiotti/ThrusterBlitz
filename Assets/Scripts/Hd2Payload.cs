@@ -95,8 +95,27 @@ public class Hd2Payload : MonoBehaviour
         if (rate <= 0f || frontDistance >= rail.length)
             return;
 
-        frontDistance = Mathf.Min(rail.length, frontDistance + rate * Time.deltaTime);
+        float moved = Mathf.Min(rail.length, frontDistance + rate * Time.deltaTime) - frontDistance;
+        frontDistance += moved;
         Pose(frontDistance);
+        CreditRiders(moved);
+    }
+
+    float scoreCarry;
+
+    // The cart only moves with no red rider on it, so everyone counted is a pusher.
+    void CreditRiders(float moved)
+    {
+        scoreCarry += moved;
+        while (scoreCarry >= Hd2MatchStats.PayloadStep)
+        {
+            scoreCarry -= Hd2MatchStats.PayloadStep;
+            for (int i = 0; i < riderCount; i++)
+            {
+                if (riders[i] != null)
+                    Hd2MatchStats.AddScore(riders[i], Hd2MatchStats.PayloadPoints);
+            }
+        }
     }
 
     public Vector3 FlatForward

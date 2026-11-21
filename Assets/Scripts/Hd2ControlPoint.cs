@@ -141,6 +141,7 @@ public class Hd2ControlPoint : MonoBehaviour
         {
             second -= 1f;
             steps++;
+            Hd2MatchStats.AddScore(point.Claimer, Hd2MatchStats.ClaimPoints);
             if (!Award(owner))
                 return;
         }

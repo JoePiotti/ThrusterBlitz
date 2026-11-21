@@ -37,6 +37,7 @@ public class Hd2TeamButton : MonoBehaviour
     Component holder;
     Component offeredTouch;
     Hd2Team owner = Hd2Team.None;
+    Component claimer;
     Color glow = Color.white;
     Material glowMaterial;
     Renderer beamRenderer;
@@ -63,12 +64,17 @@ public class Hd2TeamButton : MonoBehaviour
     public string Label => pointLabel;
     public Hd2Team Owner => owner;
 
+    /// <summary>Whoever turned this point to its current color. Pressing it again for the
+    /// same team does not change this; the other team pressing it does.</summary>
+    public Component Claimer => claimer;
+
     /// <summary>
     /// New round. The point goes back to white until someone claims it again.
     /// </summary>
     public void ResetClaim()
     {
         owner = Hd2Team.None;
+        claimer = null;
         holder = null;
         offeredTouch = null;
         glow = Color.white;
@@ -187,6 +193,8 @@ public class Hd2TeamButton : MonoBehaviour
         Hd2Team team = Hd2SpawnField.TeamOf(body);
         if (team == Hd2Team.Red || team == Hd2Team.Blue)
         {
+            if (team != owner)
+                claimer = body;
             owner = team;
             glow = ColorOf(body, team);
             ApplyGlow();
