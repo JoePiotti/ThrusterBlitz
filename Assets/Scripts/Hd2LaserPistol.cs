@@ -44,6 +44,17 @@ public class Hd2LaserPistol : MonoBehaviour
     bool waitForTriggerRelease = true;
     public bool botHeld;
     float pointStartedAt;
+    float coolingFor;
+
+    // Fills while the beam charges toward firing (letting go resets it) and again over the cooldown.
+    float RingFill()
+    {
+        if (phase == Phase.Pointing)
+            return Mathf.Clamp01((Time.time - pointStartedAt) / Mathf.Max(0.01f, chargeSeconds));
+        if (phase == Phase.Cooling)
+            return Hd2AmmoReadout.Progress(phaseEndsAt, coolingFor);
+        return 0f;
+    }
     float phaseEndsAt;
     float kick;
     Quaternion restLocalRotation;
@@ -255,6 +266,7 @@ public class Hd2LaserPistol : MonoBehaviour
 
     void Update()
     {
+        Hd2AmmoReadout.Ring(ammoLabel, RingFill());
         bool menuOpen = Map() != null && Map().MenuOpen;
         bool bot = GetComponentInParent<Hd2EnemyBot>() != null;
         float pull = bot || menuOpen ? 0f : ReadPull();
@@ -400,6 +412,7 @@ public class Hd2LaserPistol : MonoBehaviour
         }
         phase = Phase.Cooling;
         phaseEndsAt = Time.time + Mathf.Max(0f, wait);
+        coolingFor = Mathf.Max(0f, wait);
         RefreshAmmo();
     }
 

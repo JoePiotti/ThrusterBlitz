@@ -165,6 +165,7 @@ public class Hd2Smg : MonoBehaviour
     {
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
+        Hd2AmmoReadout.Ring(ammoLabel, reloading ? Hd2AmmoReadout.Progress(reloadEndsAt, reloadDuration) : 0f);
 
         // An empty magazine always reloads, even if the shot that emptied it was cut short.
         if (!reloading && rounds <= 0)

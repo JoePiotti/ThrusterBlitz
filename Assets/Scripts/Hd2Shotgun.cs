@@ -155,6 +155,7 @@ public class Hd2Shotgun : MonoBehaviour
     {
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
+        Hd2AmmoReadout.Ring(ammoLabel, reloading ? Hd2AmmoReadout.Progress(reloadEndsAt, reloadSeconds) : 0f);
 
         if (GetComponentInParent<Hd2EnemyBot>() == null)
         {

@@ -397,6 +397,17 @@ public class Hd2Pistol : MonoBehaviour
         }
 
         UpdateChargeOrb();
+        Hd2AmmoReadout.Ring(ammoLabel, RingFill());
+    }
+
+    // Reload progress, or how far a charged shot has built while the trigger is held.
+    float RingFill()
+    {
+        if (reloading)
+            return Hd2AmmoReadout.Progress(reloadEndsAt, reloadDuration);
+        if (triggerPressedAt >= 0f && rounds > 0)
+            return Mathf.Clamp01((Time.time - triggerPressedAt) / Mathf.Max(0.01f, chargeHoldTime));
+        return 0f;
     }
 
     public void BotTap()

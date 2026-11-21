@@ -165,6 +165,7 @@ public class Hd2RocketLauncher : MonoBehaviour
 
     void Update()
     {
+        Hd2AmmoReadout.Ring(ammoLabel, chambering ? Mathf.Clamp01(chamberAge / (chamberDelay + Mathf.Max(0.05f, chamberSeconds))) : 0f);
         bool menuOpen = ControlMap() != null && ControlMap().MenuOpen;
         bool bot = GetComponentInParent<Hd2EnemyBot>() != null;
         float pull = bot || menuOpen ? 0f : ReadPull();
