@@ -55,6 +55,7 @@ public class Hd2UserMenu : MonoBehaviour
     readonly Image[] hudImages = new Image[3];
     Image switchTeams;
     readonly List<ScoreRow> scoreRows = new List<ScoreRow>();
+    readonly List<TeamHeader> teamHeaders = new List<TeamHeader>();
     float nextScoreRefresh;
 
     // Game tab scoreboard: Rank, Name, Kills, Deaths, Score, Ping.
@@ -62,10 +63,18 @@ public class Hd2UserMenu : MonoBehaviour
     const float ScoreLeft = 344f;
     const float ScoreRowHeight = 34f;
     const float ScoreRowGap = 3f;
-    const float ScoreTeamGap = 14f;
+    const float ScoreTeamGap = 12f;
+    const float TeamHeaderHeight = 36f;
     static readonly float[] scoreColumns = { 0f, 70f, 410f, 500f, 600f, 690f };
     static readonly float[] scoreWidths = { 66f, 336f, 86f, 96f, 86f, 96f };
     static readonly string[] scoreHeaders = { "Rank", "Name", "Kills", "Deaths", "Score", "Ping" };
+
+    class TeamHeader
+    {
+        public Image background;
+        public Text name;
+        public Text score;
+    }
 
     class ScoreRow
     {
@@ -490,6 +499,27 @@ public class Hd2UserMenu : MonoBehaviour
             row.background.gameObject.SetActive(false);
             scoreRows.Add(row);
         }
+
+        // One header per team group: team name on the left, the team's score on the right.
+        for (int h = 0; h < 3; h++)
+        {
+            var header = new TeamHeader();
+            header.background = MakeImage(page, Color.clear);
+            Place(header.background.rectTransform, ScoreLeft, 0f, rowWidth, TeamHeaderHeight);
+            header.name = MakeText(header.background.rectTransform, "", 24, TextAnchor.MiddleLeft, Color.white);
+            header.name.fontStyle = FontStyle.Bold;
+            Stretch(header.name.rectTransform, 10f);
+            header.score = MakeText(header.background.rectTransform, "", 24, TextAnchor.MiddleRight, Color.white);
+            header.score.fontStyle = FontStyle.Bold;
+            Stretch(header.score.rectTransform, 12f);
+            header.background.gameObject.SetActive(false);
+            teamHeaders.Add(header);
+        }
+    }
+
+    static string TeamLabel(Hd2Team team)
+    {
+        return team == Hd2Team.Red ? "Red" : team == Hd2Team.Blue ? "Blue" : "No team";
     }
 
     void RefreshScoreboard()
@@ -498,6 +528,7 @@ public class Hd2UserMenu : MonoBehaviour
         List<Hd2MatchStats.Row> roster = Hd2MatchStats.Roster();
         float y = -46f;
         Hd2Team lastTeam = Hd2Team.None;
+        int headersUsed = 0;
         for (int r = 0; r < scoreRows.Count; r++)
         {
             ScoreRow row = scoreRows[r];
@@ -508,8 +539,22 @@ public class Hd2UserMenu : MonoBehaviour
                 continue;
 
             Hd2MatchStats.Row data = roster[r];
-            if (r > 0 && data.Team != lastTeam)
-                y -= ScoreTeamGap;
+            if ((r == 0 || data.Team != lastTeam) && headersUsed < teamHeaders.Count)
+            {
+                if (r > 0)
+                    y -= ScoreTeamGap;
+                TeamHeader header = teamHeaders[headersUsed++];
+                if (!header.background.gameObject.activeSelf)
+                    header.background.gameObject.SetActive(true);
+                header.background.rectTransform.anchoredPosition = new Vector2(ScoreLeft, y);
+                Color shade = data.Team == Hd2Team.None
+                    ? new Color(0.22f, 0.24f, 0.28f, 1f)
+                    : Hd2Locomotion.ArmorOf(data.Team);
+                header.background.color = new Color(shade.r * 0.55f, shade.g * 0.55f, shade.b * 0.55f, 1f);
+                header.name.text = TeamLabel(data.Team);
+                header.score.text = data.Team == Hd2Team.None ? "" : Hd2MatchStats.TeamScore(data.Team).ToString();
+                y -= TeamHeaderHeight + ScoreRowGap;
+            }
             lastTeam = data.Team;
             row.background.rectTransform.anchoredPosition = new Vector2(ScoreLeft, y);
             y -= ScoreRowHeight + ScoreRowGap;
@@ -524,6 +569,12 @@ public class Hd2UserMenu : MonoBehaviour
             SetCell(row, 3, data.Deaths.ToString(), style);
             SetCell(row, 4, data.Score.ToString(), style);
             SetCell(row, 5, data.Ping, style);
+        }
+
+        for (int h = headersUsed; h < teamHeaders.Count; h++)
+        {
+            if (teamHeaders[h].background.gameObject.activeSelf)
+                teamHeaders[h].background.gameObject.SetActive(false);
         }
     }
 

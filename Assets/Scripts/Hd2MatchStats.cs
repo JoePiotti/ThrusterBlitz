@@ -85,6 +85,22 @@ public static class Hd2MatchStats
         return default;
     }
 
+    /// <summary>The team's current score in this game mode (kills, points held, or points won).</summary>
+    public static int TeamScore(Hd2Team team)
+    {
+        if (team == Hd2Team.None)
+            return 0;
+        bool red = team == Hd2Team.Red;
+        int score;
+        if (Hd2Shootout.Present)
+            score = red ? Hd2Shootout.RedKills : Hd2Shootout.BlueKills;
+        else if (Hd2ControlPoint.Present)
+            score = red ? Hd2ControlPoint.RedPoints : Hd2ControlPoint.BluePoints;
+        else
+            score = red ? Hd2Domination.RedPoints : Hd2Domination.BluePoints;
+        return Mathf.Max(0, score);
+    }
+
     public static int RankOf(Hd2BotDifficulty difficulty)
     {
         switch (difficulty)
