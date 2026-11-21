@@ -1,0 +1,88 @@
+# Names and clan tags are checked against this list (Hd2Identity.Blocked).
+# Matching ignores case, spaces and punctuation, and maps look-alikes (0=o, 1=i, 3=e, 4=a, 5=s, 7=t, @=a, $=s).
+# A plain line blocks the word anywhere in the name.
+# A line starting with = blocks it only as a whole word (or the whole name), for short
+# words that hide inside ordinary ones (=ass would otherwise block "Bass" and "Cassie").
+# Add words as you find them; this is a starting list, not a complete one.
+
+# Anywhere
+fuck
+=fuk
+fck
+shit
+bitch
+=cunt
+=cunts
+pussy
+=dick
+=dicks
+=cock
+=cocks
+penis
+vagina
+whore
+slut
+bastard
+asshole
+arsehole
+motherf
+wank
+jizz
+dildo
+blowjob
+handjob
+rimjob
+cumshot
+porn
+hentai
+=anal
+orgasm
+boner
+nigger
+nigga
+faggot
+fagot
+retard
+chink
+=spic
+kike
+wetback
+beaner
+gook
+tranny
+dyke
+nazi
+hitler
+heil
+kkk
+=rapist
+=rape
+molest
+=pedo
+paedo
+incest
+bestial
+killyourself
+=kys
+
+# Whole word only
+=ass
+=arse
+=fag
+=fags
+=cum
+=tit
+=tits
+=twat
+=prick
+=homo
+=coon
+=sex
+=wtf
+=stfu
+=hoe
+=hoes
+=nut
+=nuts
+=balls
+=piss

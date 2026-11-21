@@ -33,11 +33,6 @@ public class Hd2Deathmatch : MonoBehaviour
         new ColorName { Name = "Black", Color = new Color(0.08f, 0.08f, 0.08f) }
     };
 
-    static readonly string[] BotNumbers =
-    {
-        "one", "two", "three", "four", "five", "six", "seven", "eight"
-    };
-
     class Fighter
     {
         public Transform Body;
@@ -158,7 +153,7 @@ public class Hd2Deathmatch : MonoBehaviour
     {
         fighters.Clear();
         if (player != null)
-            fighters.Add(MakeFighter(player.transform, Palette[0].Name, Palette[0].Color, true));
+            fighters.Add(MakeFighter(player.transform, Hd2Identity.Display, Palette[0].Color, true));
 
         var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         System.Array.Sort(bots, (a, b) => string.CompareOrdinal(a.name, b.name));
@@ -167,8 +162,7 @@ public class Hd2Deathmatch : MonoBehaviour
         {
             ColorName paint = Palette[colorIndex % Palette.Length];
             colorIndex++;
-            string name = BotName(i);
-            bots[i].displayName = name;
+            string name = bots[i].FullName;
             bots[i].bodyColor = paint.Color;
             bots[i].useBodyColor = true;
             bots[i].team = paint.Name == "Red" ? Hd2Team.Red : paint.Name == "Blue" ? Hd2Team.Blue : Hd2Team.None;
@@ -192,12 +186,6 @@ public class Hd2Deathmatch : MonoBehaviour
             if (controller != null)
                 Hd2SpawnField.ApplyPass(bots[i], controller);
         }
-    }
-
-    static string BotName(int index)
-    {
-        string word = index >= 0 && index < BotNumbers.Length ? BotNumbers[index] : (index + 1).ToString();
-        return "bot " + word;
     }
 
     static Fighter MakeFighter(Transform body, string name, Color color, bool isPlayer)

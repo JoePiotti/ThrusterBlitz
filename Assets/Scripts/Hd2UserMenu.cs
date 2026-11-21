@@ -55,6 +55,32 @@ public class Hd2UserMenu : MonoBehaviour
     readonly Image[] hudImages = new Image[3];
     Image switchTeams;
     readonly List<ScoreRow> scoreRows = new List<ScoreRow>();
+
+    // Name and clan tag, edited with an on-screen keyboard.
+    Text nameButtonLabel;
+    Text clanButtonLabel;
+    GameObject keyboard;
+    Text keyboardTitle;
+    Text keyboardField;
+    Text keyboardMessage;
+    readonly List<Click> keyboardClicks = new List<Click>();
+    readonly List<KeyCap> keyCaps = new List<KeyCap>();
+    Image shiftKey;
+    bool editingClan;
+    bool shift;
+    string typed = "";
+
+    class KeyCap
+    {
+        public char lower;
+        public Text label;
+        public Image image;
+    }
+
+    static readonly string[] keyRows = { "1234567890", "qwertyuiop", "asdfghjkl'", "zxcvbnm.-_" };
+    static readonly Color KeyColor = new Color(0.16f, 0.2f, 0.26f, 1f);
+    static readonly Color KeyOffColor = new Color(0.1f, 0.11f, 0.13f, 1f);
+    static readonly Color HintColor = new Color(0.65f, 0.78f, 0.9f, 1f);
     readonly List<TeamHeader> teamHeaders = new List<TeamHeader>();
     float nextScoreRefresh;
 
@@ -100,6 +126,7 @@ public class Hd2UserMenu : MonoBehaviour
         if (controls == null)
             controls = gameObject.AddComponent<Hd2ControlMap>();
         controls.Changed += RefreshLabels;
+        Hd2Identity.Changed += RefreshIdentity;
         Build();
         SetOpen(false);
     }
@@ -146,12 +173,14 @@ public class Hd2UserMenu : MonoBehaviour
     {
         if (controls != null)
             controls.Changed -= RefreshLabels;
+        Hd2Identity.Changed -= RefreshIdentity;
+        StopEditorTyping();
     }
 
     void Update()
     {
         bool toggle = menuButton != null && menuButton.WasPressedThisFrame();
-        if (!toggle && EditorFallback && editorMenu != null)
+        if (!toggle && EditorFallback && editorMenu != null && !KeyboardOpen)
             toggle = editorMenu.WasPressedThisFrame();
         if (toggle)
         {
@@ -163,6 +192,8 @@ public class Hd2UserMenu : MonoBehaviour
             return;
 
         RefreshSwitchTeams();
+        if (KeyboardOpen)
+            EditorKeys();
         if (gamePage != null && gamePage.activeSelf && Time.unscaledTime >= nextScoreRefresh)
             RefreshScoreboard();
         Aim();
@@ -178,7 +209,10 @@ public class Hd2UserMenu : MonoBehaviour
         if (laser != null)
             laser.enabled = false;
         if (!value)
+        {
             HideActionList();
+            CloseKeyboard();
+        }
         if (!value)
             return;
 
@@ -288,6 +322,19 @@ public class Hd2UserMenu : MonoBehaviour
 
     Click Pick(Vector2 screen, Camera cam)
     {
+        if (KeyboardOpen)
+        {
+            for (int i = 0; i < keyboardClicks.Count; i++)
+            {
+                if (keyboardClicks[i].rect != null && keyboardClicks[i].rect.gameObject.activeInHierarchy
+                    && Inside(keyboardClicks[i].rect, screen, cam))
+                    return keyboardClicks[i];
+            }
+
+            // The keyboard covers the menu; nothing behind it can be clicked.
+            return null;
+        }
+
         if (actionList != null && actionList.activeSelf)
         {
             for (int i = 0; i < actionClicks.Count; i++)
@@ -471,7 +518,240 @@ public class Hd2UserMenu : MonoBehaviour
         Stretch(MakeText(home.rectTransform, "Return to start", 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
         clicks.Add(new Click { rect = home.rectTransform, action = ReturnToStart });
 
+        BuildIdentity(page);
         BuildScoreboard(page);
+        BuildKeyboard();
+    }
+
+    void BuildIdentity(RectTransform page)
+    {
+        var nameCaption = MakeText(page, "Name", 22, TextAnchor.MiddleLeft, HintColor);
+        Place(nameCaption.rectTransform, 0f, -276f, 320f, 30f);
+        var name = MakeImage(page, KeyColor);
+        Place(name.rectTransform, 0f, -308f, 320f, 60f);
+        nameButtonLabel = MakeText(name.rectTransform, "", 22, TextAnchor.MiddleLeft, Color.white);
+        Stretch(nameButtonLabel.rectTransform, 14f);
+        clicks.Add(new Click { rect = name.rectTransform, action = () => OpenKeyboard(false) });
+
+        var clanCaption = MakeText(page, "Clan tag", 22, TextAnchor.MiddleLeft, HintColor);
+        Place(clanCaption.rectTransform, 0f, -380f, 320f, 30f);
+        var clan = MakeImage(page, KeyColor);
+        Place(clan.rectTransform, 0f, -412f, 320f, 60f);
+        clanButtonLabel = MakeText(clan.rectTransform, "", 22, TextAnchor.MiddleLeft, Color.white);
+        Stretch(clanButtonLabel.rectTransform, 14f);
+        clicks.Add(new Click { rect = clan.rectTransform, action = () => OpenKeyboard(true) });
+
+        RefreshIdentity();
+    }
+
+    void RefreshIdentity()
+    {
+        if (nameButtonLabel != null)
+            nameButtonLabel.text = Hd2Identity.Name;
+        if (clanButtonLabel != null)
+            clanButtonLabel.text = string.IsNullOrEmpty(Hd2Identity.Clan) ? "None" : Hd2Identity.Clan;
+        nextScoreRefresh = 0f;
+    }
+
+    bool KeyboardOpen => keyboard != null && keyboard.activeSelf;
+
+    void BuildKeyboard()
+    {
+        keyboard = new GameObject("Keyboard");
+        var rect = keyboard.AddComponent<RectTransform>();
+        rect.SetParent(panel, false);
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        var back = keyboard.AddComponent<Image>();
+        back.sprite = White();
+        back.color = new Color(0.06f, 0.07f, 0.09f, 0.99f);
+        back.raycastTarget = false;
+
+        keyboardTitle = MakeText(rect, "Name", 30, TextAnchor.MiddleLeft, Color.white);
+        Place(keyboardTitle.rectTransform, 65f, -20f, 1050f, 44f);
+
+        var field = MakeImage(rect, new Color(0.13f, 0.15f, 0.19f, 1f));
+        Place(field.rectTransform, 65f, -72f, 1050f, 70f);
+        keyboardField = MakeText(field.rectTransform, "", 34, TextAnchor.MiddleLeft, Color.white);
+        Stretch(keyboardField.rectTransform, 18f);
+
+        keyboardMessage = MakeText(rect, "", 22, TextAnchor.MiddleLeft, HintColor);
+        Place(keyboardMessage.rectTransform, 65f, -150f, 1050f, 36f);
+
+        const float left = 65f;
+        const float key = 96f;
+        const float gap = 9.5f;
+        for (int row = 0; row < keyRows.Length; row++)
+        {
+            string chars = keyRows[row];
+            for (int col = 0; col < chars.Length; col++)
+            {
+                char lower = chars[col];
+                var image = MakeImage(rect, KeyColor);
+                Place(image.rectTransform, left + col * (key + gap), -200f - row * 80f, key, 70f);
+                var label = MakeText(image.rectTransform, lower.ToString(), 30, TextAnchor.MiddleCenter, Color.white);
+                Stretch(label.rectTransform, 0f);
+                var cap = new KeyCap { lower = lower, label = label, image = image };
+                keyCaps.Add(cap);
+                keyboardClicks.Add(new Click { rect = image.rectTransform, action = () => TypeKey(cap) });
+            }
+        }
+
+        float bottom = -200f - keyRows.Length * 80f;
+        shiftKey = KeyboardButton(rect, "Shift", left, bottom, 202f, ToggleShift);
+        KeyboardButton(rect, "Space", left + 212f, bottom, 414f, () => TypeChar(' '));
+        KeyboardButton(rect, "Back", left + 636f, bottom, 202f, Backspace);
+        KeyboardButton(rect, "Clear", left + 848f, bottom, 202f, () => { typed = ""; RefreshKeyboard(); });
+
+        float actions = bottom - 84f;
+        var cancel = KeyboardButton(rect, "Cancel", left + 430f, actions, 300f, CloseKeyboard);
+        cancel.color = new Color(0.3f, 0.32f, 0.36f, 1f);
+        var done = KeyboardButton(rect, "Done", left + 750f, actions, 300f, FinishKeyboard);
+        done.color = new Color(0.2f, 0.5f, 0.78f, 1f);
+
+        keyboard.SetActive(false);
+    }
+
+    Image KeyboardButton(RectTransform parent, string text, float x, float y, float w, System.Action action)
+    {
+        var image = MakeImage(parent, KeyColor);
+        Place(image.rectTransform, x, y, w, 70f);
+        Stretch(MakeText(image.rectTransform, text, 26, TextAnchor.MiddleCenter, Color.white).rectTransform, 4f);
+        keyboardClicks.Add(new Click { rect = image.rectTransform, action = action });
+        return image;
+    }
+
+    void OpenKeyboard(bool clan)
+    {
+        HideActionList();
+        editingClan = clan;
+        typed = clan ? Hd2Identity.Clan : Hd2Identity.Name;
+        // Tags are usually capitals; names start with one.
+        shift = clan || typed.Length == 0;
+        keyboardTitle.text = clan ? "Clan tag" : "Name";
+        keyboard.SetActive(true);
+        keyboard.transform.SetAsLastSibling();
+        ShowRules();
+        RefreshKeyboard();
+        StartEditorTyping();
+    }
+
+    void ShowRules()
+    {
+        keyboardMessage.color = HintColor;
+        keyboardMessage.text = editingClan
+            ? "Up to " + Hd2Identity.ClanMax + " letters or numbers, shown before your name. Leave empty for none."
+            : Hd2Identity.NameMin + " to " + Hd2Identity.NameMax + " characters: letters, numbers, spaces and . - _ '";
+    }
+
+    void CloseKeyboard()
+    {
+        StopEditorTyping();
+        if (keyboard != null)
+            keyboard.SetActive(false);
+    }
+
+    void FinishKeyboard()
+    {
+        string problem = editingClan ? Hd2Identity.SetClan(typed) : Hd2Identity.SetName(typed);
+        if (problem != null)
+        {
+            keyboardMessage.color = new Color(1f, 0.4f, 0.35f, 1f);
+            keyboardMessage.text = problem;
+            return;
+        }
+
+        CloseKeyboard();
+    }
+
+    void TypeKey(KeyCap cap)
+    {
+        TypeChar(shift ? char.ToUpperInvariant(cap.lower) : cap.lower);
+    }
+
+    void TypeChar(char c)
+    {
+        bool allowed = editingClan ? Hd2Identity.ClanChar(c) : Hd2Identity.NameChar(c);
+        int max = editingClan ? Hd2Identity.ClanMax : Hd2Identity.NameMax;
+        if (!allowed || typed.Length >= max)
+            return;
+
+        typed += c;
+        if (!editingClan && char.IsLetter(c))
+            shift = false;
+        ShowRules();
+        RefreshKeyboard();
+    }
+
+    void Backspace()
+    {
+        if (typed.Length > 0)
+            typed = typed.Substring(0, typed.Length - 1);
+        RefreshKeyboard();
+    }
+
+    void ToggleShift()
+    {
+        shift = !shift;
+        RefreshKeyboard();
+    }
+
+    void RefreshKeyboard()
+    {
+        int max = editingClan ? Hd2Identity.ClanMax : Hd2Identity.NameMax;
+        keyboardField.text = typed + "_   (" + typed.Length + "/" + max + ")";
+        if (shiftKey != null)
+            shiftKey.color = shift ? new Color(0.2f, 0.5f, 0.78f, 1f) : KeyColor;
+        for (int i = 0; i < keyCaps.Count; i++)
+        {
+            KeyCap cap = keyCaps[i];
+            char shown = shift ? char.ToUpperInvariant(cap.lower) : cap.lower;
+            cap.label.text = shown.ToString();
+            bool usable = editingClan ? Hd2Identity.ClanChar(shown) : Hd2Identity.NameChar(shown);
+            cap.image.color = usable ? KeyColor : KeyOffColor;
+            cap.label.color = usable ? Color.white : new Color(1f, 1f, 1f, 0.25f);
+        }
+    }
+
+    // In the editor without a headset, the real keyboard types too.
+    bool editorTyping;
+
+    void StartEditorTyping()
+    {
+        if (editorTyping || !EditorFallback || Keyboard.current == null)
+            return;
+        Keyboard.current.onTextInput += EditorText;
+        editorTyping = true;
+    }
+
+    void StopEditorTyping()
+    {
+        if (!editorTyping)
+            return;
+        if (Keyboard.current != null)
+            Keyboard.current.onTextInput -= EditorText;
+        editorTyping = false;
+    }
+
+    void EditorText(char c)
+    {
+        if (!KeyboardOpen || c < ' ')
+            return;
+        TypeChar(c);
+    }
+
+    void EditorKeys()
+    {
+        if (!editorTyping || Keyboard.current == null)
+            return;
+        if (Keyboard.current.backspaceKey.wasPressedThisFrame)
+            Backspace();
+        else if (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame)
+            FinishKeyboard();
+        else if (Keyboard.current.escapeKey.wasPressedThisFrame)
+            CloseKeyboard();
     }
 
     void BuildScoreboard(RectTransform page)

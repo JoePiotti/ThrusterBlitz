@@ -21,6 +21,23 @@ public class Hd2NetPlayer : NetworkBehaviour
     public Vector3 handMeshEulerOffsetR;
     public Hd2Team team = Hd2Team.None;
 
+    // Name and clan tag, set by the server from what the owning headset sends, so late
+    // joiners see them too.
+    [Networked] NetworkString<_32> NetName { get; set; }
+    [Networked] NetworkString<_8> NetClan { get; set; }
+
+    /// <summary>"[TAG] Name" for this player, as everyone sees it.</summary>
+    public string DisplayName
+    {
+        get
+        {
+            if (Object == null || !Object.IsValid)
+                return "Player";
+            string name = NetName.ToString();
+            return Hd2Identity.Format(NetClan.ToString(), string.IsNullOrEmpty(name) ? "Player" : name);
+        }
+    }
+
     Hd2Health proxyHealth;
     Hd2Locomotion owner;
     Transform view;
@@ -103,7 +120,56 @@ public class Hd2NetPlayer : NetworkBehaviour
 
             ClaimLocalPlayer();
             Hd2Session.NoteLocalBody();
+            SendIdentity();
+            Hd2Identity.Changed += SendIdentity;
         }
+        else
+        {
+            Transform head = FindDeep(transform, "Head");
+            Hd2Nameplate.Attach(transform, head, proxyHealth, () => DisplayName, () => team);
+        }
+    }
+
+    public override void Despawned(NetworkRunner runner, bool hasState)
+    {
+        Hd2Identity.Changed -= SendIdentity;
+    }
+
+    void SendIdentity()
+    {
+        if (Object == null || !Object.IsValid || !Object.HasInputAuthority)
+            return;
+        RPC_SetIdentity(Hd2Identity.Name, Hd2Identity.Clan);
+    }
+
+    [Rpc(RpcSources.InputAuthority, RpcTargets.StateAuthority)]
+    void RPC_SetIdentity(string name, string clan)
+    {
+        // The server checks again, so a modified client cannot get past the rules.
+        name = Hd2Identity.Clean(name);
+        clan = Hd2Identity.Clean(clan);
+        if (Hd2Identity.CheckName(name) != null)
+            name = "Player";
+        if (Hd2Identity.CheckClan(clan) != null)
+            clan = "";
+        NetName = name;
+        NetClan = clan;
+    }
+
+    static Transform FindDeep(Transform root, string childName)
+    {
+        if (root == null)
+            return null;
+        if (root.name == childName)
+            return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = FindDeep(root.GetChild(i), childName);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 
     public void RelayHit(float amount, Hd2Team killerTeam)

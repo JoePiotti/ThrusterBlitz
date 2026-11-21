@@ -738,7 +738,6 @@ public class Hd2Locomotion : MonoBehaviour
         bot.bodyColor = teamColor;
         bot.useBodyColor = true;
         bot.spawnSlot = SpawnSlot(spot, team);
-        bot.displayName = team == Hd2Team.Red ? "red bot" : team == Hd2Team.Blue ? "blue bot" : "bot";
         if (spot != null)
             bot.TakePlace(team, teamColor, bot.spawnSlot, spot);
     }

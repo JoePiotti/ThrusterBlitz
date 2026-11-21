@@ -121,7 +121,7 @@ public static class Hd2MatchStats
             rows.Add(new Row
             {
                 Rank = 1,
-                Name = "You",
+                Name = Hd2Identity.Display,
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
                 Score = 0,
@@ -131,7 +131,6 @@ public static class Hd2MatchStats
         }
 
         var others = UnityEngine.Object.FindObjectsByType<Hd2NetPlayer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        int number = 2;
         for (int i = 0; i < others.Length; i++)
         {
             Hd2NetPlayer other = others[i];
@@ -142,7 +141,7 @@ public static class Hd2MatchStats
             rows.Add(new Row
             {
                 Rank = 1,
-                Name = "Player " + number++,
+                Name = other.DisplayName,
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
                 Score = 0,
@@ -157,7 +156,7 @@ public static class Hd2MatchStats
             rows.Add(new Row
             {
                 Rank = RankOf(bots[i].difficulty),
-                Name = string.IsNullOrEmpty(bots[i].displayName) ? "bot" : bots[i].displayName,
+                Name = bots[i].FullName,
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,
                 Score = 0,

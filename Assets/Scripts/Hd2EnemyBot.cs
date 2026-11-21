@@ -34,7 +34,28 @@ public class Hd2EnemyBot : MonoBehaviour
     public Color bodyColor = Color.white;
     [Tooltip("Spawn shields of this team let this bot through.")]
     public Hd2Team team;
+    [Tooltip("Picked from the bot name pool for this difficulty when the bot boots.")]
     public string displayName = "bot";
+    bool named;
+
+    /// <summary>Name with the BOT clan tag, as shown on nameplates and the scoreboard.</summary>
+    public string FullName
+    {
+        get
+        {
+            EnsureName();
+            return Hd2Identity.Format(Hd2Identity.BotClan, displayName);
+        }
+    }
+
+    /// <summary>Takes a name from this difficulty's pool the first time it is needed.</summary>
+    public void EnsureName()
+    {
+        if (named)
+            return;
+        named = true;
+        displayName = Hd2BotNames.Take(difficulty);
+    }
     public bool useBodyColor;
     [Tooltip("Rome domination. Holds and walks points, fights enemies, and falls back to heal.")]
     public bool domination;
@@ -402,6 +423,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (booted)
             return;
         booted = true;
+        EnsureName();
 
         body = gameObject.AddComponent<CharacterController>();
         body.height = 1.8f;
@@ -452,6 +474,9 @@ public class Hd2EnemyBot : MonoBehaviour
                 TintRenderers(robot.transform, bodyColor);
             AddFillers(robot.transform);
         }
+
+        Transform headBone = FindNamed(transform, "Head");
+        Hd2Nameplate.Attach(transform, headBone != null ? headBone : eye, health, () => FullName, () => team);
 
         Hd2VisionCone.Register(transform);
         var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
@@ -1561,10 +1586,6 @@ public class Hd2EnemyBot : MonoBehaviour
         bodyColor = color;
         useBodyColor = true;
         spawnSlot = slot;
-        if (side == Hd2Team.Red && displayName != null && displayName.StartsWith("blue"))
-            displayName = "red" + displayName.Substring(4);
-        else if (side == Hd2Team.Blue && displayName != null && displayName.StartsWith("red"))
-            displayName = "blue" + displayName.Substring(3);
 
         CacheHome();
         if (spawn != null)

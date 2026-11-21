@@ -250,7 +250,6 @@ public class Hd2Shootout : MonoBehaviour
         bot.difficulty = level;
         bot.useBodyColor = sample.useBodyColor;
         bot.bodyColor = sample.bodyColor;
-        bot.displayName = (side == Hd2Team.Red ? "red " : "blue ") + number;
         bot.Boot();
         return bot;
     }
@@ -314,7 +313,6 @@ public class Hd2Shootout : MonoBehaviour
             Hd2EnemyBot bot = mine[i];
             Color color = side == Hd2Team.Red ? Hd2Locomotion.RedShade(rank) : Hd2Locomotion.BlueShade(rank);
             bot.TakePlace(side, color, rank, spot);
-            bot.displayName = (side == Hd2Team.Red ? "red " : "blue ") + (i + 1);
         }
     }
 

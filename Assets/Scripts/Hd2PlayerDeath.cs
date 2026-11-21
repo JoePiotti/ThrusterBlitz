@@ -172,8 +172,11 @@ public class Hd2PlayerDeath : MonoBehaviour
             return;
 
         Hd2EnemyBot bot = killer != null ? killer.GetComponentInParent<Hd2EnemyBot>() : null;
-        if (bot != null && !string.IsNullOrEmpty(bot.displayName))
-            hud.ShowDeath(bot.displayName);
+        Hd2NetPlayer other = bot == null && killer != null ? killer.GetComponentInParent<Hd2NetPlayer>() : null;
+        if (bot != null)
+            hud.ShowDeath(bot.FullName);
+        else if (other != null)
+            hud.ShowDeath(other.DisplayName);
         else
             hud.ShowSuicide();
     }
