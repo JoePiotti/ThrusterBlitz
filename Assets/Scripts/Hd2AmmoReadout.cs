@@ -84,7 +84,6 @@ public static class Hd2AmmoReadout
             var renderer = texts[i].GetComponent<MeshRenderer>();
             if (renderer != null)
                 renderer.enabled = false;
-            texts[i].enabled = false;
         }
     }
 
