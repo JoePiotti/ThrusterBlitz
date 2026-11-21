@@ -166,6 +166,10 @@ public class Hd2Shocks : MonoBehaviour
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
 
+        // An empty magazine always reloads, even if the shot that emptied it was cut short.
+        if (!reloading && rounds <= 0)
+            Reload();
+
         if (GetComponentInParent<Hd2EnemyBot>() == null)
         {
             bool editor = EditorFallback();

@@ -166,6 +166,10 @@ public class Hd2Smg : MonoBehaviour
         if (reloading && Time.time >= reloadEndsAt)
             FinishReload();
 
+        // An empty magazine always reloads, even if the shot that emptied it was cut short.
+        if (!reloading && rounds <= 0)
+            Reload();
+
         bool bot = GetComponentInParent<Hd2EnemyBot>() != null;
         bool editorReload = !bot && EditorFallback && editorReloadAction != null && editorReloadAction.WasPressedThisFrame();
         var fire = hand == Hd2Pistol.Hand.Left ? Hd2ControlMap.Action.FireLeft : Hd2ControlMap.Action.FireRight;
