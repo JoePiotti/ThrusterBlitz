@@ -1757,7 +1757,13 @@ public class Hd2Locomotion : MonoBehaviour
     {
         if (hit.normal.y <= 0.55f)
         {
-            Vector3 clipped = ClipToRange(from, hit.point, player, maxSqr);
+            // Pointing at a wall drops the landing a step back from its face, not right against it.
+            Vector3 away = hit.normal;
+            away.y = 0f;
+            Vector3 backed = hit.point;
+            if (away.sqrMagnitude > 0.0001f)
+                backed += away.normalized * WallLandingBackoff;
+            Vector3 clipped = ClipToRange(from, backed, player, maxSqr);
             if (arcPointCount < ArcPointCapacity)
                 arcPoints[arcPointCount++] = clipped;
             DropToSurfaceBelow(clipped, player, maxSqr);
@@ -1803,6 +1809,8 @@ public class Hd2Locomotion : MonoBehaviour
     {
         Vector3 landing = LandingFromHit(hit, out Hd2GrindRail rail, out float railSign);
         bool blocked = IsNoLanding(hit.collider);
+        if (!blocked && rail == null && !BodyFitsAt(ref landing))
+            blocked = true;
         bool onFloor = rail == null && hit.normal.y > 0.55f;
         if (!onFloor && (landing - player).sqrMagnitude > maxSqr)
             landing = ClampToRange(player, landing, Mathf.Sqrt(maxSqr));
@@ -3456,6 +3464,50 @@ public class Hd2Locomotion : MonoBehaviour
         transform.position = planted;
     }
 
+    const float WallLandingBackoff = 0.5f;
+
+    /// <summary>
+    /// Can the whole standing body stand at these feet? A wall beside it nudges the spot
+    /// out of the wall (a few tries); anything over the head, like the underside of a
+    /// ramp, or a spot still inside something after the nudges, is not a landing.
+    /// </summary>
+    bool BodyFitsAt(ref Vector3 feet)
+    {
+        float radius = Mathf.Max(0.05f, bodyRadius);
+        float height = Mathf.Max(bodyHeight, radius * 2f + 0.01f);
+        float limit = skinWidth * skinWidth;
+        for (int attempt = 0; attempt < 4; attempt++)
+        {
+            Vector3 bottom = feet + Vector3.up * (radius + skinWidth);
+            Vector3 top = feet + Vector3.up * (height - radius);
+            int count = Physics.OverlapCapsuleNonAlloc(bottom, top, radius, stuckOverlap, ~0, QueryTriggerInteraction.Ignore);
+            Vector3 sample = feet + Vector3.up * (radius + 0.05f);
+            Vector3 total = Vector3.zero;
+            for (int i = 0; i < count; i++)
+            {
+                Collider collider = stuckOverlap[i];
+                if (!BlocksBody(collider))
+                    continue;
+                // The floor under the feet.
+                if (collider.ClosestPoint(sample).y < feet.y + 0.03f)
+                    continue;
+                if (!TryWallPush(collider, bottom, top, radius, out Vector3 push) || push.sqrMagnitude <= limit)
+                    continue;
+                // Pushed down: something is over the head.
+                if (push.y < -0.3f * push.magnitude)
+                    return false;
+                push.y = 0f;
+                total += push;
+            }
+
+            if (total.sqrMagnitude <= limit)
+                return true;
+            feet += total;
+        }
+
+        return false;
+    }
+
     bool CapsuleFitsAbove(Vector3 feet)
     {
         float radius = Mathf.Max(0.05f, bodyRadius);
@@ -4108,14 +4160,13 @@ public class Hd2Locomotion : MonoBehaviour
             return;
         }
 
-        Vector3 before = transform.position;
+        // Real-life steps move the body like the stick does, walls included. The rig
+        // then takes back the whole step (the body carried the head along by what it
+        // moved), so a blocked step leaves the head over the body, not inside the wall.
+        // Taking back only the part that moved let the head stay past the wall and the
+        // gap grow until a later move slipped the body through.
         MoveHorizontal(delta);
-        Vector3 moved = transform.position - before;
-        moved.y = 0f;
-        if (moved.sqrMagnitude < 0.00000004f)
-            return;
-
-        roomRig.position -= moved;
+        roomRig.position -= delta;
     }
 
     void EnsureRoomRig()
