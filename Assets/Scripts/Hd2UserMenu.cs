@@ -129,7 +129,6 @@ public class Hd2UserMenu : MonoBehaviour
     Image pickupBox;
     Image pickupCheck;
     readonly Image[] presetImages = new Image[Hd2ControlMap.PresetCount];
-    int lastPreset = 2;
     static readonly Color OffColor = new Color(0.14f, 0.17f, 0.22f, 1f);
     static readonly Color OnColor = new Color(0.2f, 0.5f, 0.78f, 1f);
 
@@ -1104,7 +1103,7 @@ public class Hd2UserMenu : MonoBehaviour
         for (int i = 0; i < presetImages.Length; i++)
         {
             if (presetImages[i] != null)
-                presetImages[i].color = i + 1 == lastPreset ? OnColor : OffColor;
+                presetImages[i].color = controls != null && i + 1 == controls.Preset ? OnColor : OffColor;
         }
     }
 
@@ -1148,7 +1147,6 @@ public class Hd2UserMenu : MonoBehaviour
 
     void ResetControls(int preset)
     {
-        lastPreset = preset;
         controls.ApplyPreset(preset);
         controls.MicrophoneMode = Hd2ControlMap.MicMode.Toggle;
         var readout = Hud();
@@ -1215,7 +1213,6 @@ public class Hd2UserMenu : MonoBehaviour
         if (!pickingValid)
             return;
         controls.SetBinding(picking, action);
-        lastPreset = 0;
         PaintPresets();
         HideActionList();
     }

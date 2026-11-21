@@ -144,9 +144,68 @@ public class Hd2ControlMap : MonoBehaviour
         }
     }
 
+    // Everything on the Controls tab is saved on the headset whenever it changes.
+    const string SaveKey = "Hd2Controls";
+    const int SaveVersion = 1;
+
+    /// <summary>The default layout last applied (1-3), or 0 after a button was changed by hand.</summary>
+    public int Preset { get; private set; } = 2;
+
     void Awake()
     {
         SetDefaults();
+        Load();
+        Changed += Save;
+    }
+
+    void OnDestroy()
+    {
+        Changed -= Save;
+    }
+
+    // Saved as "version|preset|mic|pickup|angle|binding,binding,...".
+    void Save()
+    {
+        var parts = new string[ButtonCount];
+        for (int i = 0; i < ButtonCount; i++)
+            parts[i] = ((int)bound[i]).ToString();
+        string data = SaveVersion + "|" + Preset + "|" + (int)micMode + "|" + (pickupWithReload ? 1 : 0) + "|"
+            + gripAngle.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + string.Join(",", parts);
+        PlayerPrefs.SetString(SaveKey, data);
+        PlayerPrefs.Save();
+    }
+
+    void Load()
+    {
+        string data = PlayerPrefs.GetString(SaveKey, "");
+        if (string.IsNullOrEmpty(data))
+            return;
+
+        string[] fields = data.Split('|');
+        if (fields.Length != 6 || fields[0] != SaveVersion.ToString())
+            return;
+        string[] binds = fields[5].Split(',');
+        if (binds.Length != ButtonCount)
+            return;
+
+        var loaded = new Action[ButtonCount];
+        for (int i = 0; i < ButtonCount; i++)
+        {
+            if (!int.TryParse(binds[i], out int value) || value < 0 || value >= ActionCount)
+                return;
+            loaded[i] = (Action)value;
+        }
+
+        if (!int.TryParse(fields[1], out int preset)
+            || !int.TryParse(fields[2], out int mic) || !System.Enum.IsDefined(typeof(MicMode), mic)
+            || !float.TryParse(fields[4], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float angle))
+            return;
+
+        System.Array.Copy(loaded, bound, ButtonCount);
+        Preset = Mathf.Clamp(preset, 0, PresetCount);
+        micMode = (MicMode)mic;
+        pickupWithReload = fields[3] == "1";
+        gripAngle = Mathf.Clamp(angle, -GripAngleLimit, GripAngleLimit);
     }
 
     void OnEnable()
@@ -214,6 +273,7 @@ public class Hd2ControlMap : MonoBehaviour
     /// </summary>
     public void ApplyPreset(int preset)
     {
+        Preset = preset;
         FillDefault2();
         pickupWithReload = true;
         gripAngle = 0f;
@@ -260,6 +320,7 @@ public class Hd2ControlMap : MonoBehaviour
         if (bound[(int)button] == action)
             return;
         bound[(int)button] = action;
+        Preset = 0;
         Changed?.Invoke();
     }
 
