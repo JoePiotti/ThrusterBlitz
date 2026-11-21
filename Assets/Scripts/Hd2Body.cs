@@ -150,6 +150,8 @@ public class Hd2Body : MonoBehaviour
             gameObject.AddComponent<Hd2ThrustMeter>();
         if (GetComponent<Hd2ControlMap>() == null)
             gameObject.AddComponent<Hd2ControlMap>();
+        gripControls = GetComponent<Hd2ControlMap>();
+        gripControls.Changed += OnControlsChanged;
         if (GetComponent<Hd2UserMenu>() == null)
             gameObject.AddComponent<Hd2UserMenu>();
         if (GetComponent<Hd2PlayerDeath>() == null)
@@ -169,8 +171,23 @@ public class Hd2Body : MonoBehaviour
         rightGrip = FingerAxis("RightHand", "grip");
     }
 
+    Hd2ControlMap gripControls;
+    float appliedGripAngle;
+
+    // A new grip angle re-seats the guns already in hand on the next frame.
+    void OnControlsChanged()
+    {
+        if (gripControls == null || Mathf.Approximately(gripControls.GripAngle, appliedGripAngle))
+            return;
+        appliedGripAngle = gripControls.GripAngle;
+        centeredGunL = null;
+        centeredGunR = null;
+    }
+
     void OnDestroy()
     {
+        if (gripControls != null)
+            gripControls.Changed -= OnControlsChanged;
         Dispose(ref leftTrigger);
         Dispose(ref leftGrip);
         Dispose(ref rightTrigger);
@@ -1481,7 +1498,10 @@ public class Hd2Body : MonoBehaviour
         if (muzzle == null)
             return;
 
-        Quaternion want = controller.rotation * Quaternion.Euler(muzzleInController);
+        // The grip angle setting tips the barrel up (positive) or down about the controller's
+        // side axis. The Muzzle points along the controller's -Y, with +Z up the grip.
+        float tilt = gripControls != null ? gripControls.GripAngle : 0f;
+        Quaternion want = controller.rotation * Quaternion.Euler(-tilt, 0f, 0f) * Quaternion.Euler(muzzleInController);
         gun.rotation = want * Quaternion.Inverse(muzzle.rotation) * gun.rotation;
     }
 

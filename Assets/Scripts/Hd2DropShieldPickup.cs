@@ -108,7 +108,7 @@ public class Hd2DropShieldPickup : MonoBehaviour
 
     void Consider(Transform hand, string handName, ref Transform best, ref float bestDistance, float reachSqr)
     {
-        if (hand == null || !GripHeld(handName))
+        if (hand == null || !Hd2ControlMap.WantsPickup(hand, GripHeld(handName)))
             return;
         if (hand.GetComponentInChildren<Hd2DropShield>(true) != null)
             return;

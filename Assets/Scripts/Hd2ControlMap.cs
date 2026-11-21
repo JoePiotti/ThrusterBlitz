@@ -2,8 +2,10 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Which action each controller button performs. Defaults match the current game.
-/// The left menu button is not in this table. It always opens this player's menu.
+/// Which action each controller button performs, plus the pickup and grip angle settings.
+/// Three presets: Default 2 is the original layout; Default 1 and Default 3 are variations
+/// of it (see ApplyPreset). The left menu button is not in this table. It always opens this
+/// player's menu.
 /// </summary>
 [DefaultExecutionOrder(-100)]
 public class Hd2ControlMap : MonoBehaviour
@@ -55,6 +57,11 @@ public class Hd2ControlMap : MonoBehaviour
     readonly bool[] held = new bool[ButtonCount];
     MicMode micMode = MicMode.Toggle;
     bool micOn;
+    bool pickupWithReload = true;
+    float gripAngle;
+
+    public const float GripAngleLimit = 15f;
+    public const int PresetCount = 3;
 
     public event System.Action Changed;
 
@@ -71,6 +78,54 @@ public class Hd2ControlMap : MonoBehaviour
     }
 
     public bool MenuOpen { get; set; }
+
+    /// <summary>
+    /// On: hold that hand's Reload button (Grip by default) to pick up a weapon.
+    /// Off: touching a weapon pickup with a hand takes it.
+    /// </summary>
+    public bool PickupWithReload
+    {
+        get { return pickupWithReload; }
+        set
+        {
+            if (pickupWithReload == value)
+                return;
+            pickupWithReload = value;
+            Changed?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Degrees added to the held gun's pitch, -15 to 15. Positive aims higher than the
+    /// controller: hold the controller level at +10 and the gun points 10 degrees up.
+    /// </summary>
+    public float GripAngle
+    {
+        get { return gripAngle; }
+        set
+        {
+            float clamped = Mathf.Clamp(Mathf.Round(value), -GripAngleLimit, GripAngleLimit);
+            if (Mathf.Approximately(gripAngle, clamped))
+                return;
+            gripAngle = clamped;
+            Changed?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Should this hand take a weapon pickup it is touching? Pickups pass whether the
+    /// physical grip is down, used when the hand has no control map (editor rigs).
+    /// </summary>
+    public static bool WantsPickup(Transform hand, bool gripDown)
+    {
+        var map = hand != null ? hand.GetComponentInParent<Hd2ControlMap>() : null;
+        if (map == null)
+            return gripDown;
+        if (!map.PickupWithReload)
+            return true;
+        bool left = hand.name == "LeftHand";
+        return map.Held(left ? Action.ReloadLeft : Action.ReloadRight);
+    }
 
     public bool MicOpen
     {
@@ -145,7 +200,41 @@ public class Hd2ControlMap : MonoBehaviour
             consumed[i] = false;
     }
 
+    /// <summary>Default 2, the original layout.</summary>
     public void SetDefaults()
+    {
+        ApplyPreset(2);
+    }
+
+    /// <summary>
+    /// 1: Default 2 with the left stick press as Jump, B as Sprint, and weapons picked up by touch.
+    /// 2: The original layout.
+    /// 3: Default 2 with the triggers as pointers and A / X firing the guns.
+    /// Every preset sets the grip angle to 0.
+    /// </summary>
+    public void ApplyPreset(int preset)
+    {
+        FillDefault2();
+        pickupWithReload = true;
+        gripAngle = 0f;
+        if (preset == 1)
+        {
+            bound[(int)Button.LeftStickPress] = Action.Jump;
+            bound[(int)Button.RightB] = Action.Sprint;
+            pickupWithReload = false;
+        }
+        else if (preset == 3)
+        {
+            bound[(int)Button.LeftTrigger] = Action.LeftPointer;
+            bound[(int)Button.RightTrigger] = Action.RightPointer;
+            bound[(int)Button.LeftX] = Action.FireLeft;
+            bound[(int)Button.RightA] = Action.FireRight;
+        }
+
+        Changed?.Invoke();
+    }
+
+    void FillDefault2()
     {
         for (int i = 0; i < bound.Length; i++)
             bound[i] = Action.None;
@@ -159,7 +248,6 @@ public class Hd2ControlMap : MonoBehaviour
         bound[(int)Button.RightA] = Action.RightPointer;
         bound[(int)Button.RightB] = Action.Jump;
         bound[(int)Button.RightStickPress] = Action.Crouch;
-        Changed?.Invoke();
     }
 
     public Action Binding(Button button)
@@ -193,6 +281,11 @@ public class Hd2ControlMap : MonoBehaviour
     public bool Held(Action action)
     {
         return Scan(action, 2);
+    }
+
+    public bool ButtonHeld(Button button)
+    {
+        return held[(int)button];
     }
 
     public bool ButtonPressed(Button button)

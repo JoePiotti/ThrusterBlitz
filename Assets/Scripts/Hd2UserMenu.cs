@@ -118,7 +118,20 @@ public class Hd2UserMenu : MonoBehaviour
     {
         public RectTransform rect;
         public System.Action action;
+        // Sliders: called with 0..1 across the rect while the trigger is held on it.
+        public System.Action<float> slide;
     }
+
+    RectTransform gripTrack;
+    Image gripFill;
+    RectTransform gripHandle;
+    Text gripValue;
+    Image pickupBox;
+    Image pickupCheck;
+    readonly Image[] presetImages = new Image[Hd2ControlMap.PresetCount];
+    int lastPreset = 2;
+    static readonly Color OffColor = new Color(0.14f, 0.17f, 0.22f, 1f);
+    static readonly Color OnColor = new Color(0.2f, 0.5f, 0.78f, 1f);
 
     void Awake()
     {
@@ -312,6 +325,18 @@ public class Hd2UserMenu : MonoBehaviour
         ShowLaser(hand.position, point);
         Vector2 screen = cam.WorldToScreenPoint(point);
         Click click = Pick(screen, cam);
+        if (click != null && click.slide != null && controls.ButtonHeld(trigger))
+        {
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(click.rect, screen, cam, out Vector2 local))
+            {
+                Rect area = click.rect.rect;
+                click.slide(Mathf.InverseLerp(area.xMin, area.xMax, local.x));
+            }
+
+            controls.Consume(trigger);
+            return true;
+        }
+
         if (click == null || !controls.ButtonPressed(trigger))
             return click != null;
 
@@ -957,13 +982,13 @@ public class Hd2UserMenu : MonoBehaviour
     void BuildMicrophone(RectTransform page)
     {
         var label = MakeText(page, "Microphone", 26, TextAnchor.MiddleLeft, Color.white);
-        Place(label.rectTransform, 0f, -390f, 240f, 40f);
+        Place(label.rectTransform, 0f, -366f, 240f, 40f);
 
         for (int i = 0; i < 3; i++)
         {
             var mode = (Hd2ControlMap.MicMode)i;
             var image = MakeImage(page, new Color(0.14f, 0.17f, 0.22f, 1f));
-            Place(image.rectTransform, 250f + i * 280f, -384f, 260f, 52f);
+            Place(image.rectTransform, 250f + i * 280f, -360f, 260f, 52f);
             Stretch(MakeText(image.rectTransform, Hd2ControlMap.MicLabel(mode), 22, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
             micImages[i] = image;
             var captured = mode;
@@ -976,26 +1001,123 @@ public class Hd2UserMenu : MonoBehaviour
 
         PaintMic();
         BuildHudChoice(page);
+        BuildGripAngle(page);
+        BuildPickupToggle(page);
+        BuildPresets(page);
 
-        var hint = MakeText(page, "Press the left menu button to close", 22, TextAnchor.MiddleLeft, new Color(0.75f, 0.8f, 0.85f, 1f));
-        Place(hint.rectTransform, 0f, -516f, 760f, 36f);
+        var hint = MakeText(page, "Left menu button closes", 20, TextAnchor.MiddleRight, new Color(0.75f, 0.8f, 0.85f, 1f));
+        Place(hint.rectTransform, 830f, -594f, 302f, 52f);
+    }
 
-        var reset = MakeImage(page, new Color(0.2f, 0.5f, 0.78f, 1f));
-        Place(reset.rectTransform, 0f, -560f, 200f, 52f);
-        Stretch(MakeText(reset.rectTransform, "Reset", 22, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
-        clicks.Add(new Click { rect = reset.rectTransform, action = ResetControls });
+    void BuildGripAngle(RectTransform page)
+    {
+        var label = MakeText(page, "Grip angle", 26, TextAnchor.MiddleLeft, Color.white);
+        Place(label.rectTransform, 0f, -482f, 240f, 40f);
+
+        var track = MakeImage(page, OffColor);
+        Place(track.rectTransform, 250f, -476f, 540f, 52f);
+        gripTrack = track.rectTransform;
+
+        gripFill = MakeImage(gripTrack, OnColor);
+        var middle = MakeImage(gripTrack, new Color(1f, 1f, 1f, 0.35f));
+        Place(middle.rectTransform, 269f, -6f, 2f, 40f);
+        var handle = MakeImage(gripTrack, Color.white);
+        gripHandle = handle.rectTransform;
+
+        clicks.Add(new Click
+        {
+            rect = gripTrack,
+            action = () => { },
+            slide = t => controls.GripAngle = Mathf.Lerp(-Hd2ControlMap.GripAngleLimit, Hd2ControlMap.GripAngleLimit, t)
+        });
+
+        var down = MakeButton(page, "-", new Vector2(800f, -476f), new Vector2(52f, 52f), OffColor);
+        Stretch(down.GetComponentInChildren<Text>().rectTransform, 0f);
+        clicks.Add(new Click { rect = down, action = () => controls.GripAngle -= 1f });
+        var up = MakeButton(page, "+", new Vector2(860f, -476f), new Vector2(52f, 52f), OffColor);
+        Stretch(up.GetComponentInChildren<Text>().rectTransform, 0f);
+        clicks.Add(new Click { rect = up, action = () => controls.GripAngle += 1f });
+
+        gripValue = MakeText(page, "", 24, TextAnchor.MiddleLeft, Color.white);
+        Place(gripValue.rectTransform, 924f, -476f, 200f, 52f);
+        PaintGripAngle();
+    }
+
+    void PaintGripAngle()
+    {
+        if (gripTrack == null || controls == null)
+            return;
+        float angle = controls.GripAngle;
+        float width = gripTrack.rect.width > 1f ? gripTrack.rect.width : 540f;
+        float t = Mathf.InverseLerp(-Hd2ControlMap.GripAngleLimit, Hd2ControlMap.GripAngleLimit, angle);
+        float x = t * width;
+        float mid = width * 0.5f;
+        Place(gripFill.rectTransform, Mathf.Min(x, mid), 0f, Mathf.Abs(x - mid), 52f);
+        Place(gripHandle, Mathf.Clamp(x - 5f, 0f, width - 10f), 0f, 10f, 52f);
+        gripValue.text = (angle > 0f ? "+" : "") + angle.ToString("0") + "\u00b0" + (angle > 0f ? " up" : angle < 0f ? " down" : "");
+    }
+
+    void BuildPickupToggle(RectTransform page)
+    {
+        var label = MakeText(page, "Pickups", 26, TextAnchor.MiddleLeft, Color.white);
+        Place(label.rectTransform, 0f, -540f, 240f, 40f);
+
+        var row = MakeImage(page, new Color(0f, 0f, 0f, 0f));
+        Place(row.rectTransform, 250f, -534f, 660f, 52f);
+        pickupBox = MakeImage(row.rectTransform, OffColor);
+        Place(pickupBox.rectTransform, 0f, 0f, 52f, 52f);
+        pickupCheck = MakeImage(pickupBox.rectTransform, Color.white);
+        Place(pickupCheck.rectTransform, 14f, -14f, 24f, 24f);
+        var text = MakeText(row.rectTransform, "Hold Reload (Grip) to pick up weapons", 22, TextAnchor.MiddleLeft, Color.white);
+        Place(text.rectTransform, 66f, 0f, 590f, 52f);
+        clicks.Add(new Click { rect = row.rectTransform, action = () => controls.PickupWithReload = !controls.PickupWithReload });
+        PaintPickupToggle();
+    }
+
+    void PaintPickupToggle()
+    {
+        if (pickupBox == null || controls == null)
+            return;
+        bool on = controls.PickupWithReload;
+        pickupBox.color = on ? OnColor : OffColor;
+        pickupCheck.enabled = on;
+    }
+
+    void BuildPresets(RectTransform page)
+    {
+        var label = MakeText(page, "Defaults", 26, TextAnchor.MiddleLeft, Color.white);
+        Place(label.rectTransform, 0f, -600f, 240f, 40f);
+        for (int i = 0; i < Hd2ControlMap.PresetCount; i++)
+        {
+            int preset = i + 1;
+            var button = MakeButton(page, "Default " + preset, new Vector2(250f + i * 190f, -594f), new Vector2(180f, 52f), OffColor);
+            presetImages[i] = button.GetComponent<Image>();
+            Stretch(button.GetComponentInChildren<Text>().rectTransform, 4f);
+            clicks.Add(new Click { rect = button, action = () => ResetControls(preset) });
+        }
+
+        PaintPresets();
+    }
+
+    void PaintPresets()
+    {
+        for (int i = 0; i < presetImages.Length; i++)
+        {
+            if (presetImages[i] != null)
+                presetImages[i].color = i + 1 == lastPreset ? OnColor : OffColor;
+        }
     }
 
     void BuildHudChoice(RectTransform page)
     {
         var label = MakeText(page, "HUD", 26, TextAnchor.MiddleLeft, Color.white);
-        Place(label.rectTransform, 0f, -456f, 240f, 40f);
+        Place(label.rectTransform, 0f, -424f, 240f, 40f);
 
         string[] names = { "Left side", "Right side", "None" };
         for (int i = 0; i < names.Length; i++)
         {
             var image = MakeImage(page, new Color(0.14f, 0.17f, 0.22f, 1f));
-            Place(image.rectTransform, 250f + i * 280f, -450f, 260f, 52f);
+            Place(image.rectTransform, 250f + i * 280f, -418f, 260f, 52f);
             Stretch(MakeText(image.rectTransform, names[i], 22, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
             hudImages[i] = image;
             int captured = i;
@@ -1024,15 +1146,17 @@ public class Hd2UserMenu : MonoBehaviour
         return hud;
     }
 
-    void ResetControls()
+    void ResetControls(int preset)
     {
-        controls.SetDefaults();
+        lastPreset = preset;
+        controls.ApplyPreset(preset);
         controls.MicrophoneMode = Hd2ControlMap.MicMode.Toggle;
         var readout = Hud();
         if (readout != null)
             readout.Placement = Hd2Hud.Side.Left;
         HideActionList();
         PaintHud();
+        PaintPresets();
     }
 
     void BuildActionList(RectTransform parent)
@@ -1091,6 +1215,8 @@ public class Hd2UserMenu : MonoBehaviour
         if (!pickingValid)
             return;
         controls.SetBinding(picking, action);
+        lastPreset = 0;
+        PaintPresets();
         HideActionList();
     }
 
@@ -1106,6 +1232,8 @@ public class Hd2UserMenu : MonoBehaviour
 
         PaintMic();
         PaintHud();
+        PaintGripAngle();
+        PaintPickupToggle();
     }
 
     void PaintHud()

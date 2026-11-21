@@ -109,7 +109,7 @@ public class Hd2BurstPickup : MonoBehaviour
     void Consider(Transform root, string handName, ref Transform best, ref float bestDistance, float reachSqr)
     {
         Transform hand = FindNamed(root, handName);
-        if (hand == null || !GripHeld(handName))
+        if (hand == null || !Hd2ControlMap.WantsPickup(hand, GripHeld(handName)))
             return;
         if (hand.GetComponentInChildren<Hd2BurstPistol>(true) != null)
             return;
