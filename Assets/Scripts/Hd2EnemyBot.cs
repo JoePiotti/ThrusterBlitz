@@ -76,6 +76,10 @@ public class Hd2EnemyBot : MonoBehaviour
     const float SeeRange = 20f;
     const float SeeHalfAngle = 15f;
     const float AimError = 6.5f;
+    // Arms only reach this far off the body's facing, left/right and up/down.
+    // Past it the bot has to turn (yaw) or back up (pitch) to get the shot.
+    const float AimReachDegrees = 75f;
+    const float ChestHeight = 1.2f;
     const float NoticeDelay = 0.4f;
     const float DropCombatRange = 30f;
     const float RagdollSeconds = 5f;
@@ -1059,6 +1063,7 @@ public class Hd2EnemyBot : MonoBehaviour
                 Face(to);
             AimAt(foe.position + Vector3.up * 1.1f, true);
             Shoot(true);
+            BackUpFrom(foe.position + Vector3.up * 1.1f);
         }
         else
         {
@@ -1804,6 +1809,7 @@ public class Hd2EnemyBot : MonoBehaviour
             moveDir = ClearOfWater(moveDir);
         }
 
+        BackUpFrom(huntTarget.position + Vector3.up * 1.1f);
         TryMountPlatform();
     }
 
@@ -2014,6 +2020,8 @@ public class Hd2EnemyBot : MonoBehaviour
             moveDir = combat == CombatKind.Strafe ? (side + to.normalized * 0.45f).normalized : side;
             moveDir = ClearOfWater(moveDir);
         }
+
+        BackUpFrom(target.position + Vector3.up * 1.1f);
     }
 
     void BeginSideStep()
@@ -2105,7 +2113,8 @@ public class Hd2EnemyBot : MonoBehaviour
             aim = transform.position + Quaternion.Euler(pitch, yaw, 0f) * fromBody;
         }
 
-        Vector3 desired = aim - transform.position;
+        Vector3 chest = transform.position + Vector3.up * ChestHeight;
+        Vector3 desired = aim - chest;
         if (desired.sqrMagnitude < 0.0001f)
             desired = transform.forward;
         desired.Normalize();
@@ -2115,16 +2124,61 @@ public class Hd2EnemyBot : MonoBehaviour
             aimReady = true;
         }
 
+        // The guns sweep toward the target but never past the arms' reach from the facing.
+        // A target outside it never counts as on target, so the bot holds fire until it
+        // has turned (or backed up) enough.
+        Vector3 reachable = ClampToReach(desired);
         float maxRadians = TurnBudget() * Mathf.Deg2Rad;
-        aimDir = Vector3.RotateTowards(aimDir.normalized, desired, maxRadians, 0f);
+        aimDir = ClampToReach(Vector3.RotateTowards(aimDir.normalized, reachable, maxRadians, 0f));
         aimOnTarget = Vector3.Angle(aimDir, desired) <= AimError + 2f;
 
-        float distance = fromBody.magnitude;
+        float distance = (aim - chest).magnitude;
         if (distance < 0.5f)
             distance = 8f;
-        Vector3 swept = transform.position + aimDir * distance;
+        Vector3 swept = chest + aimDir * distance;
         AimHand(rightHand, upperR, foreR, handR, swept, 0.12f);
         AimHand(leftHand, upperL, foreL, handL, swept, -0.12f);
+    }
+
+    // Limits a direction to AimReachDegrees of yaw off the body's facing and of pitch off level.
+    Vector3 ClampToReach(Vector3 dir)
+    {
+        if (dir.sqrMagnitude < 0.0001f)
+            return transform.forward;
+        dir.Normalize();
+        Vector3 forward = Flat(transform.forward);
+        forward = forward.sqrMagnitude > 0.0001f ? forward.normalized : Vector3.forward;
+
+        Vector3 flat = Flat(dir);
+        float yaw = flat.sqrMagnitude > 0.000001f ? Vector3.SignedAngle(forward, flat, Vector3.up) : 0f;
+        float pitch = Mathf.Asin(Mathf.Clamp(dir.y, -1f, 1f)) * Mathf.Rad2Deg;
+        float clampedYaw = Mathf.Clamp(yaw, -AimReachDegrees, AimReachDegrees);
+        float clampedPitch = Mathf.Clamp(pitch, -AimReachDegrees, AimReachDegrees);
+        if (Mathf.Approximately(yaw, clampedYaw) && Mathf.Approximately(pitch, clampedPitch))
+            return dir;
+
+        Vector3 heading = Quaternion.AngleAxis(clampedYaw, Vector3.up) * forward;
+        Vector3 across = Vector3.Cross(Vector3.up, heading);
+        return Quaternion.AngleAxis(-clampedPitch, across) * heading;
+    }
+
+    // True when the point is too far above or below to aim at from here.
+    bool TooSteep(Vector3 point)
+    {
+        Vector3 to = point - (transform.position + Vector3.up * ChestHeight);
+        if (to.sqrMagnitude < 0.0001f)
+            return false;
+        return Mathf.Abs(Mathf.Asin(Mathf.Clamp(to.normalized.y, -1f, 1f)) * Mathf.Rad2Deg) > AimReachDegrees;
+    }
+
+    // Steps straight away from a target that is too steep to aim at, until it comes into reach.
+    void BackUpFrom(Vector3 point)
+    {
+        if (traveling || grinding || !TooSteep(point))
+            return;
+        Vector3 away = Flat(transform.position - point);
+        away = away.sqrMagnitude > 0.0001f ? away.normalized : -Flat(transform.forward).normalized;
+        moveDir = ClearOfWater(away);
     }
 
     void AimHand(Transform hand, Transform upper, Transform fore, Transform bone, Vector3 aim, float side)
