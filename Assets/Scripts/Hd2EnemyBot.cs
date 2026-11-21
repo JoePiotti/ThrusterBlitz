@@ -2182,6 +2182,18 @@ public class Hd2EnemyBot : MonoBehaviour
         }
         dir.Normalize();
         Vector3 barrel = muzzle != null ? muzzle.forward : hand.forward;
+        Vector3 level = Vector3.ProjectOnPlane(Vector3.up, dir);
+        if (muzzle != null && level.sqrMagnitude > 0.0001f)
+        {
+            // Point the Muzzle at the aim with its up (the top of the gun) as close to the
+            // sky as the aim allows, so the gun is held upright, not on its side.
+            Quaternion want = Quaternion.LookRotation(dir, level.normalized);
+            hand.rotation = want * Quaternion.Inverse(muzzle.rotation) * hand.rotation;
+            KeepFistOnArm(hand, fore, bone);
+            PoseGripFingers(bone, gun);
+            return;
+        }
+
         if (barrel.sqrMagnitude < 0.0001f || Vector3.Dot(barrel, dir) > 0.9995f)
         {
             KeepFistOnArm(hand, fore, bone);

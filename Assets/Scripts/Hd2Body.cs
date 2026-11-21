@@ -2124,7 +2124,8 @@ public class Hd2Body : MonoBehaviour
         }
 
         float degrees = gunTriggerDegrees * amount;
-        if (gun.GetComponent<Hd2Smg>() != null)
+        // These triggers are modeled the other way round; flip so they pull back.
+        if (gun.GetComponent<Hd2Smg>() != null || gun.GetComponent<Hd2BurstPistol>() != null)
             degrees = -degrees;
         if (gun.GetComponent<Hd2Pistol>() != null)
         {
