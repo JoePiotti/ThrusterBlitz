@@ -139,6 +139,8 @@ public class Hd2Explosion : MonoBehaviour
         var sparks = AddSystem(Child(burst.transform, "Sparks"), true);
         ConfigureSparks(sparks, 56, 0.28f, 0.62f, 6f, 15f, 0.45f, 0.06f, 0.16f,
             Color.white, new Color(1f, 0.55f, 0.12f));
+        var fire = AddSystem(Child(burst.transform, "Fireball"), false);
+        ConfigureFire(fire);
         var smokeObject = Child(burst.transform, "Smoke");
         var smoke = AddSystem(smokeObject, false);
         ConfigureSmoke(smoke);
@@ -259,6 +261,62 @@ public class Hd2Explosion : MonoBehaviour
         shape.shapeType = ParticleSystemShapeType.Sphere;
         shape.radius = 0.05f;
         Fade(particles, 1f);
+    }
+
+    // Rolling orange fireball: a handful of big soft puffs that burn yellow-white,
+    // cool through orange to deep red, and drift up as they fade.
+    static void ConfigureFire(ParticleSystem particles)
+    {
+        const int count = 18;
+        var main = particles.main;
+        main.playOnAwake = false;
+        main.loop = false;
+        main.duration = 0.2f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.4f, 0.75f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.8f, 2.6f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.5f, 1.1f);
+        main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(1f, 0.85f, 0.45f, 1f),
+            new Color(1f, 0.5f, 0.1f, 1f));
+        main.gravityModifier = -0.15f;
+        main.maxParticles = count;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        var emission = particles.emission;
+        emission.rateOverTime = 0f;
+        emission.SetBursts(new[] { new ParticleSystem.Burst(0f, (short)count) });
+        var shape = particles.shape;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 0.15f;
+        var limit = particles.limitVelocityOverLifetime;
+        limit.enabled = true;
+        limit.limit = 0.6f;
+        limit.dampen = 0.25f;
+
+        var size = particles.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+            new Keyframe(0f, 0.6f),
+            new Keyframe(0.3f, 1.6f),
+            new Keyframe(1f, 1.2f)));
+
+        var color = particles.colorOverLifetime;
+        color.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(Color.white, 0f),
+                new GradientColorKey(new Color(1f, 0.6f, 0.15f), 0.3f),
+                new GradientColorKey(new Color(0.6f, 0.12f, 0.03f), 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(1f, 0f),
+                new GradientAlphaKey(0.9f, 0.4f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        color.color = gradient;
     }
 
     static void ConfigureSmoke(ParticleSystem particles)
