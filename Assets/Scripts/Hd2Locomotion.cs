@@ -879,8 +879,30 @@ public class Hd2Locomotion : MonoBehaviour
         transform.position = planted;
     }
 
+    AudioSource grindStartSource;
+
+    // One shot when a jump lands on a rail; the loop then runs for the whole grind.
+    void CreateGrindStart()
+    {
+        var clip = Resources.Load<AudioClip>("Audio/RailGrindStart");
+        if (clip == null)
+            return;
+
+        grindStartSource = gameObject.AddComponent<AudioSource>();
+        grindStartSource.clip = clip;
+        grindStartSource.loop = false;
+        grindStartSource.playOnAwake = false;
+        grindStartSource.spatialBlend = 1f;
+        grindStartSource.dopplerLevel = 0f;
+        grindStartSource.volume = 0.8f;
+        grindStartSource.minDistance = 2f;
+        grindStartSource.maxDistance = 14f;
+        grindStartSource.rolloffMode = AudioRolloffMode.Linear;
+    }
+
     void CreateGrindLoop()
     {
+        CreateGrindStart();
         var clip = Resources.Load<AudioClip>("Audio/RailGrindLoop");
         if (clip == null)
             return;
@@ -2482,6 +2504,8 @@ public class Hd2Locomotion : MonoBehaviour
             grindDistance = along;
             grinding = true;
             verticalVelocity = 0f;
+            if (grindStartSource != null)
+                grindStartSource.Play();
         }
 
         if (HitsShield(null))

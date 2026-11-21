@@ -403,6 +403,8 @@ public class Hd2EnemyBot : MonoBehaviour
     AudioSource thrustLoop;
     AudioSource blitzSource;
     AudioSource landSource;
+    AudioSource grindStartSource;
+    bool wasGrinding;
     float airborneTime;
     ParticleSystem[] jumpExhaust;
     ParticleSystem[] blitzExhaust;
@@ -502,6 +504,7 @@ public class Hd2EnemyBot : MonoBehaviour
         thrustLoop = LoopVoice("Audio/JumpThrust", 1f);
         blitzSource = ShotVoice("Audio/RobotBlitz");
         landSource = ShotVoice("Audio/RobotLand");
+        grindStartSource = ShotVoice("Audio/RailGrindStart");
     }
 
     AudioSource LoopVoice(string path, float volume)
@@ -556,7 +559,12 @@ public class Hd2EnemyBot : MonoBehaviour
             walkLoop.volume = 0.32f;
         }
 
-        SetLoop(grindLoop, !dead && grinding && grindRail != null);
+        bool onRail = !dead && grinding && grindRail != null;
+        // One shot as the bot lands on a rail; the loop then runs for the whole grind.
+        if (onRail && !wasGrinding && grindStartSource != null && grindStartSource.clip != null)
+            grindStartSource.PlayOneShot(grindStartSource.clip, 0.8f);
+        wasGrinding = onRail;
+        SetLoop(grindLoop, onRail);
         // The thrust sound only while a jump boosts or a blitz puffs its smoke, like a player.
         SetLoop(thrustLoop, !dead && (jumpBoosting || Time.time < blitzSmokeUntil));
         SetJumpExhaust(!dead && jumpBoosting);
