@@ -151,6 +151,7 @@ public class Hd2Health : MonoBehaviour
 
     void NoteScore(Transform killer)
     {
+        Hd2MatchStats.NoteDeath(this, killer);
         Hd2Locomotion victim = GetComponent<Hd2Locomotion>();
         if (victim != null)
         {

@@ -8,7 +8,7 @@ using UnityEngine.XR;
 
 /// <summary>
 /// World-space menu for this player only. The left controller menu button opens and closes it.
-/// Game is the first tab. Controls rebinds the buttons, the microphone mode, and the HUD side.
+/// Game is the first tab, with the match scoreboard. Controls rebinds the buttons, the microphone mode, and the HUD side.
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public class Hd2UserMenu : MonoBehaviour
@@ -54,6 +54,24 @@ public class Hd2UserMenu : MonoBehaviour
     readonly Image[] micImages = new Image[3];
     readonly Image[] hudImages = new Image[3];
     Image switchTeams;
+    readonly List<ScoreRow> scoreRows = new List<ScoreRow>();
+    float nextScoreRefresh;
+
+    // Game tab scoreboard: Rank, Name, Kills, Deaths, Score, Ping.
+    const int ScoreRowCount = 16;
+    const float ScoreLeft = 344f;
+    const float ScoreRowHeight = 34f;
+    const float ScoreRowGap = 3f;
+    const float ScoreTeamGap = 14f;
+    static readonly float[] scoreColumns = { 0f, 70f, 410f, 500f, 600f, 690f };
+    static readonly float[] scoreWidths = { 66f, 336f, 86f, 96f, 86f, 96f };
+    static readonly string[] scoreHeaders = { "Rank", "Name", "Kills", "Deaths", "Score", "Ping" };
+
+    class ScoreRow
+    {
+        public Image background;
+        public Text[] cells;
+    }
     LineRenderer laser;
     bool open;
     Hd2ControlMap.Button picking;
@@ -127,12 +145,17 @@ public class Hd2UserMenu : MonoBehaviour
         if (!toggle && EditorFallback && editorMenu != null)
             toggle = editorMenu.WasPressedThisFrame();
         if (toggle)
+        {
+            nextScoreRefresh = 0f;
             SetOpen(!open);
+        }
 
         if (!open)
             return;
 
         RefreshSwitchTeams();
+        if (gamePage != null && gamePage.activeSelf && Time.unscaledTime >= nextScoreRefresh)
+            RefreshScoreboard();
         Aim();
     }
 
@@ -391,6 +414,7 @@ public class Hd2UserMenu : MonoBehaviour
     void ShowGame()
     {
         HideActionList();
+        nextScoreRefresh = 0f;
         if (gamePage != null)
             gamePage.SetActive(true);
         if (controlsPage != null)
@@ -437,6 +461,79 @@ public class Hd2UserMenu : MonoBehaviour
         Place(home.rectTransform, 0f, -184f, 320f, 72f);
         Stretch(MakeText(home.rectTransform, "Return to start", 24, TextAnchor.MiddleCenter, Color.white).rectTransform, 8f);
         clicks.Add(new Click { rect = home.rectTransform, action = ReturnToStart });
+
+        BuildScoreboard(page);
+    }
+
+    void BuildScoreboard(RectTransform page)
+    {
+        for (int c = 0; c < scoreHeaders.Length; c++)
+        {
+            var header = MakeText(page, scoreHeaders[c], 22, c == 1 ? TextAnchor.MiddleLeft : TextAnchor.MiddleCenter,
+                new Color(0.65f, 0.78f, 0.9f, 1f));
+            Place(header.rectTransform, ScoreLeft + scoreColumns[c] + (c == 1 ? 8f : 0f), -8f, scoreWidths[c], 32f);
+        }
+
+        float rowWidth = scoreColumns[scoreColumns.Length - 1] + scoreWidths[scoreWidths.Length - 1];
+        for (int r = 0; r < ScoreRowCount; r++)
+        {
+            var row = new ScoreRow { cells = new Text[scoreHeaders.Length] };
+            row.background = MakeImage(page, Color.clear);
+            Place(row.background.rectTransform, ScoreLeft, 0f, rowWidth, ScoreRowHeight);
+            for (int c = 0; c < scoreHeaders.Length; c++)
+            {
+                var cell = MakeText(row.background.rectTransform, "", 21, c == 1 ? TextAnchor.MiddleLeft : TextAnchor.MiddleCenter, Color.white);
+                Place(cell.rectTransform, scoreColumns[c] + (c == 1 ? 8f : 0f), 0f, scoreWidths[c] - (c == 1 ? 8f : 0f), ScoreRowHeight);
+                row.cells[c] = cell;
+            }
+
+            row.background.gameObject.SetActive(false);
+            scoreRows.Add(row);
+        }
+    }
+
+    void RefreshScoreboard()
+    {
+        nextScoreRefresh = Time.unscaledTime + 0.5f;
+        List<Hd2MatchStats.Row> roster = Hd2MatchStats.Roster();
+        float y = -46f;
+        Hd2Team lastTeam = Hd2Team.None;
+        for (int r = 0; r < scoreRows.Count; r++)
+        {
+            ScoreRow row = scoreRows[r];
+            bool used = r < roster.Count;
+            if (row.background.gameObject.activeSelf != used)
+                row.background.gameObject.SetActive(used);
+            if (!used)
+                continue;
+
+            Hd2MatchStats.Row data = roster[r];
+            if (r > 0 && data.Team != lastTeam)
+                y -= ScoreTeamGap;
+            lastTeam = data.Team;
+            row.background.rectTransform.anchoredPosition = new Vector2(ScoreLeft, y);
+            y -= ScoreRowHeight + ScoreRowGap;
+
+            row.background.color = data.Team == Hd2Team.None
+                ? new Color(0.22f, 0.24f, 0.28f, 1f)
+                : Hd2Locomotion.ArmorOf(data.Team);
+            FontStyle style = data.IsYou ? FontStyle.Bold : FontStyle.Normal;
+            SetCell(row, 0, data.Rank.ToString(), style);
+            SetCell(row, 1, data.Name, style);
+            SetCell(row, 2, data.Kills.ToString(), style);
+            SetCell(row, 3, data.Deaths.ToString(), style);
+            SetCell(row, 4, data.Score.ToString(), style);
+            SetCell(row, 5, data.Ping, style);
+        }
+    }
+
+    static void SetCell(ScoreRow row, int column, string value, FontStyle style)
+    {
+        Text cell = row.cells[column];
+        if (cell.text != value)
+            cell.text = value;
+        if (cell.fontStyle != style)
+            cell.fontStyle = style;
     }
 
     void ReturnToStart()
