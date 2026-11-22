@@ -453,6 +453,9 @@ public class Hd2Locomotion : MonoBehaviour
     Transform roomRig;
     public bool IsAirborne => jumpBoosting || jumpSpent;
 
+    /// <summary>Off the ground at all: a jump, a blitz, or falling (not just a step down).</summary>
+    public bool IsInAir => IsAirborne || thrusting || fallTime > 0.15f;
+
     public bool IsCrouching => crouched;
     public float CrouchAmount => crouchBlend;
     public float StandingEye => standingEye;

@@ -983,6 +983,7 @@ public class Hd2EnemyBot : MonoBehaviour
         TickReach();
         PoseBlitzAim();
         PoseLegs();
+        PointToesInAir(!grinding && (traveling || airborneTime > 0.12f) && (health == null || !health.IsDead));
     }
 
     void OnEnable()
@@ -4179,6 +4180,30 @@ public class Hd2EnemyBot : MonoBehaviour
             skins[i].updateWhenOffscreen = true;
             skins[i].gameObject.SetActive(true);
         }
+    }
+
+    float toeWeight;
+
+    // In the air the toes (front of the foot) point down, like a diver. Eases in and out.
+    void PointToesInAir(bool inAir)
+    {
+        toeWeight = Mathf.MoveTowards(toeWeight, inAir ? 1f : 0f, Time.deltaTime * 7f);
+        if (toeWeight <= 0.001f)
+            return;
+        PointToe(footL, toeL);
+        PointToe(footR, toeR);
+    }
+
+    void PointToe(Transform foot, Transform toe)
+    {
+        if (foot == null || toe == null)
+            return;
+        Vector3 along = toe.position - foot.position;
+        Vector3 ahead = new Vector3(along.x, 0f, along.z);
+        if (along.sqrMagnitude < 0.000001f || ahead.sqrMagnitude < 0.000001f)
+            return;
+        Vector3 pointed = Vector3.down * 0.85f + ahead.normalized * 0.35f;
+        AimBone(foot, along, Vector3.Slerp(along.normalized, pointed.normalized, toeWeight));
     }
 
     void PoseLegs()
