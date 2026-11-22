@@ -155,9 +155,12 @@ public class Hd2EnemyBot : MonoBehaviour
         return PaceFor(difficulty).notice;
     }
 
+    // Every bot waits this much longer between shots than its difficulty pace alone gives.
+    const float BotFireSlowdown = 1.5f;
+
     float GapAt(float hardGap)
     {
-        float fire = PaceFor(difficulty).fire;
+        float fire = PaceFor(difficulty).fire / BotFireSlowdown;
         if (fire > 0f && fire < 1f)
             return hardGap / fire;
         return hardGap;
@@ -170,7 +173,7 @@ public class Hd2EnemyBot : MonoBehaviour
         Hd2EnemyBot bot = gun.GetComponentInParent<Hd2EnemyBot>();
         if (bot == null)
             return 1f;
-        return PaceFor(bot.difficulty).fire;
+        return PaceFor(bot.difficulty).fire / BotFireSlowdown;
     }
 
     public int ReplaceRank
