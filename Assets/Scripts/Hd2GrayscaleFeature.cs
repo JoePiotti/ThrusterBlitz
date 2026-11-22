@@ -34,6 +34,7 @@ public class Hd2GrayscaleFeature : ScriptableRendererFeature
             TextureDesc desc = renderGraph.GetTextureDesc(source);
             desc.name = "Hd2Grayscale";
             desc.clearBuffer = false;
+            desc.msaaSamples = MSAASamples.None;
             TextureHandle destination = renderGraph.CreateTexture(desc);
             renderGraph.AddBlitPass(new RenderGraphUtils.BlitMaterialParameters(source, destination, material, 0), "Hd2 Grayscale");
             resources.cameraColor = destination;
