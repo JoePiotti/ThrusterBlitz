@@ -4,7 +4,7 @@ using UnityEngine;
 
 /// <summary>
 /// This player's name and optional clan tag, saved on the headset.
-/// Name: 2 to 20 characters. Clan tag: up to 4 characters, shown in brackets to the left
+/// Name: 2 to 20 characters. Clan tag: up to 4 letters, numbers or periods, shown in brackets to the left
 /// of the name. BOT is reserved for bots. Both are checked against the blocklist in
 /// Resources/Hd2NameBlocklist.txt.
 /// The name should default to the Meta account name. That needs the Meta Platform SDK,
@@ -141,7 +141,7 @@ public static class Hd2Identity
 
     public static bool ClanChar(char c)
     {
-        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.';
     }
 
     /// <summary>Null when the name is allowed, otherwise the reason.</summary>
@@ -172,7 +172,7 @@ public static class Hd2Identity
         foreach (char c in value)
         {
             if (!ClanChar(c))
-                return "Clan tag is letters and numbers only";
+                return "Clan tag is letters, numbers and periods only";
         }
 
         if (Squash(value) == "bot")

@@ -550,17 +550,17 @@ public class Hd2UserMenu : MonoBehaviour
     void BuildIdentity(RectTransform page)
     {
         var nameCaption = MakeText(page, "Name", 22, TextAnchor.MiddleLeft, HintColor);
-        Place(nameCaption.rectTransform, 0f, -276f, 320f, 30f);
+        Place(nameCaption.rectTransform, 0f, -380f, 320f, 30f);
         var name = MakeImage(page, KeyColor);
-        Place(name.rectTransform, 0f, -308f, 320f, 60f);
+        Place(name.rectTransform, 0f, -412f, 320f, 60f);
         nameButtonLabel = MakeText(name.rectTransform, "", 22, TextAnchor.MiddleLeft, Color.white);
         Stretch(nameButtonLabel.rectTransform, 14f);
         clicks.Add(new Click { rect = name.rectTransform, action = () => OpenKeyboard(false) });
 
         var clanCaption = MakeText(page, "Clan tag", 22, TextAnchor.MiddleLeft, HintColor);
-        Place(clanCaption.rectTransform, 0f, -380f, 320f, 30f);
+        Place(clanCaption.rectTransform, 0f, -276f, 320f, 30f);
         var clan = MakeImage(page, KeyColor);
-        Place(clan.rectTransform, 0f, -412f, 320f, 60f);
+        Place(clan.rectTransform, 0f, -308f, 320f, 60f);
         clanButtonLabel = MakeText(clan.rectTransform, "", 22, TextAnchor.MiddleLeft, Color.white);
         Stretch(clanButtonLabel.rectTransform, 14f);
         clicks.Add(new Click { rect = clan.rectTransform, action = () => OpenKeyboard(true) });
@@ -666,7 +666,7 @@ public class Hd2UserMenu : MonoBehaviour
     {
         keyboardMessage.color = HintColor;
         keyboardMessage.text = editingClan
-            ? "Up to " + Hd2Identity.ClanMax + " letters or numbers, shown before your name. Leave empty for none."
+            ? "Up to " + Hd2Identity.ClanMax + " letters, numbers or periods, shown before your name. Leave empty for none."
             : Hd2Identity.NameMin + " to " + Hd2Identity.NameMax + " characters: letters, numbers, spaces and . - _ '";
     }
 
