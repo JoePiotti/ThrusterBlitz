@@ -959,6 +959,7 @@ public class Hd2Shot : MonoBehaviour
         bool headshot = IsHeadshot(hit);
         float dealt = DamageAt(hit.point, headshot);
         health.MarkHit(hit.point);
+        health.MarkHeadHit(headshot);
         health.ApplyHit(dealt, false, true);
         if (owner != null && owner.GetComponent<Hd2Locomotion>() != null
             && health.GetComponent<Hd2EnemyBot>() != null)
@@ -990,7 +991,7 @@ public class Hd2Shot : MonoBehaviour
         hitThunkSource.PlayOneShot(hitThunk);
     }
 
-    static bool IsHeadshot(RaycastHit hit)
+    public static bool IsHeadshot(RaycastHit hit)
     {
         if (IsNamedHead(hit.collider.transform))
             return true;

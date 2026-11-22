@@ -383,6 +383,7 @@ public class Hd2LaserPistol : MonoBehaviour
             if (attacker != null)
                 target.LastAttacker = attacker.transform;
             target.MarkHit(hit.point);
+            target.MarkHeadHit(Hd2Shot.IsHeadshot(hit));
             target.ApplyHit(damage, false, true);
         }
 

@@ -94,7 +94,8 @@ public class Hd2Health : MonoBehaviour
             return;
         }
 
-        bool headHit = headshot;
+        bool headHit = headshot || pendingHeadHit;
+        pendingHeadHit = false;
         if (headshot)
             amount *= 3f;
 
@@ -151,6 +152,16 @@ public class Hd2Health : MonoBehaviour
     public bool KilledByBlast { get; private set; }
     /// <summary>The killing hit was a headshot: the head pops off (Hd2HeadPop).</summary>
     public bool KilledByHeadshot { get; private set; }
+    bool pendingHeadHit;
+
+    /// <summary>
+    /// The next ApplyHit landed on the head. For weapons that work out headshot damage
+    /// themselves and pass headshot = false, so the head still pops on a kill.
+    /// </summary>
+    public void MarkHeadHit(bool head)
+    {
+        pendingHeadHit = head;
+    }
     public Vector3 BlastOrigin { get; private set; }
     bool blastArmed;
     Vector3 armedBlast;
