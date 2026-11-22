@@ -196,9 +196,8 @@ public class Hd2Health : MonoBehaviour
     /// <summary>
     /// Gives a fresh ragdoll one shove away from a killing blast.
     /// </summary>
-    // How hard a killing blast throws the body. Thrown distance grows with the square of
-    // the launch speed, so triple the old distance (5.5 m/s) is 5.5 x sqrt(3) = 9.5 m/s.
-    public const float BlastThrowSpeed = 9.5f;
+    // How hard a killing blast throws the body: triple the old 5.5 m/s launch speed.
+    public const float BlastThrowSpeed = 16.5f;
     // Bodies already down at the edge of a blast get this share of the full throw.
     const float BlastEdgeShare = 0.35f;
 
