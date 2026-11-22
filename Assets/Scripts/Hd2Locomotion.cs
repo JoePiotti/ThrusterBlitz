@@ -1206,6 +1206,8 @@ public class Hd2Locomotion : MonoBehaviour
             if (EditorFallback)
                 EditorLook();
             PlaceCrouchRig();
+            if (Spectating)
+                Spectate(dt);
             return;
         }
 
@@ -1283,6 +1285,43 @@ public class Hd2Locomotion : MonoBehaviour
         UpdateGrindAudio();
         DrownIfTouchingWater();
         ShowHeldAim(sample);
+    }
+
+    /// <summary>
+    /// Dead in Elimination: a free camera. Left stick moves along the view's flat
+    /// forward and sideways, right stick forward/back rises and sinks, right stick
+    /// left/right turns as usual. It passes through everything and nobody sees it.
+    /// </summary>
+    public bool Spectating { get; set; }
+    const float SpectateSpeed = 4f;
+
+    void Spectate(float dt)
+    {
+        float snap = ReadSnapDegrees();
+        if (EditorFallback)
+            editorYaw += snap;
+        else if (Mathf.Abs(snap) > 0.01f)
+            YawAroundHead(snap);
+
+        Vector2 stick = ApplyDeadzone(ReadMove(), stickDeadzone);
+        float rise = 0f;
+        if (turnAction != null)
+        {
+            float y = turnAction.ReadValue<Vector2>().y;
+            if (Mathf.Abs(y) > 0.3f)
+                rise = Mathf.Sign(y) * Mathf.InverseLerp(0.3f, 1f, Mathf.Abs(y));
+        }
+
+        if (EditorFallback && Keyboard.current != null)
+        {
+            if (Keyboard.current.spaceKey.isPressed)
+                rise = 1f;
+            else if (Keyboard.current.leftCtrlKey.isPressed)
+                rise = -1f;
+        }
+
+        Vector3 move = HeadRight() * stick.x + HeadForward() * stick.y + Vector3.up * rise;
+        transform.position += move * (SpectateSpeed * dt);
     }
 
     void ShowHeldAim(AimSource sample)

@@ -42,8 +42,11 @@ public class Hd2TitleScreen : MonoBehaviour
     TextMesh status;
     readonly RaycastHit[] aimHits = new RaycastHit[8];
 
+    const string EliminationChoice = "Shootout#Elimination";
+
     void Awake()
     {
+        Hd2Shootout.EliminationMode = false;
         view = EnsureCamera();
         BuildPoster(view);
         PlayMusic();
@@ -150,6 +153,11 @@ public class Hd2TitleScreen : MonoBehaviour
         }
 
         HideLaser();
+
+        // Elimination plays in the Shootout scene.
+        Hd2Shootout.EliminationMode = sceneName == EliminationChoice;
+        if (Hd2Shootout.EliminationMode)
+            sceneName = "Shootout";
 
         if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
@@ -361,10 +369,12 @@ public class Hd2TitleScreen : MonoBehaviour
         renderer.sharedMaterial = ArtMaterial(art);
 
         Vector3 first = center + new Vector3(0f, -height * 0.5f - 0.26f, 0f);
-        Vector3 second = first + new Vector3(0f, -0.44f, 0f);
-        choices = new Choice[2];
+        Vector3 middle = first + new Vector3(0f, -0.44f, 0f);
+        Vector3 second = middle + new Vector3(0f, -0.44f, 0f);
+        choices = new Choice[3];
         choices[0] = BuildChoice("SHOOTOUT", "Shootout", first, new Color(0.55f, 0.12f, 0.1f, 1f), new Color(1f, 0.42f, 0.28f, 1f));
-        choices[1] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, second, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
+        choices[1] = BuildChoice("ELIMINATION", EliminationChoice, middle, new Color(0.45f, 0.25f, 0.05f, 1f), new Color(1f, 0.65f, 0.2f, 1f));
+        choices[2] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, second, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
         BuildVersionLabel(second + new Vector3(0f, -0.32f, -0.04f));
         status = BuildNotice(second + new Vector3(0f, -0.52f, -0.04f));
         string note = Hd2Session.TakeTitleNote();

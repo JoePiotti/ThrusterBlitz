@@ -643,9 +643,20 @@ public class Hd2EnemyBot : MonoBehaviour
     /// <summary>
     /// Round reset. Clears a ragdoll and stands the bot on its base spawn.
     /// </summary>
+    public Transform RightHand => rightHand;
+    public Transform LeftHand => leftHand;
+    public bool Alive => health != null && !health.IsDead;
+
+    /// <summary>Back to two pistols with full magazines (Elimination round start).</summary>
+    public void ResetLoadout()
+    {
+        RestorePistols();
+    }
+
     public void ReturnToBase()
     {
         StopAllCoroutines();
+        Hd2HeadPop.Restore(transform);
         if (ragdolling)
         {
             FreezeRagdoll();
@@ -4444,6 +4455,11 @@ public class Hd2EnemyBot : MonoBehaviour
             yield break;
 
         FreezeRagdoll();
+        // Elimination: one life per round. The body stays down until the next round
+        // starts, which brings everyone back through ReturnToBase.
+        while (Hd2Elimination.HoldsDead)
+            yield return null;
+
         for (int i = ragdollJoints.Count - 1; i >= 0; i--)
         {
             if (ragdollJoints[i] != null)

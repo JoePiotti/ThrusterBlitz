@@ -194,7 +194,10 @@ public class Hd2PlayerDeath : MonoBehaviour
             holdCamera = false;
             ClearRagdoll();
             if (locomotion != null)
+            {
+                locomotion.Spectating = false;
                 locomotion.MovementLocked = false;
+            }
             downed = false;
         }
 
@@ -216,6 +219,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         ClearRagdoll();
         if (locomotion != null)
         {
+            locomotion.Spectating = false;
             locomotion.MovementLocked = false;
             locomotion.HaltTravel();
         }
@@ -247,6 +251,18 @@ public class Hd2PlayerDeath : MonoBehaviour
         }
 
         SpawnRagdoll();
+        if (Hd2Elimination.HoldsDead)
+        {
+            // Elimination: out until the round ends. The body stays down, and the view
+            // becomes a free camera nobody can see, to watch and call out to the team.
+            // The next round's RecoverAtSpawn ends this.
+            holdCamera = false;
+            if (locomotion != null)
+                locomotion.Spectating = true;
+            while (true)
+                yield return null;
+        }
+
         yield return new WaitForSeconds(RespawnDelay);
 
         holdCamera = false;

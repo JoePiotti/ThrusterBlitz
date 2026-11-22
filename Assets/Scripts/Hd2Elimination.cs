@@ -1,0 +1,271 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+/// <summary>
+/// Elimination, played in the Shootout scene (chosen on the title screen).
+/// Rounds: everyone starts at their base with their team's weapon in both hands and one
+/// life. After a 3 s countdown the gates open and the 30 s round clock runs. The round ends
+/// when a team has nobody left standing: the other team scores a point. If the clock runs
+/// out first, nobody scores and the round is replayed. Every 3 points a team moves up to the
+/// next weapon: pistols, shotguns, SMGs, burst, shocks, rockets, lasers. First to 21 wins.
+/// The weapon pickups are hidden; health, thrust and drop shield pickups stay.
+/// The dead stay down until the next round and get a free camera (Hd2PlayerDeath).
+///
+/// Announcer lines play when their clips exist in Resources/Audio (see PlayLine).
+/// </summary>
+public class Hd2Elimination : MonoBehaviour
+{
+    public const int PointsToWin = 21;
+    public const int PointsPerWeapon = 3;
+    public const float RoundSeconds = 30f;
+    public const float CountdownSeconds = 3f;
+    public const float BetweenRoundsSeconds = 4f;
+
+    /// <summary>An Elimination match is running in this scene.</summary>
+    public static bool Active { get; private set; }
+    /// <summary>Fighters who die stay down until the next round.</summary>
+    public static bool HoldsDead => Active;
+    public static int RedPoints { get; private set; }
+    public static int BluePoints { get; private set; }
+    public static readonly string[] WeaponNames = { "Pistols", "Shotguns", "SMGs", "Burst", "Shocks", "Rockets", "Lasers" };
+
+    enum Phase { Starting, Countdown, Live, Between, Over }
+
+    Phase phase = Phase.Starting;
+    float phaseEndsAt;
+    AudioSource voice;
+    readonly System.Func<Transform, bool>[] weapons = new System.Func<Transform, bool>[7];
+
+    void Awake()
+    {
+        Active = true;
+        RedPoints = 0;
+        BluePoints = 0;
+        voice = gameObject.AddComponent<AudioSource>();
+        voice.playOnAwake = false;
+        voice.spatialBlend = 0f;
+        HideWeaponPickups();
+    }
+
+    void OnDestroy()
+    {
+        Active = false;
+        Hd2Shootout.EliminationMode = false;
+    }
+
+    // The scene's WeaponPickups folder is switched off; its pickups still hand out the
+    // round's weapons directly.
+    void HideWeaponPickups()
+    {
+        GameObject folder = FindFolder("WeaponPickups");
+        if (folder == null)
+            return;
+
+        Transform root = folder.transform;
+        weapons[1] = Source<Hd2ShotgunPickup>(root, p => p.GiveTo);
+        weapons[2] = Source<Hd2SmgPickup>(root, p => p.GiveTo);
+        weapons[3] = Source<Hd2BurstPickup>(root, p => p.GiveTo);
+        weapons[4] = Source<Hd2ShocksPickup>(root, p => p.GiveTo);
+        weapons[5] = Source<Hd2RocketPickup>(root, p => p.GiveTo);
+        weapons[6] = Source<Hd2LaserPickup>(root, p => p.GiveTo);
+        folder.SetActive(false);
+    }
+
+    static System.Func<Transform, bool> Source<T>(Transform root, System.Func<T, System.Func<Transform, bool>> give) where T : Component
+    {
+        T pickup = root.GetComponentInChildren<T>(true);
+        return pickup != null ? give(pickup) : null;
+    }
+
+    static GameObject FindFolder(string name)
+    {
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        var roots = scene.GetRootGameObjects();
+        for (int i = 0; i < roots.Length; i++)
+        {
+            Transform found = Find(roots[i].transform, name);
+            if (found != null)
+                return found.gameObject;
+        }
+
+        return null;
+    }
+
+    static Transform Find(Transform root, string name)
+    {
+        if (root.name == name)
+            return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            Transform found = Find(root.GetChild(i), name);
+            if (found != null)
+                return found;
+        }
+
+        return null;
+    }
+
+    public static int WeaponOf(Hd2Team team)
+    {
+        int points = team == Hd2Team.Red ? RedPoints : team == Hd2Team.Blue ? BluePoints : 0;
+        return Mathf.Clamp(points / PointsPerWeapon, 0, WeaponNames.Length - 1);
+    }
+
+    void Update()
+    {
+        switch (phase)
+        {
+            case Phase.Starting:
+                // First frame: Hd2Shootout has filled and placed the teams.
+                BeginRound();
+                break;
+
+            case Phase.Countdown:
+                Show(RoundSeconds);
+                if (Time.time >= phaseEndsAt)
+                {
+                    Hd2SpawnField.SetLocked(false);
+                    phase = Phase.Live;
+                    phaseEndsAt = Time.time + RoundSeconds;
+                }
+                break;
+
+            case Phase.Live:
+                Show(phaseEndsAt - Time.time);
+                CountAlive(out int red, out int blue);
+                if (red == 0 || blue == 0)
+                    EndRound(red > 0 ? Hd2Team.Red : blue > 0 ? Hd2Team.Blue : Hd2Team.None);
+                else if (Time.time >= phaseEndsAt)
+                    EndRound(Hd2Team.None);
+                break;
+
+            case Phase.Between:
+                if (Time.time >= phaseEndsAt)
+                    BeginRound();
+                break;
+        }
+    }
+
+    void Show(float timeLeft)
+    {
+        Hd2Shootout.ShowRound(RedPoints, BluePoints, timeLeft);
+    }
+
+    void BeginRound()
+    {
+        Hd2SpawnField.SetLocked(true);
+        Show(RoundSeconds);
+
+        var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < players.Length; i++)
+        {
+            Hd2Locomotion player = players[i];
+            if (player == null)
+                continue;
+            player.ReturnToBase();
+            Arm(player.leftHand, player.rightHand, WeaponOf(player.team));
+        }
+
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < bots.Length; i++)
+        {
+            Hd2EnemyBot bot = bots[i];
+            if (bot == null)
+                continue;
+            bot.ReturnToBase();
+            bot.ResetLoadout();
+            Arm(bot.LeftHand, bot.RightHand, WeaponOf(bot.team));
+        }
+
+        phase = Phase.Countdown;
+        phaseEndsAt = Time.time + CountdownSeconds;
+    }
+
+    // Pistols come back with the reset; any later weapon replaces them in both hands.
+    void Arm(Transform left, Transform right, int weapon)
+    {
+        if (weapon <= 0 || weapon >= weapons.Length || weapons[weapon] == null)
+            return;
+        if (right != null)
+            weapons[weapon](right);
+        if (left != null)
+            weapons[weapon](left);
+    }
+
+    static void CountAlive(out int red, out int blue)
+    {
+        red = 0;
+        blue = 0;
+        var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < players.Length; i++)
+        {
+            Hd2Health life = players[i] != null ? players[i].GetComponent<Hd2Health>() : null;
+            if (life == null || life.IsDead)
+                continue;
+            Tally(players[i].team, ref red, ref blue);
+        }
+
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < bots.Length; i++)
+        {
+            if (bots[i] != null && bots[i].Alive)
+                Tally(bots[i].team, ref red, ref blue);
+        }
+    }
+
+    static void Tally(Hd2Team team, ref int red, ref int blue)
+    {
+        if (team == Hd2Team.Red)
+            red++;
+        else if (team == Hd2Team.Blue)
+            blue++;
+    }
+
+    void EndRound(Hd2Team winner)
+    {
+        if (winner == Hd2Team.Red)
+            RedPoints++;
+        else if (winner == Hd2Team.Blue)
+            BluePoints++;
+        Show(0f);
+
+        if (RedPoints >= PointsToWin || BluePoints >= PointsToWin)
+        {
+            phase = Phase.Over;
+            PlayLine(winner == Hd2Team.Red ? "RedWins" : "BlueWins");
+            Hd2Shootout.DeclareWinner(winner);
+            return;
+        }
+
+        if (winner == Hd2Team.None)
+            PlayLine("RoundDraw");
+        else
+        {
+            string team = winner == Hd2Team.Red ? "Red" : "Blue";
+            int mine = winner == Hd2Team.Red ? RedPoints : BluePoints;
+            if (mine == PointsToWin - 1)
+                PlayLine("MatchPoint" + team);
+            else if (!PlayLine(team + "Scored" + RedPoints + "To" + BluePoints))
+                PlayLine(team + "Scored");
+        }
+
+        phase = Phase.Between;
+        phaseEndsAt = Time.time + BetweenRoundsSeconds;
+    }
+
+    /// <summary>
+    /// Plays Resources/Audio/Elimination/&lt;name&gt; if it exists. Names: RedScored3To1 (score
+    /// after the round, red first), RedScored / BlueScored as fallbacks, MatchPointRed,
+    /// MatchPointBlue, RoundDraw, RedWins, BlueWins.
+    /// </summary>
+    bool PlayLine(string name)
+    {
+        AudioClip clip = Resources.Load<AudioClip>("Audio/Elimination/" + name);
+        if (clip == null || voice == null)
+            return false;
+        voice.Stop();
+        voice.clip = clip;
+        voice.Play();
+        return true;
+    }
+}

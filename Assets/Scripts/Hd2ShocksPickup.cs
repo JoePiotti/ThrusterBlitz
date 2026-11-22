@@ -124,6 +124,12 @@ public class Hd2ShocksPickup : MonoBehaviour
         return action != null && action.IsPressed();
     }
 
+    /// <summary>Puts this weapon in the hand directly, ignoring the pickup's cooldown (Elimination loadouts).</summary>
+    public bool GiveTo(Transform hand)
+    {
+        return hand != null && Equip(hand);
+    }
+
     public bool BotTake(Transform hand)
     {
         if (!ready || hand == null)

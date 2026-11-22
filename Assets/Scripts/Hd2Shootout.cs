@@ -17,6 +17,13 @@ public class Hd2Shootout : MonoBehaviour
     public const float GateSeconds = 5.5f;
 
     public static bool Present { get; private set; }
+
+    /// <summary>
+    /// Set by the title screen before loading this scene: play Elimination (Hd2Elimination)
+    /// instead of team deathmatch. Teams, spawns, HUD score, clock and the end banner are
+    /// shared; Elimination drives the score, clock and gates itself.
+    /// </summary>
+    public static bool EliminationMode;
     public static bool Decided { get; private set; }
     public static int RedKills { get; private set; }
     public static int BlueKills { get; private set; }
@@ -42,6 +49,8 @@ public class Hd2Shootout : MonoBehaviour
     {
         Present = true;
         live = this;
+        if (EliminationMode)
+            gameObject.AddComponent<Hd2Elimination>();
         voice = gameObject.AddComponent<AudioSource>();
         voice.playOnAwake = false;
         voice.loop = false;
@@ -97,6 +106,14 @@ public class Hd2Shootout : MonoBehaviour
 
     void LateUpdate()
     {
+        if (Hd2Elimination.Active)
+        {
+            if (bannerPending && banner == null)
+                ShowBanner(bannerWinner);
+            PlaceBanner();
+            return;
+        }
+
         if (!Decided)
         {
             TimeLeft = matchEndsAt - Time.time;
@@ -369,7 +386,7 @@ public class Hd2Shootout : MonoBehaviour
 
     public static void NoteKill(Hd2Team team)
     {
-        if (!Present || Decided || team == Hd2Team.None)
+        if (!Present || Decided || team == Hd2Team.None || Hd2Elimination.Active)
             return;
 
         int redBefore = RedKills;
@@ -426,6 +443,20 @@ public class Hd2Shootout : MonoBehaviour
             winner = Hd2Team.Red;
         else if (BlueKills > RedKills)
             winner = Hd2Team.Blue;
+        Finish(winner);
+    }
+
+    /// <summary>Elimination: team points and round clock shown on the HUD and scoreboard.</summary>
+    public static void ShowRound(int red, int blue, float timeLeft)
+    {
+        RedKills = red;
+        BlueKills = blue;
+        TimeLeft = Mathf.Max(0f, timeLeft);
+    }
+
+    /// <summary>Elimination: the match is over; buzzer, end-of-match bonus and banner.</summary>
+    public static void DeclareWinner(Hd2Team winner)
+    {
         Finish(winner);
     }
 
