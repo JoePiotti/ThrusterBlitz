@@ -3183,16 +3183,24 @@ public class Hd2Locomotion : MonoBehaviour
                 continue;
             dir.Normalize();
             int count = Physics.RaycastNonAlloc(sample, dir, exitHits, reach, ~0, QueryTriggerInteraction.Ignore);
+            int nearest = -1;
             for (int i = 0; i < count; i++)
             {
                 if (exitHits[i].collider != collider)
                     continue;
-                bool back = Vector3.Dot(exitHits[i].normal, dir) > 0.05f;
-                if (back && exitHits[i].distance < radius + 0.35f)
-                    inside = true;
-                else if (!back && exitHits[i].distance < radius * 0.65f)
-                    inside = true;
+                if (nearest < 0 || exitHits[i].distance < exitHits[nearest].distance)
+                    nearest = i;
             }
+
+            if (nearest < 0)
+                continue;
+            // Only the nearest face: the far side of a thin wall seen through its near
+            // face is not "inside".
+            bool back = Vector3.Dot(exitHits[nearest].normal, dir) > 0.05f;
+            if (back && exitHits[nearest].distance < radius + 0.35f)
+                inside = true;
+            else if (!back && exitHits[nearest].distance < radius * 0.65f)
+                inside = true;
         }
 
         Physics.queriesHitBackfaces = previous;
@@ -3256,6 +3264,12 @@ public class Hd2Locomotion : MonoBehaviour
         return push.sqrMagnitude > 0.0000001f;
     }
 
+    // A sample point touching or inside a mesh collider (ClosestPoint can't tell for
+    // non-convex meshes). Along each direction only this collider's nearest face counts:
+    // a back face means the point is inside, so leave through it; a front face closer
+    // than the radius means the body is pressed against the outside, so back away from it.
+    // (Pushing toward that front face, and trusting the far face of a thin wall seen
+    // through the near one, pushed a player walking into a wall straight into it.)
     bool MeshExit(Collider collider, Vector3 sample, float radius, out Vector3 exit)
     {
         exit = Vector3.zero;
@@ -3271,21 +3285,28 @@ public class Hd2Locomotion : MonoBehaviour
                 continue;
             dir.Normalize();
             int count = Physics.RaycastNonAlloc(sample, dir, exitHits, reach, ~0, QueryTriggerInteraction.Ignore);
+            int nearest = -1;
             for (int i = 0; i < count; i++)
             {
                 if (exitHits[i].collider != collider)
                     continue;
-                bool back = Vector3.Dot(exitHits[i].normal, dir) > 0.05f;
-                if (!back && exitHits[i].distance >= radius)
-                    continue;
-                float travel = back
-                    ? exitHits[i].distance + radius + skinWidth
-                    : radius - exitHits[i].distance + skinWidth;
-                if (travel < best)
-                {
-                    best = travel;
-                    exit = dir * travel;
-                }
+                if (nearest < 0 || exitHits[i].distance < exitHits[nearest].distance)
+                    nearest = i;
+            }
+
+            if (nearest < 0)
+                continue;
+            RaycastHit hit = exitHits[nearest];
+            bool back = Vector3.Dot(hit.normal, dir) > 0.05f;
+            if (!back && hit.distance >= radius)
+                continue;
+            float travel = back
+                ? hit.distance + radius + skinWidth
+                : radius - hit.distance + skinWidth;
+            if (travel < best)
+            {
+                best = travel;
+                exit = back ? dir * travel : -dir * travel;
             }
         }
 

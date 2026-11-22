@@ -650,6 +650,17 @@ public class Hd2EnemyBot : MonoBehaviour
 
     void OnControllerColliderHit(ControllerColliderHit hit)
     {
+        // The bot's own limb and gun colliders are ignored at setup, but Unity drops that
+        // ignore whenever the controller is switched off and on (every spawn and teleport
+        // does that). The controller then stood on the bot's own feet and walked off ledges
+        // on air, sinking only as the walk cycle moved the feet. Ignore it again on touch.
+        if (body != null && hit.collider != null && hit.collider != body
+            && hit.collider.transform.IsChildOf(transform))
+        {
+            Physics.IgnoreCollision(body, hit.collider, true);
+            return;
+        }
+
         if (hit.normal.y > 0.5f)
             lastGround = hit.collider;
     }
@@ -2402,35 +2413,25 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
 
         grip.Track(gun);
-        PinHandToGrip(grip, bone == handR ? rightHand : leftHand);
+        if (!IsPistolGrip(gun))
+            TurnHandToGrip(grip, gun);
         grip.ApplyFingers();
     }
 
-    // Hold the gun the way a player does: the robot hand takes the pose of the gun's Wrist
-    // marker, which is how every grip was posed. Bots only moved the gun to the hand and
-    // left the hand at its own angle, so every gun but the pistols sat off in the fist.
-    // The gun hangs from a holder under the hand bone, so the holder is put back where it
-    // was after the hand moves, keeping the aimed gun exactly where it was.
-    static void PinHandToGrip(Hd2GripHand grip, Transform holder)
+    // Long guns: turn the robot hand to the gun's Wrist marker (how every grip was posed),
+    // then slide the gun so that marker sits on the wrist. Only the hand's angle changes,
+    // never its position, and the gun is placed from the hand each frame, so nothing builds
+    // up. (Moving the hand bone onto the marker fed back through the gun every frame:
+    // shotguns ran off into the distance and pistol forearms spun.) Pistols keep their
+    // own fist fit, which already looked right.
+    static void TurnHandToGrip(Hd2GripHand grip, Transform gun)
     {
-        if (holder == null || !grip.Baked)
+        if (!grip.Baked || gun == null)
             return;
 
-        Vector3 position = holder.position;
-        Quaternion rotation = holder.rotation;
-        Vector3 size = holder.lossyScale;
-        if (!grip.PinHand())
-            return;
-
-        holder.SetPositionAndRotation(position, rotation);
-        Transform parent = holder.parent;
-        if (parent == null)
-            return;
-        Vector3 parentSize = parent.lossyScale;
-        holder.localScale = new Vector3(
-            Mathf.Abs(parentSize.x) > 0.0001f ? size.x / parentSize.x : holder.localScale.x,
-            Mathf.Abs(parentSize.y) > 0.0001f ? size.y / parentSize.y : holder.localScale.y,
-            Mathf.Abs(parentSize.z) > 0.0001f ? size.z / parentSize.z : holder.localScale.z);
+        Transform wrist = grip.Wrist;
+        grip.hand.rotation = wrist.rotation * grip.MirrorOffset(Hd2GripHand.HandSlot);
+        gun.position += grip.hand.position - wrist.position;
     }
 
     static bool IsPistolGrip(Transform gun)
