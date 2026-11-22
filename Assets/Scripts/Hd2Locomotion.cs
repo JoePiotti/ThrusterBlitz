@@ -2991,6 +2991,53 @@ public class Hd2Locomotion : MonoBehaviour
         return direction * Mathf.Abs(snapAngle);
     }
 
+    /// <summary>
+    /// Respawn: turn the rig so the headset looks the way the spawn faces, however the
+    /// player turned in the room or with the stick, and put the head over the spawn spot.
+    /// </summary>
+    public void FaceSpawn(Quaternion spawnRotation)
+    {
+        Vector3 want = spawnRotation * Vector3.forward;
+        want.y = 0f;
+        if (want.sqrMagnitude < 0.0001f)
+            return;
+
+        if (EditorFallback)
+        {
+            editorYaw = Quaternion.LookRotation(want).eulerAngles.y;
+            transform.rotation = Quaternion.Euler(0f, editorYaw, 0f);
+            return;
+        }
+
+        if (head == null)
+            return;
+
+        Vector3 look = head.forward;
+        look.y = 0f;
+        if (look.sqrMagnitude < 0.0001f)
+        {
+            // Looking straight up or down: the top of the head points the way they face.
+            look = head.up;
+            look.y = 0f;
+        }
+
+        if (look.sqrMagnitude >= 0.0001f)
+        {
+            float turn = Vector3.SignedAngle(look, want, Vector3.up);
+            transform.rotation = Quaternion.AngleAxis(turn, Vector3.up) * transform.rotation;
+        }
+
+        // The head may stand away from the body (a step in the room); slide the room
+        // so it is over the spawn spot rather than off to one side, maybe in a wall.
+        EnsureRoomRig();
+        if (roomRig != null)
+        {
+            Vector3 offset = head.position - transform.position;
+            offset.y = 0f;
+            roomRig.position -= offset;
+        }
+    }
+
     void YawAroundHead(float degrees)
     {
         Quaternion yaw = Quaternion.AngleAxis(degrees, Vector3.up);

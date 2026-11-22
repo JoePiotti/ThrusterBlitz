@@ -373,7 +373,13 @@ public class Hd2Health : MonoBehaviour
 
     bool pinSpawn;
 
-    public void Respawn()
+    /// <summary>
+    /// Brings this player or bot back with full health. pickTeamPoint is for a respawn
+    /// after a death during play: on a Game Modes map it goes to the team point farthest
+    /// from enemies. Round and match resets leave it false and use the fixed seat.
+    /// Returns true when a team point was picked.
+    /// </summary>
+    public bool Respawn(bool pickTeamPoint = false)
     {
         StopCritical();
         health = maxHealth;
@@ -395,7 +401,20 @@ public class Hd2Health : MonoBehaviour
         Quaternion rot = spawnRotation;
         // A team base stays pinned. Clearing it made the next death use a
         // deathmatch point, which put a switched player back on the old side.
-        if (!pinSpawn && Hd2SpawnDirector.Instance != null)
+        bool picked = false;
+        Hd2Team side = Hd2SpawnField.TeamOf(this);
+        if (pickTeamPoint && Hd2GameMode.InUse && side != Hd2Team.None)
+        {
+            Transform point = Hd2SpawnDirector.PickFarthestForTeam(side, transform);
+            if (point != null)
+            {
+                pos = point.position;
+                rot = point.rotation;
+                picked = true;
+            }
+        }
+
+        if (!picked && !pinSpawn && Hd2SpawnDirector.Instance != null)
         {
             var farthest = Hd2SpawnDirector.Instance.PickFarthest(transform);
             if (farthest != null)
@@ -408,11 +427,16 @@ public class Hd2Health : MonoBehaviour
         transform.SetPositionAndRotation(pos, rot);
         if (locomotion != null)
         {
+            // Whatever way the player turned (in the room or with the stick), the view
+            // comes back looking the way the spawn point faces.
+            locomotion.FaceSpawn(rot);
             // A spawn marker a little below or above the floor must not drop the player
             // through it: stand on the floor surface nearest the marker.
             locomotion.SettleOnFloor();
             Hd2TeleportArrive.Play(transform.position);
         }
+
+        return picked;
     }
 
     static AudioClip playerHitClip;

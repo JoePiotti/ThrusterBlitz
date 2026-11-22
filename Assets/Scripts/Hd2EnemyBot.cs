@@ -4608,11 +4608,11 @@ public class Hd2EnemyBot : MonoBehaviour
             yield break;
         }
 
-        health.Respawn();
+        bool pickedPoint = health.Respawn(true);
         Hd2HeadPop.Restore(transform);
         RestorePistols();
         ApplyBodyColor();
-        if (domination && homeSpawn != null)
+        if (!pickedPoint && domination && homeSpawn != null)
             transform.SetPositionAndRotation(homeSpawn.position, homeSpawn.rotation);
         if (body != null)
         {

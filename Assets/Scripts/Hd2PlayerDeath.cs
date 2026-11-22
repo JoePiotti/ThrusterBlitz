@@ -289,7 +289,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         if (locomotion != null)
             locomotion.MovementLocked = false;
         if (health != null)
-            health.Respawn();
+            health.Respawn(true);
         BeginLife();
         RestoreStartingPistols();
         downed = false;

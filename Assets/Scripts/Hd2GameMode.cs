@@ -30,6 +30,12 @@ public static class Hd2GameMode
     /// <summary>The mode the next map load plays. Team Death Match unless the title picks another.</summary>
     public static Mode Selected = Mode.TeamDeathmatch;
 
+    /// <summary>
+    /// True while the loaded map is playing one of its Game Modes nodes. Team respawns
+    /// then go to the team point farthest from enemies instead of the fixed seat.
+    /// </summary>
+    public static bool InUse { get; private set; }
+
     public static string NodeName(Mode mode)
     {
         switch (mode)
@@ -50,6 +56,8 @@ public static class Hd2GameMode
     // Runs after the scene's objects wake up and before any of them start.
     static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        if (mode == LoadSceneMode.Single)
+            InUse = false;
         Transform nodes = FindNodes(scene);
         if (nodes == null)
             return;
@@ -72,6 +80,7 @@ public static class Hd2GameMode
             return;
         }
 
+        InUse = true;
         switch (Selected)
         {
             case Mode.TeamDeathmatch:

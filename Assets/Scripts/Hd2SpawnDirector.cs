@@ -119,6 +119,67 @@ public class Hd2SpawnDirector : MonoBehaviour
         return PointForTeam(null, 0);
     }
 
+    /// <summary>
+    /// Team respawn: the active point reserved for this team whose nearest living enemy
+    /// is farthest away; random among ties (0.5m). Null when the team has no points.
+    /// </summary>
+    public static Transform PickFarthestForTeam(Hd2Team team, Transform self)
+    {
+        var all = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        var mine = new List<Hd2SpawnPoint>();
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (all[i] != null && all[i].team == team)
+                mine.Add(all[i]);
+        }
+
+        if (mine.Count == 0)
+            return null;
+
+        var enemies = CollectLivingEnemies(team, self);
+        if (enemies.Count == 0)
+            return mine[Random.Range(0, mine.Count)].transform;
+
+        var mins = new float[mine.Count];
+        float best = float.NegativeInfinity;
+        for (int i = 0; i < mine.Count; i++)
+        {
+            Vector3 at = mine[i].transform.position;
+            float nearest = float.PositiveInfinity;
+            for (int j = 0; j < enemies.Count; j++)
+                nearest = Mathf.Min(nearest, Vector3.Distance(at, enemies[j]));
+            mins[i] = nearest;
+            best = Mathf.Max(best, nearest);
+        }
+
+        var ties = new List<Transform>();
+        for (int i = 0; i < mine.Count; i++)
+        {
+            if (mins[i] >= best - TieEpsilon)
+                ties.Add(mine[i].transform);
+        }
+
+        return ties[Random.Range(0, ties.Count)];
+    }
+
+    static List<Vector3> CollectLivingEnemies(Hd2Team team, Transform self)
+    {
+        var result = new List<Vector3>();
+        var healths = FindObjectsByType<Hd2Health>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < healths.Length; i++)
+        {
+            var h = healths[i];
+            if (h == null || h.Health <= 0f || (self != null && h.transform == self))
+                continue;
+            Hd2Team side = Hd2SpawnField.TeamOf(h);
+            if (side == Hd2Team.None || side == team)
+                continue;
+            result.Add(h.transform.position);
+        }
+
+        return result;
+    }
+
     int CountTeam(Hd2Team? team)
     {
         int count = 0;
