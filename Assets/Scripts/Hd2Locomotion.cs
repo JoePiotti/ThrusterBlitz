@@ -1398,8 +1398,38 @@ public class Hd2Locomotion : MonoBehaviour
         editorTiltApplied = true;
     }
 
+    // While the player menu is open the pointers are off, and a pointer button still held
+    // when it closes (the press that picked a menu item) does nothing until let go.
+    bool pointersSuppressed;
+
+    bool PointersBlocked()
+    {
+        var map = Controls();
+        if (map != null && map.MenuOpen)
+        {
+            pointersSuppressed = true;
+            return true;
+        }
+
+        if (!pointersSuppressed)
+            return false;
+
+        bool anyHeld = PointerHeld(true) || PointerHeld(false)
+            || (viewThrustAction != null && viewThrustAction.IsPressed());
+        if (!anyHeld)
+            pointersSuppressed = false;
+        return pointersSuppressed;
+    }
+
     AimSource UpdateAimSource(out bool released)
     {
+        if (PointersBlocked())
+        {
+            aimSource = AimSource.None;
+            released = false;
+            return AimSource.None;
+        }
+
         AimSource releasedSource = AimSource.None;
         if (PointerReleased(true))
             releasedSource = AimSource.Right;
