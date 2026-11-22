@@ -647,13 +647,6 @@ public class Hd2EnemyBot : MonoBehaviour
     public Transform LeftHand => leftHand;
     public bool Alive => health != null && !health.IsDead;
 
-    /// <summary>Lines the held guns up with the hands, as after picking one up.</summary>
-    public void SeatHands()
-    {
-        SeatOneHand(rightHand);
-        SeatOneHand(leftHand);
-    }
-
     /// <summary>Back to two pistols with full magazines (Elimination round start).</summary>
     public void ResetLoadout()
     {
@@ -3848,7 +3841,8 @@ public class Hd2EnemyBot : MonoBehaviour
         restFootR = Local(footR);
     }
 
-    void SeatHands()
+    /// <summary>Puts the hand holders on the hand bones and lines the held guns up with them.</summary>
+    public void SeatHands()
     {
         PlaceHolder(rightHand, handR);
         PlaceHolder(leftHand, handL);
