@@ -4206,12 +4206,19 @@ public class Hd2Locomotion : MonoBehaviour
     bool TryGround(out float groundY)
     {
         groundY = transform.position.y;
-        Vector3 origin = transform.position + Vector3.up * 0.2f;
-        if (!RaycastBody(origin, Vector3.down, 0.2f + groundProbe, out RaycastHit hit))
+        // Look from step height down. Sprinting up a ramp can leave the feet a few
+        // centimeters inside its surface for a frame; looking from only 0.2 m up and
+        // refusing ground more than 5 cm above the feet let gravity pull the body down
+        // through the ramp. A floor face up to step height above the feet still counts.
+        float lookUp = Mathf.Max(0.5f, stepHeight) + 0.05f;
+        Vector3 origin = transform.position + Vector3.up * lookUp;
+        if (!RaycastBody(origin, Vector3.down, lookUp + groundProbe, out RaycastHit hit))
+            return false;
+        if (hit.normal.y < 0.5f)
             return false;
 
         float feetGap = transform.position.y - hit.point.y;
-        if (feetGap > groundProbe || feetGap < -0.05f)
+        if (feetGap > groundProbe || feetGap < -(lookUp - 0.05f))
             return false;
 
         groundY = hit.point.y;
