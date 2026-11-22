@@ -1534,8 +1534,12 @@ public class Hd2Locomotion : MonoBehaviour
         if (TrackedAimInsideWall(aimSource))
         {
             HidePreview();
+            ShowAimBlock(aimSource == AimSource.Right ? rightHand : aimSource == AimSource.Left ? leftHand : head);
             return;
         }
+
+        aimBlockReason = null;
+        ShowAimBlock(null);
 
         SimulateArc(origin, direction, bend);
         float reach = Mathf.Max(0.5f, thrustMaxDistance);
@@ -1627,8 +1631,57 @@ public class Hd2Locomotion : MonoBehaviour
         return PointPastWall(point);
     }
 
+    // TEMPORARY diagnostics: why the pointer arc is hidden, shown as text by the hand.
+    public static bool ShowAimBlockReason = true;
+    string aimBlockReason;
+    TextMesh aimBlockLabel;
+
+    static string Describe(Collider collider)
+    {
+        if (collider == null)
+            return "?";
+        string path = collider.name;
+        Transform parent = collider.transform.parent;
+        for (int i = 0; i < 2 && parent != null; i++, parent = parent.parent)
+            path = parent.name + "/" + path;
+        return path + " (" + collider.GetType().Name + ")";
+    }
+
+    void ShowAimBlock(Transform hand)
+    {
+        bool show = ShowAimBlockReason && !string.IsNullOrEmpty(aimBlockReason) && hand != null;
+        if (!show)
+        {
+            if (aimBlockLabel != null && aimBlockLabel.gameObject.activeSelf)
+                aimBlockLabel.gameObject.SetActive(false);
+            return;
+        }
+
+        if (aimBlockLabel == null)
+        {
+            var go = new GameObject("AimBlockReason");
+            go.hideFlags = HideFlags.DontSave;
+            aimBlockLabel = go.AddComponent<TextMesh>();
+            aimBlockLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            aimBlockLabel.fontSize = 64;
+            aimBlockLabel.characterSize = 0.004f;
+            aimBlockLabel.anchor = TextAnchor.LowerCenter;
+            aimBlockLabel.color = new Color(1f, 0.85f, 0.3f, 1f);
+            var renderer = go.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = aimBlockLabel.font.material;
+        }
+
+        if (!aimBlockLabel.gameObject.activeSelf)
+            aimBlockLabel.gameObject.SetActive(true);
+        aimBlockLabel.text = aimBlockReason;
+        Transform view = head != null ? head : transform;
+        aimBlockLabel.transform.position = hand.position + Vector3.up * 0.12f;
+        aimBlockLabel.transform.rotation = Quaternion.LookRotation(aimBlockLabel.transform.position - view.position, Vector3.up);
+    }
+
     bool PointPastWall(Vector3 point)
     {
+        aimBlockReason = null;
         if (InsideSolidVolume(point))
             return true;
 
@@ -1656,8 +1709,12 @@ public class Hd2Locomotion : MonoBehaviour
             best = handHits[i].distance;
             backface = Vector3.Dot(handHits[i].normal, dir) > 0.05f;
             found = true;
+            if (backface)
+                aimBlockReason = "hand behind " + Describe(handHits[i].collider);
         }
 
+        if (!(found && backface))
+            aimBlockReason = null;
         return found && backface;
     }
 
@@ -1672,7 +1729,10 @@ public class Hd2Locomotion : MonoBehaviour
             if (collider is MeshCollider mesh && !mesh.convex)
                 continue;
             if ((collider.ClosestPoint(point) - point).sqrMagnitude < 0.000001f)
+            {
+                aimBlockReason = "hand inside " + Describe(collider);
                 return true;
+            }
         }
 
         return false;

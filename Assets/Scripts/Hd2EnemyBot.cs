@@ -482,7 +482,7 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         Transform headBone = FindNamed(transform, "Head");
-        Hd2Nameplate.Attach(transform, headBone != null ? headBone : eye, health, () => FullName, () => team);
+        Hd2Nameplate.Attach(transform, headBone != null ? headBone : eye, health, () => FullName + groundNote, () => team);
 
         Hd2VisionCone.Register(transform);
         var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
@@ -643,6 +643,46 @@ public class Hd2EnemyBot : MonoBehaviour
     /// <summary>
     /// Round reset. Clears a ragdoll and stands the bot on its base spawn.
     /// </summary>
+    // TEMPORARY diagnostics: what a bot is standing on when there is no floor under it.
+    public static bool ShowAirWalkReason = true;
+    string groundNote = "";
+    Collider lastGround;
+
+    void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        if (hit.normal.y > 0.5f)
+            lastGround = hit.collider;
+    }
+
+    void NoteAirWalk()
+    {
+        if (!ShowAirWalkReason || body == null || !body.enabled || !body.isGrounded)
+        {
+            groundNote = "";
+            return;
+        }
+
+        Vector3 origin = transform.position + Vector3.up * 0.15f;
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, stepHits, 0.45f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            if (stepHits[i].collider != null && !stepHits[i].collider.transform.IsChildOf(transform))
+            {
+                groundNote = "";
+                return;
+            }
+        }
+
+        string what = "nothing hit";
+        if (lastGround != null)
+        {
+            what = lastGround.name + " (" + lastGround.GetType().Name + (lastGround.isTrigger ? ", trigger" : "") + ")";
+            if (lastGround.transform.parent != null)
+                what = lastGround.transform.parent.name + "/" + what;
+        }
+        groundNote = "\nAIR on " + what;
+    }
+
     public Transform RightHand => rightHand;
     public Transform LeftHand => leftHand;
     public bool Alive => health != null && !health.IsDead;
@@ -2362,7 +2402,35 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
 
         grip.Track(gun);
+        PinHandToGrip(grip, bone == handR ? rightHand : leftHand);
         grip.ApplyFingers();
+    }
+
+    // Hold the gun the way a player does: the robot hand takes the pose of the gun's Wrist
+    // marker, which is how every grip was posed. Bots only moved the gun to the hand and
+    // left the hand at its own angle, so every gun but the pistols sat off in the fist.
+    // The gun hangs from a holder under the hand bone, so the holder is put back where it
+    // was after the hand moves, keeping the aimed gun exactly where it was.
+    static void PinHandToGrip(Hd2GripHand grip, Transform holder)
+    {
+        if (holder == null || !grip.Baked)
+            return;
+
+        Vector3 position = holder.position;
+        Quaternion rotation = holder.rotation;
+        Vector3 size = holder.lossyScale;
+        if (!grip.PinHand())
+            return;
+
+        holder.SetPositionAndRotation(position, rotation);
+        Transform parent = holder.parent;
+        if (parent == null)
+            return;
+        Vector3 parentSize = parent.lossyScale;
+        holder.localScale = new Vector3(
+            Mathf.Abs(parentSize.x) > 0.0001f ? size.x / parentSize.x : holder.localScale.x,
+            Mathf.Abs(parentSize.y) > 0.0001f ? size.y / parentSize.y : holder.localScale.y,
+            Mathf.Abs(parentSize.z) > 0.0001f ? size.z / parentSize.z : holder.localScale.z);
     }
 
     static bool IsPistolGrip(Transform gun)
@@ -3219,6 +3287,7 @@ public class Hd2EnemyBot : MonoBehaviour
             fallTime += dt;
         Vector3 before = transform.position;
         body.Move((step + Vector3.up * verticalVelocity) * Time.deltaTime);
+        NoteAirWalk();
         if ((transform.position - before).sqrMagnitude > 0.0004f)
         {
             lastMovedAt = Time.time;
