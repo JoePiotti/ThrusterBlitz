@@ -3363,6 +3363,11 @@ public class Hd2Locomotion : MonoBehaviour
     bool TryStep(Vector3 direction, float distance, float blockedTravel, RaycastHit block)
     {
         float maxStep = Mathf.Max(0.5f, stepHeight);
+        // Only something low enough to step over counts as a step. If the body above step
+        // height is blocked too, it is a wall: no stepping up onto a ramp behind it, or
+        // down to a lower floor on its far side. Both let the player walk through walls.
+        if (WallAboveStep(direction, blockedTravel + Mathf.Max(distance, 0.08f), maxStep))
+            return false;
         float reach = blockedTravel + Mathf.Max(0.12f, bodyRadius) + 0.08f;
         Vector3 past = transform.position + direction * reach;
         Vector3 contact = block.point + direction * 0.12f;
@@ -3426,7 +3431,19 @@ public class Hd2Locomotion : MonoBehaviour
         float radius = Mathf.Max(0.05f, bodyRadius) * 0.85f;
         if (!CastBody(bottom + raised, top + raised, radius, direction, forward + skinWidth, out RaycastHit wall))
             return true;
-        return wall.distance >= 0.04f;
+        // Clear only if nothing stands inside the step itself. (It used to pass anything
+        // more than 4 cm ahead, which let a step carry the body into a wall.)
+        return wall.distance >= forward;
+    }
+
+    bool WallAboveStep(Vector3 direction, float reach, float maxStep)
+    {
+        CapsuleEnds(out Vector3 bottom, out Vector3 top);
+        float radius = Mathf.Max(0.05f, bodyRadius) * 0.9f;
+        Vector3 upper = bottom + Vector3.up * (maxStep + 0.05f);
+        if (upper.y > top.y)
+            upper = top;
+        return CastBody(upper, top, radius, direction, reach + skinWidth, out _);
     }
 
     void StickToLowerFloor()
@@ -3465,6 +3482,7 @@ public class Hd2Locomotion : MonoBehaviour
     }
 
     const float WallLandingBackoff = 0.5f;
+    const float LandingWallMargin = 0.2f;
 
     /// <summary>
     /// Can the whole standing body stand at these feet? A wall beside it nudges the spot
@@ -3473,7 +3491,8 @@ public class Hd2Locomotion : MonoBehaviour
     /// </summary>
     bool BodyFitsAt(ref Vector3 feet)
     {
-        float radius = Mathf.Max(0.05f, bodyRadius);
+        // A little wider than the body, so a landing never puts your face against a wall.
+        float radius = Mathf.Max(0.05f, bodyRadius) + LandingWallMargin;
         float height = Mathf.Max(bodyHeight, radius * 2f + 0.01f);
         float limit = skinWidth * skinWidth;
         for (int attempt = 0; attempt < 4; attempt++)
