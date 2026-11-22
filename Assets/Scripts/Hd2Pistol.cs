@@ -24,6 +24,7 @@ public class Hd2Pistol : MonoBehaviour
 
     [Header("Magazine")]
     public int magazineSize = 16;
+    [Tooltip("Not used: the pistol fires on every trigger release, as fast as you can pull.")]
     public float shotsPerSecond = 16f;
     public float reloadDuration = 1f;
 
@@ -61,7 +62,6 @@ public class Hd2Pistol : MonoBehaviour
     public TextMesh ammoLabel;
 
     int rounds;
-    float nextFireTime;
     float triggerPressedAt = -1f;
     bool waitForTriggerRelease = true;
     bool chargeReadyPulsed;
@@ -251,7 +251,6 @@ public class Hd2Pistol : MonoBehaviour
     {
         restLocalRotation = transform.localRotation;
         rounds = magazineSize;
-        nextFireTime = 0f;
         triggerPressedAt = -1f;
         chargeReadyPulsed = false;
         reloading = false;
@@ -461,8 +460,7 @@ public class Hd2Pistol : MonoBehaviour
     {
         if (reloading || rounds <= 0)
             return;
-        if (Time.time < nextFireTime)
-            return;
+        // No fire-rate cap: every trigger release fires.
         Transform barrel = muzzle != null ? muzzle : transform;
         if (Hd2Locomotion.ShotBlocked(this, barrel.position))
             return;
@@ -470,7 +468,6 @@ public class Hd2Pistol : MonoBehaviour
         int cost = charged ? Mathf.Min(Mathf.Max(1, chargedAmmoCost), rounds) : 1;
         rounds -= cost;
         RefreshAmmo();
-        nextFireTime = Time.time + 1f / Mathf.Max(0.01f, shotsPerSecond);
         kick = charged ? kickDegrees * 1.5f : kickDegrees;
         Pulse(shotHapticAmplitude, shotHapticDuration);
         PlayShot(charged);
