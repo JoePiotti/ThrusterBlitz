@@ -924,7 +924,11 @@ public class Hd2EnemyBot : MonoBehaviour
         if (mode == Mode.Combat && domination && target != null && Friendly(target))
             EnterWander();
 
-        if (mode == Mode.Combat && !TargetAlive())
+        // Shootout modes pick their own target each frame and hunt it at any range. This
+        // check dropped them back to wandering whenever the enemy was past combat range
+        // (at every round start), the hunt set combat again, and the bot flipped every
+        // frame. Each flip zeroed the fall speed, so bots floated off ledges.
+        if (mode == Mode.Combat && !Hd2Shootout.Present && !TargetAlive())
             EnterWander();
 
         bool finishingRail = grinding || (traveling && travelRail != null);
@@ -2247,7 +2251,9 @@ public class Hd2EnemyBot : MonoBehaviour
         travelRail = null;
         jumpBoosting = false;
         jumpTime = 0f;
-        verticalVelocity = 0f;
+        // Stopping never cancels a fall already under way.
+        if (body == null || !body.enabled || body.isGrounded || verticalVelocity > 0f)
+            verticalVelocity = 0f;
         moveDir = Vector3.zero;
     }
 
