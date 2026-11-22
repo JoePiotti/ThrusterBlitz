@@ -81,6 +81,8 @@ public class Hd2Pistol : MonoBehaviour
     Renderer chargeOrbRenderer;
     Material chargeOrbMaterial;
     Light chargeOrbLight;
+    MeshFilter chargeOrbFilter;
+    Mesh chargeOrbMesh;
 
     // Hd2Body turns a held gun to match the controller once it is picked up. Recoil puts the
     // gun back to restLocalRotation every frame, so take the turned angle as the new rest.
@@ -161,6 +163,8 @@ public class Hd2Pistol : MonoBehaviour
         if (collider != null)
             Destroy(collider);
         chargeOrb = sphere.transform;
+        chargeOrbFilter = sphere.GetComponent<MeshFilter>();
+        chargeOrbMesh = chargeOrbFilter != null ? chargeOrbFilter.sharedMesh : null;
         chargeOrb.SetParent(muzzle != null ? muzzle : transform, false);
         chargeOrb.localScale = Vector3.zero;
 
@@ -200,6 +204,11 @@ public class Hd2Pistol : MonoBehaviour
     {
         if (chargeOrb == null)
             return;
+
+        // Mirroring a right-hand gun rebuilds every mesh under it, and the orb, sized to
+        // zero while idle, came out broken and invisible. Keep the plain sphere on it.
+        if (chargeOrbFilter != null && chargeOrbMesh != null && chargeOrbFilter.sharedMesh != chargeOrbMesh)
+            chargeOrbFilter.sharedMesh = chargeOrbMesh;
 
         float amount = 0f;
         if (triggerPressedAt >= 0f && !reloading && rounds > 0)
