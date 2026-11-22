@@ -2362,6 +2362,16 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         bool pistol = IsPistolGrip(gun);
+        if (pistol)
+        {
+            // Start each frame from the seated grip. The fist fit below nudges the gun,
+            // and those nudges used to pile up frame after frame until the pistol sat
+            // well out of the hand.
+            if (hand != null)
+                hand.localPosition = Vector3.zero;
+            RestoreSeat(gun);
+        }
+
         Transform muzzle = FindNamed(gun, "Muzzle");
         if (muzzle == null)
             muzzle = FindNamed(gun, "Barrel");
@@ -4091,6 +4101,31 @@ public class Hd2EnemyBot : MonoBehaviour
         CacheFist(holder, gun);
         ShowGripHand(gun);
         KeepFistOnArm(holder, fore, bone);
+        if (seatPoses.Count > 12)
+        {
+            seatGone.Clear();
+            foreach (var key in seatPoses.Keys)
+            {
+                if (key == null)
+                    seatGone.Add(key);
+            }
+            for (int i = 0; i < seatGone.Count; i++)
+                seatPoses.Remove(seatGone[i]);
+        }
+
+        seatPoses[gun] = new Pose(gun.localPosition, gun.localRotation);
+    }
+
+    readonly List<Transform> seatGone = new List<Transform>();
+
+    readonly Dictionary<Transform, Pose> seatPoses = new Dictionary<Transform, Pose>();
+
+    void RestoreSeat(Transform gun)
+    {
+        if (gun == null || !seatPoses.TryGetValue(gun, out Pose seat))
+            return;
+        gun.localPosition = seat.position;
+        gun.localRotation = seat.rotation;
     }
 
     void CacheFist(Transform holder, Transform gun)
