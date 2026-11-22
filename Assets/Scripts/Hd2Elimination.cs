@@ -11,7 +11,8 @@ using UnityEngine;
 /// The weapon pickups are hidden; health, thrust and drop shield pickups stay.
 /// The dead stay down until the next round and get a free camera (Hd2PlayerDeath).
 ///
-/// Announcer lines play when their clips exist in Resources/Audio (see PlayLine).
+/// After each round the announcer calls the scoring team and the score, winner's points
+/// first ("Red Team Scores, five, three"), from clips in Resources/Audio/Elimination.
 /// </summary>
 public class Hd2Elimination : MonoBehaviour
 {
@@ -232,7 +233,10 @@ public class Hd2Elimination : MonoBehaviour
         if (RedPoints >= PointsToWin || BluePoints >= PointsToWin)
         {
             phase = Phase.Over;
-            PlayLine(winner == Hd2Team.Red ? "RedWins" : "BlueWins");
+            string champ = winner == Hd2Team.Red ? "Red" : "Blue";
+            int won = winner == Hd2Team.Red ? RedPoints : BluePoints;
+            int lost = winner == Hd2Team.Red ? BluePoints : RedPoints;
+            Announce(champ + "Scored", "Number" + won, "Number" + lost, champ + "Wins");
             Hd2Shootout.DeclareWinner(winner);
             return;
         }
@@ -243,29 +247,84 @@ public class Hd2Elimination : MonoBehaviour
         {
             string team = winner == Hd2Team.Red ? "Red" : "Blue";
             int mine = winner == Hd2Team.Red ? RedPoints : BluePoints;
+            int theirs = winner == Hd2Team.Red ? BluePoints : RedPoints;
+            // "Red Team Scores ... five ... three": the round winner's score first.
+            Announce(team + "Scored", "Number" + mine, "Number" + theirs);
             if (mine == PointsToWin - 1)
-                PlayLine("MatchPoint" + team);
-            else if (!PlayLine(team + "Scored" + RedPoints + "To" + BluePoints))
-                PlayLine(team + "Scored");
+                Queue("MatchPoint" + team);
         }
 
         phase = Phase.Between;
         phaseEndsAt = Time.time + BetweenRoundsSeconds;
     }
 
-    /// <summary>
-    /// Plays Resources/Audio/Elimination/&lt;name&gt; if it exists. Names: RedScored3To1 (score
-    /// after the round, red first), RedScored / BlueScored as fallbacks, MatchPointRed,
-    /// MatchPointBlue, RoundDraw, RedWins, BlueWins.
-    /// </summary>
-    bool PlayLine(string name)
+    // ---- Announcer ----
+    // Clips in Resources/Audio/Elimination: RedScored, BlueScored, Number0..Number21, and
+    // (when recorded) MatchPointRed, MatchPointBlue, RoundDraw, RedWins, BlueWins. Missing
+    // clips are skipped. Each clip starts as soon as the one before stops speaking, so the
+    // silence recorded at the end of a clip doesn't leave gaps.
+
+    const float LineGap = 0.08f;
+    readonly Queue<AudioClip> lines = new Queue<AudioClip>();
+    static readonly Dictionary<AudioClip, float> spoken = new Dictionary<AudioClip, float>();
+    float nextLineAt;
+
+    void Announce(params string[] names)
+    {
+        lines.Clear();
+        nextLineAt = 0f;
+        for (int i = 0; i < names.Length; i++)
+            Queue(names[i]);
+    }
+
+    void Queue(string name)
     {
         AudioClip clip = Resources.Load<AudioClip>("Audio/Elimination/" + name);
-        if (clip == null || voice == null)
-            return false;
+        if (clip != null)
+            lines.Enqueue(clip);
+    }
+
+    bool PlayLine(string name)
+    {
+        Announce(name);
+        return lines.Count > 0;
+    }
+
+    void LateUpdate()
+    {
+        if (lines.Count == 0 || voice == null || Time.time < nextLineAt)
+            return;
+        AudioClip clip = lines.Dequeue();
         voice.Stop();
         voice.clip = clip;
         voice.Play();
-        return true;
+        nextLineAt = Time.time + SpokenLength(clip) + LineGap;
+    }
+
+    // Seconds until the clip's last audible sample, measured once per clip.
+    static float SpokenLength(AudioClip clip)
+    {
+        if (spoken.TryGetValue(clip, out float known))
+            return known;
+
+        float length = clip.length;
+        if (clip.loadState != AudioDataLoadState.Loaded)
+            clip.LoadAudioData();
+        int channels = Mathf.Max(1, clip.channels);
+        var data = new float[clip.samples * channels];
+        if (clip.loadState == AudioDataLoadState.Loaded && clip.GetData(data, 0))
+        {
+            for (int i = data.Length - 1; i >= 0; i--)
+            {
+                if (Mathf.Abs(data[i]) > 0.02f)
+                {
+                    length = Mathf.Min(clip.length, (i / channels) / (float)clip.frequency + 0.05f);
+                    break;
+                }
+            }
+        }
+
+        spoken[clip] = length;
+        return length;
     }
 }
