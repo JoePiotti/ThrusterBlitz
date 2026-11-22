@@ -1853,6 +1853,8 @@ public class Hd2EnemyBot : MonoBehaviour
             moveDir = ClearOfWater(moveDir);
         }
 
+        if (!traveling && !grinding)
+            JitterCombatMove(flat);
         BackUpFrom(huntTarget.position + Vector3.up * 1.1f);
         TryMountPlatform();
     }
@@ -2065,7 +2067,53 @@ public class Hd2EnemyBot : MonoBehaviour
             moveDir = ClearOfWater(moveDir);
         }
 
+        if (!traveling && !grinding)
+            JitterCombatMove(to);
         BackUpFrom(target.position + Vector3.up * 1.1f);
+    }
+
+    // ---- Combat jitter ----
+    // Two bots that each strafe while turning to face the other can circle forever, since
+    // neither gets within its 75 degree aim reach. Every 1 to 2.5 s a fighting bot may
+    // stop dead for a moment or dart in a random direction relative to its target.
+    float jitterNextAt;
+    float jitterPauseUntil;
+    float jitterMoveUntil;
+    float jitterAngle;
+    static readonly float[] JitterAngles = { 0f, 180f, 35f, -35f, 145f, -145f };
+
+    void JitterCombatMove(Vector3 toTarget)
+    {
+        float now = Time.time;
+        if (now >= jitterNextAt)
+        {
+            jitterNextAt = now + Random.Range(1f, 2.5f);
+            float roll = Random.value;
+            if (roll < 0.35f)
+                jitterPauseUntil = now + Random.Range(0.35f, 1f);
+            else if (roll < 0.7f)
+            {
+                jitterMoveUntil = now + Random.Range(0.4f, 0.9f);
+                // Toward, away, or off at an angle; anything but the circling sidestep.
+                jitterAngle = JitterAngles[Random.Range(0, JitterAngles.Length)];
+            }
+        }
+
+        if (now < jitterPauseUntil)
+        {
+            moveDir = Vector3.zero;
+            return;
+        }
+
+        if (now < jitterMoveUntil)
+        {
+            Vector3 flat = Flat(toTarget);
+            if (flat.sqrMagnitude < 0.0001f)
+                flat = Flat(transform.forward);
+            if (flat.sqrMagnitude < 0.0001f)
+                return;
+            moveDir = ClearOfWater(Quaternion.AngleAxis(jitterAngle, Vector3.up) * flat.normalized);
+        }
     }
 
     void BeginSideStep()
