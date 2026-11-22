@@ -1283,6 +1283,7 @@ public class Hd2Locomotion : MonoBehaviour
         ApplyGravity(dt, burn);
         PopOutOfWalls();
         GuardWallCrossing(frameStart);
+        KeepOutOfSolids(frameStart);
         NoteLanding();
         UpdateGrindAudio();
         DrownIfTouchingWater();
@@ -3725,6 +3726,85 @@ public class Hd2Locomotion : MonoBehaviour
             return;
 
         transform.position = from + direction * Mathf.Max(0f, nearest - skinWidth);
+    }
+
+    // Last line of defense for walls: the middle of the body may never end a frame inside
+    // a solid it was not inside when the frame started. Whatever moved it there (a step,
+    // a slide, a push, a real-life step), it goes back to where the frame started, so
+    // the wall acts like a wall. Mesh walls are checked by casting rays out of the body:
+    // inside a solid, the nearest face of it in nearly every direction is its back face.
+    static readonly RaycastHit[] solidHits = new RaycastHit[24];
+    static readonly List<Collider> solidsNow = new List<Collider>();
+    static readonly List<Collider> solidsBefore = new List<Collider>();
+    static readonly Dictionary<Collider, int> solidVotes = new Dictionary<Collider, int>();
+    static readonly Dictionary<Collider, float> solidNearest = new Dictionary<Collider, float>();
+    static readonly Dictionary<Collider, bool> solidBack = new Dictionary<Collider, bool>();
+    static readonly float[] solidHeights = { 0.9f, 1.4f };
+
+    void KeepOutOfSolids(Vector3 frameStart)
+    {
+        Vector3 moved = transform.position - frameStart;
+        moved.y = 0f;
+        if (moved.sqrMagnitude < 0.000001f)
+            return;
+
+        SolidsAround(transform.position, solidsNow);
+        if (solidsNow.Count == 0)
+            return;
+        SolidsAround(frameStart, solidsBefore);
+        for (int i = 0; i < solidsNow.Count; i++)
+        {
+            if (solidsBefore.Contains(solidsNow[i]))
+                continue;
+            transform.position = new Vector3(frameStart.x, transform.position.y, frameStart.z);
+            return;
+        }
+    }
+
+    void SolidsAround(Vector3 feet, List<Collider> inside)
+    {
+        inside.Clear();
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        for (int h = 0; h < solidHeights.Length; h++)
+        {
+            Vector3 origin = feet + Vector3.up * solidHeights[h];
+            solidVotes.Clear();
+            for (int d = 0; d < exitDirs.Length; d++)
+            {
+                Vector3 dir = exitDirs[d].normalized;
+                int count = Physics.RaycastNonAlloc(origin, dir, solidHits, 6f, ~0, QueryTriggerInteraction.Ignore);
+                solidNearest.Clear();
+                solidBack.Clear();
+                for (int i = 0; i < count; i++)
+                {
+                    Collider collider = solidHits[i].collider;
+                    if (collider == null)
+                        continue;
+                    if (solidNearest.TryGetValue(collider, out float best) && best <= solidHits[i].distance)
+                        continue;
+                    solidNearest[collider] = solidHits[i].distance;
+                    solidBack[collider] = Vector3.Dot(solidHits[i].normal, dir) > 0.05f;
+                }
+
+                foreach (var pair in solidBack)
+                {
+                    if (!pair.Value)
+                        continue;
+                    solidVotes.TryGetValue(pair.Key, out int votes);
+                    solidVotes[pair.Key] = votes + 1;
+                }
+            }
+
+            foreach (var pair in solidVotes)
+            {
+                // 6 of 8 directions: the back face is nearest nearly all the way round.
+                if (pair.Value >= 6 && !inside.Contains(pair.Key) && BlocksBody(pair.Key))
+                    inside.Add(pair.Key);
+            }
+        }
+
+        Physics.queriesHitBackfaces = previous;
     }
 
     /// <summary>

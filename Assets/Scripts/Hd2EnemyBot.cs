@@ -665,33 +665,43 @@ public class Hd2EnemyBot : MonoBehaviour
             lastGround = hit.collider;
     }
 
+    float groundNoteUntil;
+
+    // Shows while the bot has no floor within 0.6 m under its feet, and stays up 4 s
+    // after so it can be read: grounded flag, vertical speed, jump boost, and the
+    // last thing the controller stood on.
     void NoteAirWalk()
     {
-        if (!ShowAirWalkReason || body == null || !body.enabled || !body.isGrounded)
+        if (!ShowAirWalkReason || body == null || !body.enabled)
         {
-            groundNote = "";
+            if (Time.time > groundNoteUntil)
+                groundNote = "";
             return;
         }
 
         Vector3 origin = transform.position + Vector3.up * 0.15f;
-        int count = Physics.RaycastNonAlloc(origin, Vector3.down, stepHits, 0.45f, ~0, QueryTriggerInteraction.Ignore);
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, stepHits, 0.75f, ~0, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < count; i++)
         {
             if (stepHits[i].collider != null && !stepHits[i].collider.transform.IsChildOf(transform))
             {
-                groundNote = "";
+                if (Time.time > groundNoteUntil)
+                    groundNote = "";
                 return;
             }
         }
 
-        string what = "nothing hit";
+        string what = "nothing";
         if (lastGround != null)
         {
             what = lastGround.name + " (" + lastGround.GetType().Name + (lastGround.isTrigger ? ", trigger" : "") + ")";
             if (lastGround.transform.parent != null)
                 what = lastGround.transform.parent.name + "/" + what;
         }
-        groundNote = "\nAIR on " + what;
+
+        groundNote = "\nAIR g=" + (body.isGrounded ? "Y" : "N") + " vy=" + verticalVelocity.ToString("0.0")
+            + (jumpBoosting ? " BOOST" : "") + "\non " + what;
+        groundNoteUntil = Time.time + 4f;
     }
 
     public Transform RightHand => rightHand;
@@ -3499,6 +3509,36 @@ public class Hd2EnemyBot : MonoBehaviour
         if (floor && groundY >= transform.position.y - 0.3f)
             return false;
 
+        // A lower floor ahead is a drop, not a gap: walk off and fall like a player.
+        // Treating every drop as a gap fired a thruster hop at each ledge, and the bot
+        // floated level off the base platform almost to the ramp, legs still walking.
+        if (floor)
+            return false;
+
+        // Nothing close below. A gap only if there is floor again just past it, at about
+        // this height; then hop it. Otherwise it is a long drop (or open pit).
+        Vector3 across = transform.position + dir * 2.6f + Vector3.up * 0.6f;
+        count = Physics.RaycastNonAlloc(across, Vector3.down, stepHits, 1.3f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stepHits[i].collider;
+            if (collider == null || collider.transform.IsChildOf(transform) || Hd2DropShield.PassesBody(collider))
+                continue;
+            rise = 0.35f;
+            span = 1.6f;
+            return true;
+        }
+
+        // Floor somewhere below: just a high drop. No floor at all: a pit, so hop.
+        count = Physics.RaycastNonAlloc(probe, Vector3.down, stepHits, 20f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = stepHits[i].collider;
+            if (collider == null || collider.transform.IsChildOf(transform) || Hd2DropShield.PassesBody(collider))
+                continue;
+            return false;
+        }
+
         rise = 0.35f;
         span = 1.6f;
         return true;
@@ -4184,7 +4224,9 @@ public class Hd2EnemyBot : MonoBehaviour
             velocity = body.velocity;
         velocity.y = 0f;
         float speed = velocity.magnitude;
-        float target = speed > 0.25f ? 1f : 0f;
+        // No stride in the air: legs hang still while falling or hopping.
+        bool airborne = body != null && body.enabled && !body.isGrounded;
+        float target = speed > 0.25f && !airborne ? 1f : 0f;
         gaitWeight = Mathf.MoveTowards(gaitWeight, target, Time.deltaTime * 6f);
         if (gaitWeight <= 0.001f)
         {
