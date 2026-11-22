@@ -684,6 +684,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         }
 
         Hd2Health.RegisterRagdoll(bodies, corpse.transform);
+        Hd2DeathTwitch.Begin(bodies, corpse.transform);
         if (blast)
             Hd2Health.ThrowFromBlast(bodies, blastOrigin, corpse.transform.position);
     }

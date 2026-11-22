@@ -4430,6 +4430,7 @@ public class Hd2EnemyBot : MonoBehaviour
             body.enabled = false;
         EnableRagdoll();
         Hd2Health.RegisterRagdoll(ragdollBodies, transform);
+        Hd2DeathTwitch.Begin(ragdollBodies, transform);
         if (health != null && health.KilledByBlast)
             Hd2Health.ThrowFromBlast(ragdollBodies, health.BlastOrigin, transform.position);
         yield return new WaitForSeconds(RagdollSeconds);
