@@ -90,6 +90,7 @@ public class Hd2PlayerDeath : MonoBehaviour
 
     void OnDestroy()
     {
+        Hd2GrayscaleFeature.Active = false;
         holdCamera = false;
         if (locomotion != null)
             locomotion.MovementLocked = false;
@@ -191,6 +192,7 @@ public class Hd2PlayerDeath : MonoBehaviour
         if (downed)
         {
             StopAllCoroutines();
+            EndGhost();
             holdCamera = false;
             ClearRagdoll();
             if (locomotion != null)
@@ -212,9 +214,23 @@ public class Hd2PlayerDeath : MonoBehaviour
     /// <summary>
     /// Round reset. Clears a ragdoll and stands the player up at the pinned spawn.
     /// </summary>
+    void ShowDeadNote(bool on)
+    {
+        var hud = GetComponent<Hd2Hud>();
+        if (hud != null)
+            hud.ShowDead(on);
+    }
+
+    void EndGhost()
+    {
+        Hd2GrayscaleFeature.Active = false;
+        ShowDeadNote(false);
+    }
+
     public void RecoverAtSpawn()
     {
         StopAllCoroutines();
+        EndGhost();
         holdCamera = false;
         ClearRagdoll();
         if (locomotion != null)
@@ -259,6 +275,9 @@ public class Hd2PlayerDeath : MonoBehaviour
             holdCamera = false;
             if (locomotion != null)
                 locomotion.Spectating = true;
+            // Like a ghost: the world goes black and white and YOU DIED stays up.
+            Hd2GrayscaleFeature.Active = true;
+            ShowDeadNote(true);
             while (true)
                 yield return null;
         }

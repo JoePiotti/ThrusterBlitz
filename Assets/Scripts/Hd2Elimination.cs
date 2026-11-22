@@ -56,6 +56,7 @@ public class Hd2Elimination : MonoBehaviour
     void OnDestroy()
     {
         Active = false;
+        Hd2GrayscaleFeature.Active = false;
         Hd2Shootout.EliminationMode = false;
     }
 

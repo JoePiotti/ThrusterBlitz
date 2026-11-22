@@ -78,6 +78,30 @@ public class Hd2Hud : MonoBehaviour
     TextMesh blueScore;
     TextMesh clockReadout;
     TextMesh roundNote;
+    TextMesh deadNote;
+
+    /// <summary>"YOU DIED" in the middle of the view, kept up until ShowDead(false).</summary>
+    public void ShowDead(bool on)
+    {
+        if (!on)
+        {
+            if (deadNote != null && deadNote.gameObject.activeSelf)
+                deadNote.gameObject.SetActive(false);
+            return;
+        }
+
+        if (deadNote == null)
+        {
+            deadNote = MakeReadout(view != null ? view : transform, new Vector3(0f, 0.14f, 0.9f), new Color(1f, 0.25f, 0.2f, 1f), TextAnchor.MiddleCenter);
+            deadNote.alignment = TextAlignment.Center;
+            deadNote.fontStyle = FontStyle.Bold;
+            deadNote.characterSize = 0.009f;
+            deadNote.text = "YOU DIED";
+        }
+
+        if (!deadNote.gameObject.activeSelf)
+            deadNote.gameObject.SetActive(true);
+    }
     int shownRed = -1;
     int shownBlue = -1;
     int shownClock = -1;
