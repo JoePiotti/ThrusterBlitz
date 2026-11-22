@@ -77,6 +77,7 @@ public class Hd2Hud : MonoBehaviour
     TextMesh redScore;
     TextMesh blueScore;
     TextMesh clockReadout;
+    TextMesh roundNote;
     int shownRed = -1;
     int shownBlue = -1;
     int shownClock = -1;
@@ -403,6 +404,35 @@ public class Hd2Hud : MonoBehaviour
             shownClock = second;
             clockReadout.text = clocks[second];
         }
+
+        RefreshRoundNote();
+    }
+
+    // Elimination: DRAW (or another note) under the clock until the next round.
+    void RefreshRoundNote()
+    {
+        string note = Hd2Elimination.Active ? Hd2Elimination.HudNote : null;
+        bool show = !string.IsNullOrEmpty(note) && side != Side.None;
+        if (!show)
+        {
+            if (roundNote != null && roundNote.gameObject.activeSelf)
+                roundNote.gameObject.SetActive(false);
+            return;
+        }
+
+        if (roundNote == null)
+        {
+            roundNote = MakeReadout(clockReadout.transform.parent, clockReadout.transform.localPosition, Color.white, TextAnchor.MiddleCenter);
+            roundNote.fontStyle = FontStyle.Bold;
+        }
+
+        roundNote.anchor = clockReadout.anchor;
+        roundNote.transform.localPosition = clockReadout.transform.localPosition + new Vector3(0f, -0.045f, 0f);
+        roundNote.transform.localRotation = clockReadout.transform.localRotation;
+        if (!roundNote.gameObject.activeSelf)
+            roundNote.gameObject.SetActive(true);
+        if (roundNote.text != note)
+            roundNote.text = note;
     }
 
     static string[] controlRed;

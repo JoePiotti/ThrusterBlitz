@@ -242,6 +242,14 @@ public class Hd2DropShieldPickup : MonoBehaviour
         line.startColor = line.endColor = pickupColor;
     }
 
+    /// <summary>Ready again at once (Elimination round start).</summary>
+    public void ResetForRound()
+    {
+        cooldownLeft = 0f;
+        if (!ready)
+            SetReady(true);
+    }
+
     void SetReady(bool value)
     {
         ready = value;

@@ -407,7 +407,12 @@ public class Hd2Health : MonoBehaviour
 
         transform.SetPositionAndRotation(pos, rot);
         if (locomotion != null)
-            Hd2TeleportArrive.Play(pos);
+        {
+            // A spawn marker a little below or above the floor must not drop the player
+            // through it: stand on the floor surface nearest the marker.
+            locomotion.SettleOnFloor();
+            Hd2TeleportArrive.Play(transform.position);
+        }
     }
 
     static AudioClip playerHitClip;

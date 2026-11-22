@@ -20,7 +20,7 @@ public class Hd2Elimination : MonoBehaviour
     public const int PointsPerWeapon = 3;
     public const float RoundSeconds = 30f;
     public const float CountdownSeconds = 3f;
-    public const float BetweenRoundsSeconds = 4f;
+    public const float BetweenRoundsSeconds = 3f;
 
     /// <summary>An Elimination match is running in this scene.</summary>
     public static bool Active { get; private set; }
@@ -28,13 +28,16 @@ public class Hd2Elimination : MonoBehaviour
     public static bool HoldsDead => Active;
     public static int RedPoints { get; private set; }
     public static int BluePoints { get; private set; }
+    /// <summary>Shown under the HUD clock until the next round (DRAW when time runs out).</summary>
+    public static string HudNote { get; private set; }
     public static readonly string[] WeaponNames = { "Pistols", "Shotguns", "SMGs", "Burst", "Shocks", "Rockets", "Lasers" };
 
-    enum Phase { Starting, Countdown, Live, Between, Over }
+    enum Phase { Starting, Arming, Seating, Countdown, Live, Between, Over }
 
     Phase phase = Phase.Starting;
     float phaseEndsAt;
     AudioSource voice;
+    AudioClip buzzer;
     readonly System.Func<Transform, bool>[] weapons = new System.Func<Transform, bool>[7];
 
     void Awake()
@@ -45,6 +48,8 @@ public class Hd2Elimination : MonoBehaviour
         voice = gameObject.AddComponent<AudioSource>();
         voice.playOnAwake = false;
         voice.spatialBlend = 0f;
+        buzzer = Resources.Load<AudioClip>("Audio/Buzzer");
+        HudNote = null;
         HideWeaponPickups();
     }
 
@@ -121,6 +126,20 @@ public class Hd2Elimination : MonoBehaviour
                 BeginRound();
                 break;
 
+            // The reset's old guns are only removed at the end of the frame, and a hand
+            // that still holds, say, a shotgun refuses another one. So the round weapons
+            // go in one frame after the reset, and bots line them up one frame after that.
+            case Phase.Arming:
+                ArmEveryone();
+                phase = Phase.Seating;
+                break;
+
+            case Phase.Seating:
+                SeatBots();
+                phase = Phase.Countdown;
+                phaseEndsAt = Time.time + CountdownSeconds;
+                break;
+
             case Phase.Countdown:
                 Show(RoundSeconds);
                 if (Time.time >= phaseEndsAt)
@@ -155,7 +174,10 @@ public class Hd2Elimination : MonoBehaviour
     void BeginRound()
     {
         Hd2SpawnField.SetLocked(true);
+        HudNote = null;
         Show(RoundSeconds);
+        ClearShields();
+        ResetPickups();
 
         var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < players.Length; i++)
@@ -163,8 +185,13 @@ public class Hd2Elimination : MonoBehaviour
             Hd2Locomotion player = players[i];
             if (player == null)
                 continue;
-            player.ReturnToBase();
-            Arm(player.leftHand, player.rightHand, WeaponOf(player.team));
+            // Back to the seat Hd2Shootout gave this player at the start, not the
+            // nearest spawn point to wherever the last round ended.
+            var death = player.GetComponent<Hd2PlayerDeath>();
+            if (death != null)
+                death.RecoverAtSpawn();
+            else
+                player.ReturnToBase();
         }
 
         var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
@@ -175,11 +202,61 @@ public class Hd2Elimination : MonoBehaviour
                 continue;
             bot.ReturnToBase();
             bot.ResetLoadout();
-            Arm(bot.LeftHand, bot.RightHand, WeaponOf(bot.team));
         }
 
-        phase = Phase.Countdown;
-        phaseEndsAt = Time.time + CountdownSeconds;
+        phase = Phase.Arming;
+    }
+
+    void ArmEveryone()
+    {
+        var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < players.Length; i++)
+        {
+            if (players[i] != null)
+                Arm(players[i].leftHand, players[i].rightHand, WeaponOf(players[i].team));
+        }
+
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < bots.Length; i++)
+        {
+            if (bots[i] != null)
+                Arm(bots[i].LeftHand, bots[i].RightHand, WeaponOf(bots[i].team));
+        }
+    }
+
+    static void SeatBots()
+    {
+        var bots = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < bots.Length; i++)
+        {
+            if (bots[i] != null)
+                bots[i].SeatHands();
+        }
+    }
+
+    // Deployed and held drop shields are gone at the start of every round.
+    static void ClearShields()
+    {
+        var shields = FindObjectsByType<Hd2DropShield>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < shields.Length; i++)
+        {
+            if (shields[i] != null)
+                Destroy(shields[i].gameObject);
+        }
+    }
+
+    // Health, thrust and drop shield pickups are all ready again each round.
+    static void ResetPickups()
+    {
+        var health = FindObjectsByType<Hd2HealthPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < health.Length; i++)
+            health[i].ResetForRound();
+        var thrust = FindObjectsByType<Hd2ThrustPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < thrust.Length; i++)
+            thrust[i].ResetForRound();
+        var shields = FindObjectsByType<Hd2DropShieldPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < shields.Length; i++)
+            shields[i].ResetForRound();
     }
 
     // Pistols come back with the reset; any later weapon replaces them in both hands.
@@ -242,7 +319,12 @@ public class Hd2Elimination : MonoBehaviour
         }
 
         if (winner == Hd2Team.None)
-            PlayLine("RoundDraw");
+        {
+            HudNote = "DRAW";
+            if (buzzer != null)
+                voice.PlayOneShot(buzzer);
+            Queue("RoundDraw");
+        }
         else
         {
             string team = winner == Hd2Team.Red ? "Red" : "Blue";
@@ -282,12 +364,6 @@ public class Hd2Elimination : MonoBehaviour
         AudioClip clip = Resources.Load<AudioClip>("Audio/Elimination/" + name);
         if (clip != null)
             lines.Enqueue(clip);
-    }
-
-    bool PlayLine(string name)
-    {
-        Announce(name);
-        return lines.Count > 0;
     }
 
     void LateUpdate()

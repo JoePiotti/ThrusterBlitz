@@ -1213,6 +1213,7 @@ public class Hd2Locomotion : MonoBehaviour
 
         UpdateJumpThrustAudio(dt);
         UpdateBlitzSmoke();
+        Vector3 frameStart = transform.position;
 
         float snap = ReadSnapDegrees();
         if (EditorFallback)
@@ -1281,6 +1282,7 @@ public class Hd2Locomotion : MonoBehaviour
         float burn = jumpBoosting ? BurnJump(dt) : 0f;
         ApplyGravity(dt, burn);
         PopOutOfWalls();
+        GuardWallCrossing(frameStart);
         NoteLanding();
         UpdateGrindAudio();
         DrownIfTouchingWater();
@@ -3521,6 +3523,84 @@ public class Hd2Locomotion : MonoBehaviour
     }
 
     const float WallLandingBackoff = 0.5f;
+
+    static readonly RaycastHit[] guardHits = new RaycastHit[16];
+
+    /// <summary>
+    /// Last line of defense: however this frame's walking, real-life steps, step-ups or
+    /// wall pops moved the body, the upper body (above step height) may not have passed
+    /// through anything solid. If it did, the body stops at that wall instead.
+    /// Big jumps (respawns, teleports) are not walking and are left alone.
+    /// </summary>
+    void GuardWallCrossing(Vector3 from)
+    {
+        Vector3 move = transform.position - from;
+        float distance = move.magnitude;
+        if (distance < 0.002f || distance > 1.5f)
+            return;
+
+        Vector3 direction = move / distance;
+        float radius = Mathf.Max(0.05f, bodyRadius) * 0.8f;
+        float height = Mathf.Max(bodyHeight, radius * 2f + 0.01f);
+        float maxStep = Mathf.Max(0.5f, stepHeight);
+        Vector3 bottom = from + Vector3.up * (maxStep + 0.05f + radius);
+        Vector3 top = from + Vector3.up * (height - radius);
+        if (top.y < bottom.y)
+            top = bottom;
+
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        int count = Physics.CapsuleCastNonAlloc(bottom, top, radius, direction, guardHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        Physics.queriesHitBackfaces = previous;
+
+        float nearest = float.MaxValue;
+        for (int i = 0; i < count; i++)
+        {
+            // distance 0 = already touching at the start; that alone is not a crossing.
+            if (guardHits[i].distance <= 0f || !BlocksBody(guardHits[i].collider))
+                continue;
+            if (guardHits[i].distance < nearest)
+                nearest = guardHits[i].distance;
+        }
+
+        if (nearest == float.MaxValue)
+            return;
+
+        transform.position = from + direction * Mathf.Max(0f, nearest - skinWidth);
+    }
+
+    /// <summary>
+    /// Stands the body on the floor surface nearest its feet, up to 1.2 m above or 2 m
+    /// below. For spawns whose marker sits a little inside or above the floor.
+    /// </summary>
+    public void SettleOnFloor()
+    {
+        Vector3 feet = transform.position;
+        Vector3 origin = feet + Vector3.up * 1.2f;
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = false;
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, guardHits, 3.2f, ~0, QueryTriggerInteraction.Ignore);
+        Physics.queriesHitBackfaces = previous;
+
+        float best = float.MaxValue;
+        float floorY = feet.y;
+        for (int i = 0; i < count; i++)
+        {
+            RaycastHit hit = guardHits[i];
+            if (hit.normal.y < 0.5f || !BlocksBody(hit.collider))
+                continue;
+            float gap = Mathf.Abs(hit.point.y - feet.y);
+            if (gap >= best)
+                continue;
+            best = gap;
+            floorY = hit.point.y;
+        }
+
+        if (best == float.MaxValue)
+            return;
+        feet.y = floorY;
+        transform.position = feet;
+    }
     const float LandingWallMargin = 0.2f;
 
     /// <summary>
