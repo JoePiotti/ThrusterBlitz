@@ -196,7 +196,17 @@ public class Hd2Health : MonoBehaviour
     /// <summary>
     /// Gives a fresh ragdoll one shove away from a killing blast.
     /// </summary>
+    // How hard a killing blast throws the body (was 5.5 m/s; tripled).
+    public const float BlastThrowSpeed = 16.5f;
+    // Bodies already down at the edge of a blast get this share of the full throw.
+    const float BlastEdgeShare = 0.35f;
+
     public static void ThrowFromBlast(List<Rigidbody> bodies, Vector3 origin, Vector3 bodyPosition)
+    {
+        Throw(bodies, origin, bodyPosition, BlastThrowSpeed);
+    }
+
+    static void Throw(List<Rigidbody> bodies, Vector3 origin, Vector3 bodyPosition, float speed)
     {
         if (bodies == null)
             return;
@@ -206,14 +216,86 @@ public class Hd2Health : MonoBehaviour
             away = Vector3.up;
         away.y = Mathf.Max(away.y, 0.2f);
         away.Normalize();
-        Vector3 velocity = away * 5.5f;
+        Vector3 velocity = away * speed;
         for (int i = 0; i < bodies.Count; i++)
         {
             Rigidbody rigidbody = bodies[i];
-            if (rigidbody == null)
+            if (rigidbody == null || rigidbody.isKinematic)
                 continue;
             rigidbody.linearVelocity = velocity;
         }
+    }
+
+    class Ragdoll
+    {
+        public List<Rigidbody> bodies;
+        public Transform root;
+        public int frame;
+    }
+
+    static readonly List<Ragdoll> ragdolls = new List<Ragdoll>();
+
+    /// <summary>A ragdoll that later explosions should throw. Call when it goes limp.</summary>
+    public static void RegisterRagdoll(List<Rigidbody> bodies, Transform root)
+    {
+        if (bodies == null || root == null)
+            return;
+        for (int i = 0; i < ragdolls.Count; i++)
+        {
+            if (ragdolls[i].bodies == bodies)
+            {
+                ragdolls[i].root = root;
+                ragdolls[i].frame = Time.frameCount;
+                return;
+            }
+        }
+
+        ragdolls.Add(new Ragdoll { bodies = bodies, root = root, frame = Time.frameCount });
+    }
+
+    /// <summary>
+    /// Throws bodies that are already down: full force inside the inner radius, fading to
+    /// BlastEdgeShare at the outer radius. Bodies that just died from this blast were
+    /// thrown already and are skipped. Drop shields still block it.
+    /// </summary>
+    public static void ShoveRagdolls(Vector3 origin, float innerRadius, float outerRadius)
+    {
+        for (int i = ragdolls.Count - 1; i >= 0; i--)
+        {
+            Ragdoll ragdoll = ragdolls[i];
+            Rigidbody center = Center(ragdoll.bodies);
+            if (ragdoll.root == null || center == null)
+            {
+                if (ragdoll.root == null || ragdoll.bodies.Count == 0)
+                    ragdolls.RemoveAt(i);
+                continue;
+            }
+
+            if (ragdoll.frame == Time.frameCount)
+                continue;
+
+            float distance = Vector3.Distance(center.worldCenterOfMass, origin);
+            if (distance > outerRadius)
+                continue;
+            if (Hd2DropShield.Blocks(origin, center.worldCenterOfMass))
+                continue;
+
+            float share = distance <= innerRadius
+                ? 1f
+                : Mathf.Lerp(1f, BlastEdgeShare, Mathf.InverseLerp(innerRadius, outerRadius, distance));
+            Throw(ragdoll.bodies, origin, center.worldCenterOfMass - Vector3.up, BlastThrowSpeed * share);
+        }
+    }
+
+    static Rigidbody Center(List<Rigidbody> bodies)
+    {
+        for (int i = 0; i < bodies.Count; i++)
+        {
+            if (bodies[i] != null && !bodies[i].isKinematic)
+                return bodies[i];
+        }
+
+        return null;
     }
 
     public void MarkHit(Vector3 point)

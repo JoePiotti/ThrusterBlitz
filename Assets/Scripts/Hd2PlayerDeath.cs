@@ -683,6 +683,7 @@ public class Hd2PlayerDeath : MonoBehaviour
             joint.enableProjection = true;
         }
 
+        Hd2Health.RegisterRagdoll(bodies, corpse.transform);
         if (blast)
             Hd2Health.ThrowFromBlast(bodies, blastOrigin, corpse.transform.position);
     }

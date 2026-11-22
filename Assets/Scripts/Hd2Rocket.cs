@@ -366,6 +366,7 @@ public class Hd2Rocket : MonoBehaviour
             health.ApplyHit(amount, false, true);
         }
 
+        Hd2Health.ShoveRagdolls(point, innerRadiusMeters, outerRadiusMeters);
         Hd2Explosion.Rocket(point, impact);
         PlayExplosion(point, impact ? "Audio/RocketImpact" : "Audio/RocketAirExplosion");
         Destroy(gameObject);

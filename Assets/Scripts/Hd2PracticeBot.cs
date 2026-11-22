@@ -334,6 +334,7 @@ public class Hd2PracticeBot : MonoBehaviour
             joints.Add(joint);
         }
 
+        Hd2Health.RegisterRagdoll(bodies, transform);
         if (health != null && health.KilledByBlast)
             Hd2Health.ThrowFromBlast(bodies, health.BlastOrigin, body.position);
     }

@@ -1051,6 +1051,7 @@ public class Hd2ShockOrb : MonoBehaviour
             health.ApplyHit(amount, false, true);
         }
 
+        Hd2Health.ShoveRagdolls(point, innerRadius, outerRadius);
         Hd2Explosion.Shock(point, color);
 
         AudioClip clip = Resources.Load<AudioClip>("Audio/RocketExplosion");
