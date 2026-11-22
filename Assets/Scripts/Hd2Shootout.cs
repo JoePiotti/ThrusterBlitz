@@ -19,11 +19,11 @@ public class Hd2Shootout : MonoBehaviour
     public static bool Present { get; private set; }
 
     /// <summary>
-    /// Set by the title screen before loading this scene: play Elimination (Hd2Elimination)
-    /// instead of team deathmatch. Teams, spawns, HUD score, clock and the end banner are
-    /// shared; Elimination drives the score, clock and gates itself.
+    /// Elimination (Hd2Elimination) runs on top of this when it is the selected game mode
+    /// (Hd2GameMode): teams, spawns, HUD score, clock and the end banner are shared, and
+    /// Elimination drives the score, clock and gates itself.
     /// </summary>
-    public static bool EliminationMode;
+    public static bool EliminationMode => Hd2GameMode.Selected == Hd2GameMode.Mode.Elimination;
     public static bool Decided { get; private set; }
     public static int RedKills { get; private set; }
     public static int BlueKills { get; private set; }
@@ -76,8 +76,7 @@ public class Hd2Shootout : MonoBehaviour
         RedKills = 0;
         BlueKills = 0;
         queuedLead = null;
-        FillRosters();
-        BalanceTeams();
+        SetUpTeams();
         matchEndsAt = Time.time + MatchSeconds;
         TimeLeft = MatchSeconds;
         Hd2SpawnField.SetLocked(true);
@@ -137,7 +136,18 @@ public class Hd2Shootout : MonoBehaviour
         PlaceBanner();
     }
 
-    void BalanceTeams()
+    /// <summary>
+    /// Fills each team to five with bots (two easy, two medium, one hard), splits the
+    /// players between the teams, and puts everyone on their team's spawn points. Used by
+    /// every team mode on a map (Team Death Match, Elimination, Control Point).
+    /// </summary>
+    public static void SetUpTeams()
+    {
+        FillRosters();
+        BalanceTeams();
+    }
+
+    static void BalanceTeams()
     {
         var players = new List<Hd2Locomotion>();
         var foundPlayers = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
@@ -201,7 +211,7 @@ public class Hd2Shootout : MonoBehaviour
         Hd2BotDifficulty.Hard
     };
 
-    void FillRosters()
+    static void FillRosters()
     {
         var found = FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         var red = new List<Hd2EnemyBot>();

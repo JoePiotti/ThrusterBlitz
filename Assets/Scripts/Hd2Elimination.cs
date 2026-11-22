@@ -57,30 +57,29 @@ public class Hd2Elimination : MonoBehaviour
     {
         Active = false;
         Hd2GrayscaleFeature.Active = false;
-        Hd2Shootout.EliminationMode = false;
     }
 
-    // The scene's WeaponPickups folder is switched off; its pickups still hand out the
-    // round's weapons directly.
+    // Elimination's own content has no weapon pickups. The round weapons come from the
+    // map's weapon pickups wherever they are, switched off or not (on a multi-mode map they
+    // sit under Team Death Match, which is off). An old single-mode map's WeaponPickups
+    // folder is switched off here.
     void HideWeaponPickups()
     {
-        GameObject folder = FindFolder("WeaponPickups");
-        if (folder == null)
-            return;
+        weapons[1] = Source<Hd2ShotgunPickup>(p => p.GiveTo);
+        weapons[2] = Source<Hd2SmgPickup>(p => p.GiveTo);
+        weapons[3] = Source<Hd2BurstPickup>(p => p.GiveTo);
+        weapons[4] = Source<Hd2ShocksPickup>(p => p.GiveTo);
+        weapons[5] = Source<Hd2RocketPickup>(p => p.GiveTo);
+        weapons[6] = Source<Hd2LaserPickup>(p => p.GiveTo);
 
-        Transform root = folder.transform;
-        weapons[1] = Source<Hd2ShotgunPickup>(root, p => p.GiveTo);
-        weapons[2] = Source<Hd2SmgPickup>(root, p => p.GiveTo);
-        weapons[3] = Source<Hd2BurstPickup>(root, p => p.GiveTo);
-        weapons[4] = Source<Hd2ShocksPickup>(root, p => p.GiveTo);
-        weapons[5] = Source<Hd2RocketPickup>(root, p => p.GiveTo);
-        weapons[6] = Source<Hd2LaserPickup>(root, p => p.GiveTo);
-        folder.SetActive(false);
+        GameObject folder = FindFolder("WeaponPickups");
+        if (folder != null)
+            folder.SetActive(false);
     }
 
-    static System.Func<Transform, bool> Source<T>(Transform root, System.Func<T, System.Func<Transform, bool>> give) where T : Component
+    static System.Func<Transform, bool> Source<T>(System.Func<T, System.Func<Transform, bool>> give) where T : Component
     {
-        T pickup = root.GetComponentInChildren<T>(true);
+        T pickup = FindFirstObjectByType<T>(FindObjectsInactive.Include);
         return pickup != null ? give(pickup) : null;
     }
 

@@ -42,11 +42,15 @@ public class Hd2TitleScreen : MonoBehaviour
     TextMesh status;
     readonly RaycastHit[] aimHits = new RaycastHit[8];
 
-    const string EliminationChoice = "Shootout#Elimination";
+    // A choice is "<scene>#<mode>"; the mode is set before the scene loads (Hd2GameMode).
+    const string MapScene = "Shootout";
+    const string DeathmatchChoice = MapScene + "#TeamDeathmatch";
+    const string EliminationChoice = MapScene + "#Elimination";
+    const string ControlPointChoice = MapScene + "#ControlPoint";
 
     void Awake()
     {
-        Hd2Shootout.EliminationMode = false;
+        Hd2GameMode.Selected = Hd2GameMode.Mode.TeamDeathmatch;
         view = EnsureCamera();
         BuildPoster(view);
         PlayMusic();
@@ -154,10 +158,16 @@ public class Hd2TitleScreen : MonoBehaviour
 
         HideLaser();
 
-        // Elimination plays in the Shootout scene.
-        Hd2Shootout.EliminationMode = sceneName == EliminationChoice;
-        if (Hd2Shootout.EliminationMode)
-            sceneName = "Shootout";
+        // "<scene>#<mode>": pick the mode, then load the scene.
+        Hd2GameMode.Selected = Hd2GameMode.Mode.TeamDeathmatch;
+        int mark = sceneName.IndexOf('#');
+        if (mark >= 0)
+        {
+            string modeName = sceneName.Substring(mark + 1);
+            sceneName = sceneName.Substring(0, mark);
+            if (System.Enum.TryParse(modeName, out Hd2GameMode.Mode picked))
+                Hd2GameMode.Selected = picked;
+        }
 
         if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
@@ -369,12 +379,13 @@ public class Hd2TitleScreen : MonoBehaviour
         renderer.sharedMaterial = ArtMaterial(art);
 
         Vector3 first = center + new Vector3(0f, -height * 0.5f - 0.26f, 0f);
-        Vector3 middle = first + new Vector3(0f, -0.44f, 0f);
-        Vector3 second = middle + new Vector3(0f, -0.44f, 0f);
-        choices = new Choice[3];
-        choices[0] = BuildChoice("SHOOTOUT", "Shootout", first, new Color(0.55f, 0.12f, 0.1f, 1f), new Color(1f, 0.42f, 0.28f, 1f));
-        choices[1] = BuildChoice("ELIMINATION", EliminationChoice, middle, new Color(0.45f, 0.25f, 0.05f, 1f), new Color(1f, 0.65f, 0.2f, 1f));
-        choices[2] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, second, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
+        Vector3 step = new Vector3(0f, -0.44f, 0f);
+        Vector3 second = first + step * 3f;
+        choices = new Choice[4];
+        choices[0] = BuildChoice("TEAM DEATHMATCH", DeathmatchChoice, first, new Color(0.55f, 0.12f, 0.1f, 1f), new Color(1f, 0.42f, 0.28f, 1f));
+        choices[1] = BuildChoice("ELIMINATION", EliminationChoice, first + step, new Color(0.45f, 0.25f, 0.05f, 1f), new Color(1f, 0.65f, 0.2f, 1f));
+        choices[2] = BuildChoice("CONTROL POINT", ControlPointChoice, first + step * 2f, new Color(0.1f, 0.2f, 0.5f, 1f), new Color(0.35f, 0.6f, 1f, 1f));
+        choices[3] = BuildChoice("JOIN TEST", Hd2Session.JoinMarker, second, new Color(0.08f, 0.32f, 0.18f, 1f), new Color(0.25f, 0.85f, 0.4f, 1f));
         BuildVersionLabel(second + new Vector3(0f, -0.32f, -0.04f));
         status = BuildNotice(second + new Vector3(0f, -0.52f, -0.04f));
         string note = Hd2Session.TakeTitleNote();
