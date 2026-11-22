@@ -826,8 +826,13 @@ public class Hd2EnemyBot : MonoBehaviour
         T[] guns = hand.GetComponentsInChildren<T>(true);
         for (int i = 0; i < guns.Length; i++)
         {
-            if (guns[i] != null)
-                Object.Destroy(guns[i].gameObject);
+            if (guns[i] == null)
+                continue;
+            // Off the hand now: Destroy waits for the end of the frame, and until then the
+            // old gun was still found on the hand and got the new gun's seating and fist fit.
+            guns[i].gameObject.SetActive(false);
+            guns[i].transform.SetParent(null, false);
+            Object.Destroy(guns[i].gameObject);
         }
     }
 
@@ -2360,7 +2365,10 @@ public class Hd2EnemyBot : MonoBehaviour
         Transform muzzle = FindNamed(gun, "Muzzle");
         if (muzzle == null)
             muzzle = FindNamed(gun, "Barrel");
-        Vector3 from = muzzle != null ? muzzle.position : gun.position;
+        // Long guns aim along the line from the shoulder. Measured from the muzzle, each
+        // frame's aim moved the muzzle, which changed the next frame's aim; up close that
+        // made shotguns flick between poses.
+        Vector3 from = !pistol && upper != null ? upper.position : muzzle != null ? muzzle.position : gun.position;
         Vector3 dir = aim - from;
         if (dir.sqrMagnitude < 0.01f)
             dir = transform.forward;
@@ -2386,7 +2394,7 @@ public class Hd2EnemyBot : MonoBehaviour
         else
             hand.localPosition = Vector3.zero;
 
-        from = muzzle != null ? muzzle.position : gun.position;
+        from = !pistol && upper != null ? upper.position : muzzle != null ? muzzle.position : gun.position;
         dir = aim - from;
         if (dir.sqrMagnitude < 0.01f)
         {
@@ -4110,12 +4118,22 @@ public class Hd2EnemyBot : MonoBehaviour
         RememberFist(holder, gun, skin);
     }
 
+    static Mesh bakedFist;
+
     void RememberFist(Transform holder, Transform gun, SkinnedMeshRenderer skin)
     {
         if (holder == null || gun == null || skin == null)
             return;
 
-        Bounds box = skin.bounds;
+        // Measure the fist from its posed mesh. skin.bounds is only refreshed when the
+        // renderer draws, so on a gun just switched on it could be stale, and the fist fit
+        // then shoved the pistol up out of the hand.
+        if (bakedFist == null)
+            bakedFist = new Mesh();
+        skin.BakeMesh(bakedFist, true);
+        Bounds local = bakedFist.bounds;
+        Vector3 center = skin.transform.position + skin.transform.rotation * local.center;
+        Bounds box = new Bounds(center, local.size);
         float size = box.size.magnitude;
         if (size < 0.02f || size > 0.5f)
             return;
