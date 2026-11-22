@@ -94,12 +94,15 @@ public class Hd2Health : MonoBehaviour
             return;
         }
 
+        bool headHit = headshot;
         if (headshot)
             amount *= 3f;
 
         float before = health;
         health = Mathf.Max(0f, health - amount);
         Hd2MatchStats.NoteDamage(this, LastAttacker, before - health);
+        if (health <= 0f)
+            KilledByHeadshot = headHit;
         if (health <= 0f && blastArmed)
         {
             KilledByBlast = true;
@@ -146,6 +149,8 @@ public class Hd2Health : MonoBehaviour
         return killPath[index];
     }
     public bool KilledByBlast { get; private set; }
+    /// <summary>The killing hit was a headshot: the head pops off (Hd2HeadPop).</summary>
+    public bool KilledByHeadshot { get; private set; }
     public Vector3 BlastOrigin { get; private set; }
     bool blastArmed;
     Vector3 armedBlast;
@@ -362,6 +367,7 @@ public class Hd2Health : MonoBehaviour
         StopCritical();
         health = maxHealth;
         KilledByBlast = false;
+        KilledByHeadshot = false;
         killPathCount = 0;
         if (!hasSpawn)
             RememberSpawn();

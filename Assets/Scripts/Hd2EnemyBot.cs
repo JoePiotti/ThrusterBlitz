@@ -475,6 +475,7 @@ public class Hd2EnemyBot : MonoBehaviour
             if (useBodyColor)
                 TintRenderers(robot.transform, bodyColor);
             AddFillers(robot.transform);
+            Hd2HeadPop.Prepare(robot.transform);
         }
 
         Transform headBone = FindNamed(transform, "Head");
@@ -4431,6 +4432,8 @@ public class Hd2EnemyBot : MonoBehaviour
         EnableRagdoll();
         Hd2Health.RegisterRagdoll(ragdollBodies, transform);
         Hd2DeathTwitch.Begin(ragdollBodies, transform);
+        if (health != null && health.KilledByHeadshot)
+            Hd2HeadPop.Pop(transform, health);
         if (health != null && health.KilledByBlast)
             Hd2Health.ThrowFromBlast(ragdollBodies, health.BlastOrigin, transform.position);
         yield return new WaitForSeconds(RagdollSeconds);
@@ -4469,6 +4472,7 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         health.Respawn();
+        Hd2HeadPop.Restore(transform);
         RestorePistols();
         ApplyBodyColor();
         if (domination && homeSpawn != null)

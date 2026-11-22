@@ -120,6 +120,7 @@ public class Hd2PracticeBot : MonoBehaviour
         DisableRagdoll();
         RestorePose();
         health.Respawn();
+        Hd2HeadPop.Restore(transform);
         if (label != null)
             label.text = "60";
         ragdolling = false;
@@ -336,6 +337,8 @@ public class Hd2PracticeBot : MonoBehaviour
 
         Hd2Health.RegisterRagdoll(bodies, transform);
         Hd2DeathTwitch.Begin(bodies, transform);
+        if (health != null && health.KilledByHeadshot)
+            Hd2HeadPop.Pop(transform, health);
         if (health != null && health.KilledByBlast)
             Hd2Health.ThrowFromBlast(bodies, health.BlastOrigin, body.position);
     }

@@ -497,6 +497,8 @@ public class Hd2PlayerDeath : MonoBehaviour
         bool blast = health != null && health.KilledByBlast;
         ActivateRagdoll(ragdoll, blast ? health.BlastOrigin : Vector3.zero, blast);
         IgnorePlayerColliders(ragdoll);
+        if (health != null && health.KilledByHeadshot)
+            Hd2HeadPop.Pop(ragdoll.transform, health);
         CarryGuns(ragdoll);
     }
 
