@@ -360,6 +360,7 @@ public class Hd2Deathmatch : MonoBehaviour
         if (Over)
             return;
         Over = true;
+        Hd2MatchStats.AwardMatchEnd();
 
         for (int i = 0; i < fighters.Count; i++)
         {

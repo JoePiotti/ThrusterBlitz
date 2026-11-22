@@ -14,7 +14,11 @@ using UnityEngine.SceneManagement;
 /// - Control Point / Domination: the fighter who turned a point to their team's color gets
 ///   20 points (ClaimPoints) for every team point it produces until the other team takes it.
 /// - Payload: 10 points (PayloadPoints) for every 0.1 m (PayloadStep) the cart moves forward
-///   to each fighter riding it. Ping is for the HUD (LocalPingMs).
+///   to each fighter riding it.
+/// - Multi-kills, kills within MultiKillSeconds of each other: a double is worth 50, a
+///   triple 100, a quad 150, five or more 200 (MultiKillPoints). Points are paid as each
+///   kill lands, so a triple pays 50 on the second kill and 50 more on the third.
+/// - Match end: 100 points (StreakBonusPoints) times the best kill streak of the match. Ping is for the HUD (LocalPingMs).
 /// </summary>
 public static class Hd2MatchStats
 {
@@ -35,12 +39,21 @@ public static class Hd2MatchStats
     public const int ClaimPoints = 20;
     public const int PayloadPoints = 10;
     public const float PayloadStep = 0.1f;
+    public const float MultiKillSeconds = 1f;
+    public const int StreakBonusPoints = 100;
+    // Indexed by kills in the chain: [2] double, [3] triple, [4] quad, [5] five or more.
+    static readonly int[] MultiKillPoints = { 0, 0, 50, 100, 150, 200 };
+
+    static bool matchEndPaid;
 
     struct Tally
     {
         public int Kills;
         public int Deaths;
         public int Streak;
+        public int BestStreak;
+        public int Chain;
+        public float LastKillAt;
         public int Score;
         public float ScoreCarry;
     }
@@ -59,7 +72,10 @@ public static class Hd2MatchStats
     static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         if (mode == LoadSceneMode.Single)
+        {
             tallies.Clear();
+            matchEndPaid = false;
+        }
     }
 
     /// <summary>Called once when a fighter dies. Self-kills and team kills count only the death.</summary>
@@ -109,6 +125,25 @@ public static class Hd2MatchStats
         tallies[key] = tally;
     }
 
+    /// <summary>
+    /// End of a match: each fighter gets StreakBonusPoints times their best kill streak.
+    /// Paid once per match; the game modes call it when they finish.
+    /// </summary>
+    public static void AwardMatchEnd()
+    {
+        if (matchEndPaid)
+            return;
+        matchEndPaid = true;
+
+        var keys = new List<int>(tallies.Keys);
+        for (int i = 0; i < keys.Count; i++)
+        {
+            Tally tally = tallies[keys[i]];
+            tally.Score += StreakBonusPoints * tally.BestStreak;
+            tallies[keys[i]] = tally;
+        }
+    }
+
     /// <summary>Adds points to a fighter (any component on or under its Hd2Health).</summary>
     public static void AddScore(Component who, int points)
     {
@@ -136,8 +171,24 @@ public static class Hd2MatchStats
         tally.Deaths += deaths;
         // Kill streak: kills since this fighter last died.
         if (deaths > 0)
+        {
             tally.Streak = 0;
-        tally.Streak += kills;
+            tally.Chain = 0;
+        }
+
+        if (kills > 0)
+        {
+            tally.Streak += kills;
+            tally.BestStreak = Mathf.Max(tally.BestStreak, tally.Streak);
+            float now = Time.time;
+            tally.Chain = tally.Chain > 0 && now - tally.LastKillAt <= MultiKillSeconds ? tally.Chain + 1 : 1;
+            tally.LastKillAt = now;
+            // Pay the step up to this chain's value, so the total matches the biggest tier.
+            int reached = Mathf.Min(tally.Chain, MultiKillPoints.Length - 1);
+            int before = Mathf.Min(tally.Chain - 1, MultiKillPoints.Length - 1);
+            tally.Score += MultiKillPoints[reached] - MultiKillPoints[before];
+        }
+
         tallies[key] = tally;
     }
 
