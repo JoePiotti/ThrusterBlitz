@@ -35,6 +35,13 @@ public static class Hd2MatchStats
         public int Score;
         public Hd2Team Team;
         public bool IsYou;
+        public bool Dead;
+    }
+
+    static bool IsDown(Component who)
+    {
+        Hd2Health life = who != null ? who.GetComponent<Hd2Health>() : null;
+        return life != null && life.IsDead;
     }
 
     public const int KillPoints = 100;
@@ -247,7 +254,8 @@ public static class Hd2MatchStats
                 Streak = tally.Streak,
                 Score = tally.Score,
                 Team = players[i].team,
-                IsYou = true
+                IsYou = true,
+                Dead = IsDown(players[i])
             });
         }
 
@@ -267,7 +275,8 @@ public static class Hd2MatchStats
                 Deaths = tally.Deaths,
                 Streak = tally.Streak,
                 Score = tally.Score,
-                Team = other.team
+                Team = other.team,
+                Dead = IsDown(other)
             });
         }
 
@@ -283,7 +292,8 @@ public static class Hd2MatchStats
                 Deaths = tally.Deaths,
                 Streak = tally.Streak,
                 Score = tally.Score,
-                Team = Hd2SpawnField.TeamOf(bots[i])
+                Team = Hd2SpawnField.TeamOf(bots[i]),
+                Dead = IsDown(bots[i])
             });
         }
 

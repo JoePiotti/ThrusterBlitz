@@ -106,6 +106,7 @@ public class Hd2UserMenu : MonoBehaviour
     {
         public Image background;
         public Text[] cells;
+        public Text dead;
     }
     LineRenderer laser;
     bool open;
@@ -800,6 +801,16 @@ public class Hd2UserMenu : MonoBehaviour
                 row.cells[c] = cell;
             }
 
+            // Red X at the right end of the name while that fighter is dead. The outline keeps
+            // it readable on the red team's rows.
+            row.dead = MakeText(row.background.rectTransform, "X", 26, TextAnchor.MiddleCenter, new Color(1f, 0.15f, 0.12f, 1f));
+            row.dead.fontStyle = FontStyle.Bold;
+            Place(row.dead.rectTransform, scoreColumns[1] + scoreWidths[1] - 30f, 0f, 28f, ScoreRowHeight);
+            var edge = row.dead.gameObject.AddComponent<Outline>();
+            edge.effectColor = Color.black;
+            edge.effectDistance = new Vector2(1.5f, -1.5f);
+            row.dead.gameObject.SetActive(false);
+
             row.background.gameObject.SetActive(false);
             scoreRows.Add(row);
         }
@@ -873,6 +884,8 @@ public class Hd2UserMenu : MonoBehaviour
             SetCell(row, 3, data.Deaths.ToString(), style);
             SetCell(row, 4, data.Streak.ToString(), style);
             SetCell(row, 5, data.Score.ToString(), style);
+            if (row.dead.gameObject.activeSelf != data.Dead)
+                row.dead.gameObject.SetActive(data.Dead);
         }
 
         for (int h = headersUsed; h < teamHeaders.Count; h++)
