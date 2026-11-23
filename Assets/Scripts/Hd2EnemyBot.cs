@@ -667,6 +667,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
     public void ReturnToBase()
     {
+        ArmSpawnBurst();
         StopAllCoroutines();
         Hd2HeadPop.Restore(transform);
         if (ragdolling)
@@ -863,7 +864,10 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         if (domination)
+        {
             TickDominationGate();
+            TrySpawnBurst();
+        }
 
         if (health == null || !health.IsDead)
             GrabNearbyWeapon();
@@ -1037,6 +1041,29 @@ public class Hd2EnemyBot : MonoBehaviour
         Hd2Team enemy = EnemyOf(team);
         bool ours = objective != null && team != Hd2Team.None && objective.Owner == team
             && objective.OccupantTeam != enemy;
+        if (ours && Hd2ControlPoint.Present)
+        {
+            // Hold a post on the ring around the point, watching outward.
+            Vector3 post = GuardPost(objective);
+            float postGap = Horizontal(post);
+            Vector3 outward = Flat(post - objective.transform.position);
+            if (outward.sqrMagnitude < 0.0001f)
+                outward = Flat(transform.forward);
+            if (postGap > 1.2f)
+            {
+                moveDir = ClearOfWater(Flat(post - transform.position).normalized);
+                Face(moveDir);
+            }
+            else
+            {
+                moveDir = Vector3.zero;
+                Face(outward);
+            }
+
+            AimAt(transform.position + Vector3.up * 1.2f + outward.normalized * 8f, false);
+            return;
+        }
+
         if (gap < 1.35f && ours)
         {
             moveDir = Vector3.zero;
@@ -1627,6 +1654,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
     public void TakePlace(Hd2Team side, Color color, int slot, Transform spawn)
     {
+        ArmSpawnBurst();
         team = side;
         bodyColor = color;
         useBodyColor = true;
@@ -2091,7 +2119,187 @@ public class Hd2EnemyBot : MonoBehaviour
 
         if (!traveling && !grinding)
             JitterCombatMove(to);
+        if (!traveling && !grinding)
+            HoldPointWhileFighting();
         BackUpFrom(target.position + Vector3.up * 1.1f);
+    }
+
+    // ---- Control Point ----
+    // Leaving the base: right after a spawn (and at GO) each bot blitzes out at a random
+    // angle toward the point instead of walking out the door into the other team's fire.
+    // At the point: a bot whose team doesn't own it goes and presses it, fighting on the
+    // way. Once it's theirs they spread out on a ring around it, each at its own post,
+    // facing out, and fight from there instead of chasing.
+    bool spawnBurstArmed;
+    float spawnBurstUntil;
+    float spawnBurstAt;
+    float guardRadius = -1f;
+    Vector3 guardPost;
+    float guardPostAt = -1f;
+
+    void ArmSpawnBurst()
+    {
+        spawnBurstArmed = true;
+        spawnBurstUntil = Time.time + 4f;
+        spawnBurstAt = Time.time + Random.Range(0.05f, 0.6f);
+    }
+
+    void TrySpawnBurst()
+    {
+        if (!spawnBurstArmed)
+            return;
+        if (Hd2SpawnField.Locked)
+        {
+            // Waiting for GO: go the moment the gates open, each bot a little apart.
+            spawnBurstUntil = Time.time + 4f;
+            spawnBurstAt = Time.time + Random.Range(0.05f, 0.6f);
+            return;
+        }
+
+        if (Time.time > spawnBurstUntil || (health != null && health.IsDead))
+        {
+            spawnBurstArmed = false;
+            return;
+        }
+
+        if (Time.time < spawnBurstAt || traveling || grinding || blitzPending || body == null || !body.isGrounded)
+            return;
+        if (meter == null || meter.Charges < 1f)
+        {
+            spawnBurstArmed = false;
+            return;
+        }
+
+        Hd2TeamButton point = ChoosePoint();
+        Vector3 toward = point != null ? Flat(point.transform.position - transform.position) : Flat(transform.forward);
+        if (toward.sqrMagnitude < 0.0001f)
+            toward = Flat(transform.forward);
+        toward.Normalize();
+        for (int attempt = 0; attempt < 6; attempt++)
+        {
+            float angle = Random.Range(-60f, 60f);
+            Vector3 dir = Quaternion.AngleAxis(angle, Vector3.up) * toward;
+            float reach = Random.Range(7f, BlitzRange - 1f);
+            if (!FloorBelow(transform.position + dir * reach, out Vector3 floor))
+                continue;
+            if (!ClearFlight(floor))
+                continue;
+            if (TryBlitz(floor, null, 1f))
+            {
+                spawnBurstArmed = false;
+                return;
+            }
+        }
+
+        // Nowhere clear this frame; try again shortly.
+        spawnBurstAt = Time.time + 0.25f;
+    }
+
+    // A blitz flies a straight line, so the landing must be in plain view.
+    bool ClearFlight(Vector3 landing)
+    {
+        Vector3 from = transform.position + Vector3.up * 1.2f;
+        Vector3 to = landing + Vector3.up * 1.2f;
+        Vector3 delta = to - from;
+        float distance = delta.magnitude;
+        if (distance < 0.01f)
+            return true;
+        int count = Physics.SphereCastNonAlloc(from, 0.3f, delta / distance, probeHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            Collider hit = probeHits[i].collider;
+            if (hit == null || hit.transform.IsChildOf(transform))
+                continue;
+            if (hit.GetComponentInParent<Hd2SpawnField>() != null || hit.GetComponentInParent<Hd2EnemyBot>() != null
+                || hit.GetComponentInParent<Hd2Locomotion>() != null)
+                continue;
+            return false;
+        }
+
+        return true;
+    }
+
+    bool PointIsOurs(Hd2TeamButton point)
+    {
+        return point != null && team != Hd2Team.None && point.Owner == team && point.OccupantTeam != EnemyOf(team);
+    }
+
+    // A spot on a ring around the point, spread by spawn slot, standing on floor.
+    Vector3 GuardPost(Hd2TeamButton point)
+    {
+        if (guardRadius < 0f)
+            guardRadius = Random.Range(5f, 8.5f);
+        if (Time.time < guardPostAt)
+            return guardPost;
+
+        guardPostAt = Time.time + 4f;
+        Vector3 center = point.transform.position;
+        Vector3 enemyBase = EnemyBaseDirection(center);
+        float baseAngle = Mathf.Atan2(enemyBase.x, enemyBase.z) * Mathf.Rad2Deg;
+        // Five posts: the middle ones face the enemy's side, the others cover the flanks.
+        float[] offsets = { 0f, -45f, 45f, -100f, 100f };
+        float angle = baseAngle + offsets[Mathf.Abs(spawnSlot) % offsets.Length] + Random.Range(-12f, 12f);
+        for (float radius = guardRadius; radius >= 2.5f; radius -= 1.5f)
+        {
+            Vector3 dir = Quaternion.AngleAxis(angle, Vector3.up) * Vector3.forward;
+            if (FloorBelow(center + dir * radius, out Vector3 floor) && Mathf.Abs(floor.y - center.y) < 2.5f
+                && !StandingOnWater(floor) && !OutsidePlay(floor))
+            {
+                guardPost = floor;
+                return guardPost;
+            }
+        }
+
+        guardPost = center;
+        return guardPost;
+    }
+
+    Vector3 EnemyBaseDirection(Vector3 center)
+    {
+        Hd2Team enemy = EnemyOf(team);
+        var points = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Vector3 sum = Vector3.zero;
+        int count = 0;
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (points[i] != null && points[i].team == enemy)
+            {
+                sum += points[i].transform.position;
+                count++;
+            }
+        }
+
+        Vector3 dir = count > 0 ? Flat(sum / count - center) : Flat(center - HomePosition());
+        return dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector3.forward;
+    }
+
+    // Fighting near the point: keep moving to it (or to the guard post) while shooting.
+    void HoldPointWhileFighting()
+    {
+        if (!domination || !Hd2ControlPoint.Present)
+            return;
+        Hd2TeamButton point = ChoosePoint();
+        if (point == null)
+            return;
+
+        bool ours = PointIsOurs(point);
+        Vector3 goal = ours ? GuardPost(point) : point.transform.position;
+        float gap = Horizontal(goal);
+        if (!ours && gap < 1.25f)
+            ReachButton(point);
+
+        float settle = ours ? 1.5f : 0.9f;
+        if (gap <= settle)
+            return;
+
+        Vector3 to = Flat(goal - transform.position).normalized;
+        Vector3 blended = moveDir.sqrMagnitude > 0.0001f ? (to * 0.75f + moveDir.normalized * 0.25f) : to;
+        moveDir = ClearOfWater(blended.normalized);
+
+        // Far from a point the other team holds: close in fast.
+        if (!ours && gap > 9f && !blitzPending && meter != null && meter.Charges >= 1f
+            && FloorBelow(transform.position + to * Mathf.Min(gap - 2f, BlitzRange - 1f), out Vector3 floor) && ClearFlight(floor))
+            TryBlitz(floor, null, 1f);
     }
 
     // ---- Combat jitter ----
@@ -4615,6 +4823,7 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         bool pickedPoint = health.Respawn(true);
+        ArmSpawnBurst();
         Hd2HeadPop.Restore(transform);
         RestorePistols();
         ApplyBodyColor();
