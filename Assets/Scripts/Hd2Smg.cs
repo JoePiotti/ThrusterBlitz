@@ -207,7 +207,9 @@ public class Hd2Smg : MonoBehaviour
         }
 
         float wobble = firing ? Mathf.Sin(Time.time * 36f) * vibrationDegrees : 0f;
-        transform.localRotation = restLocalRotation * Quaternion.Euler(-climb, wobble, 0f);
+        // Bots pose the gun themselves.
+        if (GetComponentInParent<Hd2EnemyBot>() == null)
+            transform.localRotation = restLocalRotation * Quaternion.Euler(-climb, wobble, 0f);
     }
 
     public bool botHeld;

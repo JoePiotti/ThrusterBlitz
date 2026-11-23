@@ -308,7 +308,8 @@ public class Hd2LaserPistol : MonoBehaviour
         if (kick > 0f)
         {
             kick = Mathf.MoveTowards(kick, 0f, kickReturnSpeed * Time.deltaTime);
-            transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
+            if (GetComponentInParent<Hd2EnemyBot>() == null) // bots pose the gun themselves
+                transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
         }
     }
 

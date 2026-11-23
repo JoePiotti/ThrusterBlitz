@@ -256,6 +256,8 @@ public class Hd2Pistol : MonoBehaviour
 
     // Called after a respawn copy is parented to the hand, so the kick rests
     // on that pose and the magazine is full.
+    bool HeldByBot => GetComponentInParent<Hd2EnemyBot>() != null;
+
     public void AdoptHandPose()
     {
         restLocalRotation = transform.localRotation;
@@ -401,7 +403,8 @@ public class Hd2Pistol : MonoBehaviour
         if (kick > 0f)
         {
             kick = Mathf.MoveTowards(kick, 0f, kickReturnSpeed * Time.deltaTime);
-            transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
+            if (!HeldByBot)
+                transform.localRotation = restLocalRotation * Quaternion.Euler(-kick, 0f, 0f);
         }
 
         UpdateChargeOrb();

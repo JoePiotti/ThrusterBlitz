@@ -209,7 +209,9 @@ public class Hd2BurstPistol : MonoBehaviour
         }
 
         float wobble = firing ? Mathf.Sin(Time.time * 36f) * vibrationDegrees : 0f;
-        transform.localRotation = kickAxesReady
+        // Bots pose the gun themselves; this used to turn it back to its spawn pose.
+        if (GetComponentInParent<Hd2EnemyBot>() == null)
+            transform.localRotation = kickAxesReady
             ? restLocalRotation * Quaternion.AngleAxis(-climb, kickPitchAxis) * Quaternion.AngleAxis(wobble, kickYawAxis)
             : restLocalRotation * Quaternion.Euler(-climb, wobble, 0f);
     }

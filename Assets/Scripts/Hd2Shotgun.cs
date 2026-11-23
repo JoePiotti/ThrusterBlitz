@@ -185,7 +185,8 @@ public class Hd2Shotgun : MonoBehaviour
         {
             kick = Mathf.MoveTowards(kick, 0f, kickReturnSpeed * Time.deltaTime);
             // The model is turned 180, so the pistol's upward pitch points this barrel down.
-            transform.localRotation = restLocalRotation * Quaternion.Euler(kick, 0f, 0f);
+            if (GetComponentInParent<Hd2EnemyBot>() == null) // bots pose the gun themselves
+                transform.localRotation = restLocalRotation * Quaternion.Euler(kick, 0f, 0f);
         }
     }
 

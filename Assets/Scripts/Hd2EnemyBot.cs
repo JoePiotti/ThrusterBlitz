@@ -2420,7 +2420,11 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
 
         Transform wrist = grip.Wrist;
+        // The gun hangs under the hand bone, so turning the hand turns the gun with it.
+        // Put the aimed gun's angle back afterwards, then slide it onto the wrist.
+        Quaternion aimed = gun.rotation;
         grip.hand.rotation = wrist.rotation * grip.MirrorOffset(Hd2GripHand.HandSlot);
+        gun.rotation = aimed;
         gun.position += grip.hand.position - wrist.position;
     }
 
