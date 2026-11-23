@@ -482,7 +482,7 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         Transform headBone = FindNamed(transform, "Head");
-        Hd2Nameplate.Attach(transform, headBone != null ? headBone : eye, health, () => FullName + groundNote, () => team);
+        Hd2Nameplate.Attach(transform, headBone != null ? headBone : eye, health, () => FullName, () => team);
 
         Hd2VisionCone.Register(transform);
         var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
@@ -643,11 +643,6 @@ public class Hd2EnemyBot : MonoBehaviour
     /// <summary>
     /// Round reset. Clears a ragdoll and stands the bot on its base spawn.
     /// </summary>
-    // TEMPORARY diagnostics: what a bot is standing on when there is no floor under it.
-    public static bool ShowAirWalkReason = true;
-    string groundNote = "";
-    Collider lastGround;
-
     void OnControllerColliderHit(ControllerColliderHit hit)
     {
         // The bot's own limb and gun colliders are ignored at setup, but Unity drops that
@@ -658,50 +653,7 @@ public class Hd2EnemyBot : MonoBehaviour
             && hit.collider.transform.IsChildOf(transform))
         {
             Physics.IgnoreCollision(body, hit.collider, true);
-            return;
         }
-
-        if (hit.normal.y > 0.5f)
-            lastGround = hit.collider;
-    }
-
-    float groundNoteUntil;
-
-    // Shows while the bot has no floor within 0.6 m under its feet, and stays up 4 s
-    // after so it can be read: grounded flag, vertical speed, jump boost, and the
-    // last thing the controller stood on.
-    void NoteAirWalk()
-    {
-        if (!ShowAirWalkReason || body == null || !body.enabled)
-        {
-            if (Time.time > groundNoteUntil)
-                groundNote = "";
-            return;
-        }
-
-        Vector3 origin = transform.position + Vector3.up * 0.15f;
-        int count = Physics.RaycastNonAlloc(origin, Vector3.down, stepHits, 0.75f, ~0, QueryTriggerInteraction.Ignore);
-        for (int i = 0; i < count; i++)
-        {
-            if (stepHits[i].collider != null && !stepHits[i].collider.transform.IsChildOf(transform))
-            {
-                if (Time.time > groundNoteUntil)
-                    groundNote = "";
-                return;
-            }
-        }
-
-        string what = "nothing";
-        if (lastGround != null)
-        {
-            what = lastGround.name + " (" + lastGround.GetType().Name + (lastGround.isTrigger ? ", trigger" : "") + ")";
-            if (lastGround.transform.parent != null)
-                what = lastGround.transform.parent.name + "/" + what;
-        }
-
-        groundNote = "\nAIR g=" + (body.isGrounded ? "Y" : "N") + " vy=" + verticalVelocity.ToString("0.0")
-            + (jumpBoosting ? " BOOST" : "") + "\non " + what;
-        groundNoteUntil = Time.time + 4f;
     }
 
     public Transform RightHand => rightHand;
@@ -3326,7 +3278,6 @@ public class Hd2EnemyBot : MonoBehaviour
             fallTime += dt;
         Vector3 before = transform.position;
         body.Move((step + Vector3.up * verticalVelocity) * Time.deltaTime);
-        NoteAirWalk();
         if ((transform.position - before).sqrMagnitude > 0.0004f)
         {
             lastMovedAt = Time.time;

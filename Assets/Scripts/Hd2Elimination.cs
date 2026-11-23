@@ -310,10 +310,9 @@ public class Hd2Elimination : MonoBehaviour
         if (RedPoints >= PointsToWin || BluePoints >= PointsToWin)
         {
             phase = Phase.Over;
+            // The winning point is announced only as "Red/Blue Team Wins".
             string champ = winner == Hd2Team.Red ? "Red" : "Blue";
-            int won = winner == Hd2Team.Red ? RedPoints : BluePoints;
-            int lost = winner == Hd2Team.Red ? BluePoints : RedPoints;
-            Announce(champ + "Scored", "Number" + won, "Number" + lost, champ + "Wins");
+            Announce(champ + "Wins");
             Hd2Shootout.DeclareWinner(winner);
             return;
         }
@@ -341,7 +340,7 @@ public class Hd2Elimination : MonoBehaviour
     }
 
     // ---- Announcer ----
-    // Clips in Resources/Audio/Elimination: RedScored, BlueScored, Number0..Number21, and
+    // Clips in Resources/Audio/Elimination: RedScored, BlueScored, Number0..Number20, and
     // (when recorded) MatchPointRed, MatchPointBlue, RoundDraw, RedWins, BlueWins. Missing
     // clips are skipped. Each clip starts as soon as the one before stops speaking, so the
     // silence recorded at the end of a clip doesn't leave gaps.
