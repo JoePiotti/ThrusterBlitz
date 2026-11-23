@@ -17,6 +17,7 @@ public class Hd2Domination : MonoBehaviour
     public const float MatchSeconds = 900f;
 
     public static bool Decided { get; private set; }
+    public static bool Present { get; private set; }
     public static int RedPoints { get; private set; }
     public static int BluePoints { get; private set; }
     public static float TimeLeft { get; private set; } = MatchSeconds;
@@ -41,6 +42,7 @@ public class Hd2Domination : MonoBehaviour
 
     void Awake()
     {
+        Present = true;
         voice = gameObject.AddComponent<AudioSource>();
         voice.playOnAwake = false;
         voice.loop = false;
@@ -57,6 +59,11 @@ public class Hd2Domination : MonoBehaviour
         matchVoice.spatialBlend = 0f;
         matchVoice.dopplerLevel = 0f;
         matchBegins = Resources.Load<AudioClip>("Audio/MatchBegins");
+    }
+
+    void OnDestroy()
+    {
+        Present = false;
     }
 
     void Start()
@@ -171,12 +178,12 @@ public class Hd2Domination : MonoBehaviour
         else if (team == Hd2Team.Blue)
             BluePoints++;
 
-        // Everyone who turned one of the held points to this team's color shares the credit.
+        // Whoever turned each held button to this team's color gets the hold bonus.
         var points = Hd2TeamButton.All;
         for (int i = 0; i < points.Count; i++)
         {
             if (points[i] != null && points[i].Owner == team)
-                Hd2MatchStats.AddScore(points[i].Claimer, Hd2MatchStats.ClaimPoints);
+                Hd2MatchStats.AddScore(points[i].Claimer, Hd2MatchStats.DominationHoldPoints);
         }
 
         pending = Hd2Team.None;

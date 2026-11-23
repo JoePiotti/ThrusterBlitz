@@ -11,8 +11,11 @@ using UnityEngine.SceneManagement;
 /// Score:
 /// - 1 point per point of damage dealt to an enemy (DamagePoints).
 /// - 100 points per kill (KillPoints). Suicides and team kills give nothing.
-/// - Control Point / Domination: the fighter who turned a point to their team's color gets
-///   20 points (ClaimPoints) for every team point it produces until the other team takes it.
+/// - Control Point: the fighter who turned the point to their team's color gets 20 points
+///   (ClaimPoints) for every team point it produces until the other team takes it.
+/// - Domination: 20 points (ClaimPoints) for every button turned to your team's color, even
+///   if the other team turns it back. When the team wins the round, whoever turned each of
+///   its buttons gets 200 more (DominationHoldPoints).
 /// - Payload: 10 points (PayloadPoints) for every 0.1 m (PayloadStep) the cart moves forward
 ///   to each fighter riding it.
 /// - Multi-kills, kills within MultiKillSeconds of each other: a double is worth 50, a
@@ -37,6 +40,7 @@ public static class Hd2MatchStats
     public const int KillPoints = 100;
     public const float DamagePoints = 1f;
     public const int ClaimPoints = 20;
+    public const int DominationHoldPoints = 200;
     public const int PayloadPoints = 10;
     public const float PayloadStep = 0.1f;
     public const float MultiKillSeconds = 1f;

@@ -194,7 +194,12 @@ public class Hd2TeamButton : MonoBehaviour
         if (team == Hd2Team.Red || team == Hd2Team.Blue)
         {
             if (team != owner)
+            {
                 claimer = body;
+                // Domination pays for every button turned, even one the other team takes back.
+                if (Hd2Domination.Present && !Hd2ControlPoint.Present)
+                    Hd2MatchStats.AddScore(body, Hd2MatchStats.ClaimPoints);
+            }
             owner = team;
             glow = ColorOf(body, team);
             ApplyGlow();
