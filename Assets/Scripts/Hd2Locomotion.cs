@@ -322,11 +322,15 @@ public class Hd2Locomotion : MonoBehaviour
     public bool PassingFront { get; set; }
 
     /// <summary>
-    /// Guns stay quiet through a payload shield, while an arm or the gun is touching a shield,
-    /// or while the shooter is inside a wall.
+    /// Guns stay quiet until the GO of each round and match (while the spawn gates are
+    /// locked), through a payload shield, while an arm or the gun is touching a shield, or
+    /// while the shooter is inside a wall. Charging still works before GO: a pistol or
+    /// shocks charge held through GO fires when released after it.
     /// </summary>
     public static bool ShotBlocked(Component gun, Vector3 muzzle)
     {
+        if (Hd2SpawnField.Locked)
+            return true;
         if (Hd2PayloadShield.BlocksShot(gun, muzzle))
             return true;
         if (TouchesShield(gun, muzzle))

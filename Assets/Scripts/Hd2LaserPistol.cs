@@ -287,7 +287,8 @@ public class Hd2LaserPistol : MonoBehaviour
         {
             if (!full)
                 CancelPoint();
-            else if (Time.time - pointStartedAt >= chargeSeconds)
+            // A full charge waits for GO, then fires if the trigger is still held.
+            else if (Time.time - pointStartedAt >= chargeSeconds && !Hd2SpawnField.Locked)
                 Discharge();
         }
         else if (phase == Phase.Firing)
