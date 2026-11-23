@@ -144,9 +144,20 @@ public static class Hd2PickupMaterialRepair
             var renderers = pickups[i].GetComponentsInChildren<Renderer>(true);
             for (int r = 0; r < renderers.Length; r++)
             {
-                if (PrefabUtility.IsAddedGameObjectOverride(renderers[r].gameObject))
+                // Only renderers that come from the prefab can be reverted. One added in the
+                // scene (or on an added object) is not part of the instance and Unity throws.
+                Renderer renderer = renderers[r];
+                if (!PrefabUtility.IsPartOfPrefabInstance(renderer)
+                    || PrefabUtility.IsAddedGameObjectOverride(renderer.gameObject)
+                    || PrefabUtility.IsAddedComponentOverride(renderer))
                     continue;
-                PrefabUtility.RevertObjectOverride(renderers[r], InteractionMode.AutomatedAction);
+                try
+                {
+                    PrefabUtility.RevertObjectOverride(renderer, InteractionMode.AutomatedAction);
+                }
+                catch (System.ArgumentException)
+                {
+                }
             }
         }
     }
