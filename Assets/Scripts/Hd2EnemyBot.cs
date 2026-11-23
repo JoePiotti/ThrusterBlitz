@@ -93,6 +93,14 @@ public class Hd2EnemyBot : MonoBehaviour
     const float BlitzSpeed = 30f;
     const float BlitzRange = 13f;
     const float BlitzHop = 0.5f;
+    float travelHop = BlitzHop;
+
+    // A blitz down off a ledge arcs higher, so it clears the ledge's lip instead of
+    // flying through it.
+    static float HopFor(Vector3 from, Vector3 to)
+    {
+        return BlitzHop + Mathf.Max(0f, from.y - to.y) * 0.6f;
+    }
     const float GrindSpeed = 8f;
     const float SeeRange = 20f;
     const float SeeHalfAngle = 15f;
@@ -2195,25 +2203,36 @@ public class Hd2EnemyBot : MonoBehaviour
         spawnBurstAt = Time.time + 0.25f;
     }
 
-    // A blitz flies a straight line, so the landing must be in plain view.
+    // The blitz arc to the landing must be clear (the chest's path along the same arc
+    // TickTravel flies), or the bot would fly through a wall or a ledge.
     bool ClearFlight(Vector3 landing)
     {
-        Vector3 from = transform.position + Vector3.up * 1.2f;
-        Vector3 to = landing + Vector3.up * 1.2f;
-        Vector3 delta = to - from;
-        float distance = delta.magnitude;
-        if (distance < 0.01f)
-            return true;
-        int count = Physics.SphereCastNonAlloc(from, 0.3f, delta / distance, probeHits, distance, ~0, QueryTriggerInteraction.Ignore);
-        for (int i = 0; i < count; i++)
+        Vector3 start = transform.position;
+        float hop = HopFor(start, landing);
+        const int Steps = 8;
+        Vector3 previous = start + Vector3.up * 1.2f;
+        for (int step = 1; step <= Steps; step++)
         {
-            Collider hit = probeHits[i].collider;
-            if (hit == null || hit.transform.IsChildOf(transform))
-                continue;
-            if (hit.GetComponentInParent<Hd2SpawnField>() != null || hit.GetComponentInParent<Hd2EnemyBot>() != null
-                || hit.GetComponentInParent<Hd2Locomotion>() != null)
-                continue;
-            return false;
+            float t = step / (float)Steps;
+            Vector3 next = Vector3.Lerp(start, landing, t) + Vector3.up * (4f * hop * t * (1f - t) + 1.2f);
+            Vector3 delta = next - previous;
+            float distance = delta.magnitude;
+            if (distance > 0.001f)
+            {
+                int count = Physics.SphereCastNonAlloc(previous, 0.25f, delta / distance, probeHits, distance, ~0, QueryTriggerInteraction.Ignore);
+                for (int i = 0; i < count; i++)
+                {
+                    Collider hit = probeHits[i].collider;
+                    if (hit == null || hit.transform.IsChildOf(transform))
+                        continue;
+                    if (hit.GetComponentInParent<Hd2SpawnField>() != null || hit.GetComponentInParent<Hd2EnemyBot>() != null
+                        || hit.GetComponentInParent<Hd2Locomotion>() != null || hit.GetComponentInParent<Hd2TeamButton>() != null)
+                        continue;
+                    return false;
+                }
+            }
+
+            previous = next;
         }
 
         return true;
@@ -3222,6 +3241,7 @@ public class Hd2EnemyBot : MonoBehaviour
             blitzSource.PlayOneShot(blitzSource.clip);
         travelStart = transform.position;
         travelEnd = landing;
+        travelHop = HopFor(travelStart, travelEnd);
         PlayBlitzTrail();
         travelElapsed = 0f;
         travelRail = rail;
@@ -3307,7 +3327,7 @@ public class Hd2EnemyBot : MonoBehaviour
             float duration = distance / MoveAt(BlitzSpeed);
             travelElapsed += Time.deltaTime;
             float t = duration <= 0.01f ? 1f : Mathf.Clamp01(travelElapsed / duration);
-            float hop = 4f * BlitzHop * t * (1f - t);
+            float hop = 4f * travelHop * t * (1f - t);
             Vector3 next = Vector3.Lerp(travelStart, travelEnd, t) + Vector3.up * hop;
             if (Hd2SpawnField.Blocks(this, transform.position + Vector3.up * 0.9f, next + Vector3.up * 0.9f))
             {
