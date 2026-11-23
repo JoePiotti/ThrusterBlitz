@@ -145,6 +145,7 @@ public class Hd2Elimination : MonoBehaviour
                 if (Time.time >= phaseEndsAt)
                 {
                     Hd2SpawnField.SetLocked(false);
+                    ShowBaseShields(false);
                     phase = Phase.Live;
                     phaseEndsAt = Time.time + RoundSeconds;
                 }
@@ -173,6 +174,7 @@ public class Hd2Elimination : MonoBehaviour
 
     void BeginRound()
     {
+        ShowBaseShields(true);
         Hd2SpawnField.SetLocked(true);
         HudNote = null;
         Show(RoundSeconds);
@@ -235,6 +237,29 @@ public class Hd2Elimination : MonoBehaviour
     }
 
     // Deployed and held drop shields are gone at the start of every round.
+    // Base shields close each round in until GO, then vanish: a lone survivor can't sit
+    // in the base until the clock runs out to force a draw.
+    readonly System.Collections.Generic.List<GameObject> baseShields = new System.Collections.Generic.List<GameObject>();
+
+    void ShowBaseShields(bool on)
+    {
+        if (baseShields.Count == 0)
+        {
+            var fields = FindObjectsByType<Hd2SpawnField>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (fields[i] != null && fields[i].gameObject.scene == gameObject.scene)
+                    baseShields.Add(fields[i].gameObject);
+            }
+        }
+
+        for (int i = 0; i < baseShields.Count; i++)
+        {
+            if (baseShields[i] != null && baseShields[i].activeSelf != on)
+                baseShields[i].SetActive(on);
+        }
+    }
+
     static void ClearShields()
     {
         var shields = FindObjectsByType<Hd2DropShield>(FindObjectsInactive.Include, FindObjectsSortMode.None);
