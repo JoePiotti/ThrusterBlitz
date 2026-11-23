@@ -2448,7 +2448,10 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
 
         grip.Track(gun);
-        if (!IsPistolGrip(gun))
+        // Every grip gun has a posed Wrist marker; only the bots' own starting pistols
+        // keep their older fist fit (they look right that way). Burst, shocks and laser
+        // used to share the pistols' fit and sat well off the hand.
+        if (gun.GetComponent<Hd2Pistol>() == null)
             TurnHandToGrip(grip, gun);
         grip.ApplyFingers();
     }
