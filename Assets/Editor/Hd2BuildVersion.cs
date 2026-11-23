@@ -21,8 +21,36 @@ public class Hd2BuildVersion : IPreprocessBuildWithReport
         string folder = "Assets/Resources";
         if (!AssetDatabase.IsValidFolder(folder))
             AssetDatabase.CreateFolder("Assets", "Resources");
-        System.IO.File.WriteAllText(folder + "/BuildVersion.txt", version);
-        AssetDatabase.ImportAsset(folder + "/BuildVersion.txt");
+        string path = folder + "/BuildVersion.txt";
+        if (WriteWithRetry(path, version))
+            AssetDatabase.ImportAsset(path);
+        else
+            UnityEngine.Debug.LogWarning("Hd2BuildVersion: " + path + " is locked by another program; "
+                + "the title screen will show the previous version for this build.");
         AssetDatabase.SaveAssets();
+    }
+
+    // Another program (git, a file sync, a virus scan) can hold the file for a moment.
+    // Windows then refuses the write (IO error 1224) and the whole build used to fail.
+    static bool WriteWithRetry(string path, string text)
+    {
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            try
+            {
+                System.IO.File.WriteAllText(path, text);
+                return true;
+            }
+            catch (System.IO.IOException)
+            {
+                System.Threading.Thread.Sleep(200);
+            }
+            catch (System.UnauthorizedAccessException)
+            {
+                System.Threading.Thread.Sleep(200);
+            }
+        }
+
+        return false;
     }
 }
