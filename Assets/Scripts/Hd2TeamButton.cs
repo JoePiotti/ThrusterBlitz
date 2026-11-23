@@ -78,10 +78,8 @@ public class Hd2TeamButton : MonoBehaviour
         holder = null;
         offeredTouch = null;
         glow = Color.white;
-        if (beamRenderer != null)
-            beamRenderer.enabled = false;
-        if (ring != null)
-            ring.enabled = false;
+        // Unclaimed points show a white beam so players can find them on big maps.
+        ApplyGlow();
     }
     public bool Occupied => holder != null;
     public Hd2Team OccupantTeam => holder == null ? Hd2Team.None : Hd2SpawnField.TeamOf(holder);
@@ -94,7 +92,7 @@ public class Hd2TeamButton : MonoBehaviour
     }
 
     /// <summary>
-    /// White until a team claims it, then that claim's color.
+    /// White until a team claims it, then that claim's color. The beam shows white too.
     /// </summary>
     public Color MarkerColor => owner == Hd2Team.None ? Color.white : glow;
 
@@ -369,7 +367,8 @@ public class Hd2TeamButton : MonoBehaviour
         float scaleY = Mathf.Abs(transform.lossyScale.y);
         if (scaleY < 0.01f)
             scaleY = 1f;
-        bottom -= 0.2f / scaleY;
+        // Start the beam well inside the button so no gap shows when it is pressed down.
+        bottom -= 0.4f / scaleY;
 
         var beam = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         beam.name = "TeamBeam";
@@ -393,6 +392,11 @@ public class Hd2TeamButton : MonoBehaviour
         }
 
         BuildRing(beam.transform);
+        if (owner == Hd2Team.None)
+        {
+            glow = Color.white;
+            ApplyGlow();
+        }
     }
 
     void BuildRing(Transform beam)
