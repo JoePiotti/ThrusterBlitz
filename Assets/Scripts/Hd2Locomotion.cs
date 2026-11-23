@@ -1291,6 +1291,7 @@ public class Hd2Locomotion : MonoBehaviour
         PopOutOfWalls();
         GuardWallCrossing(frameStart);
         KeepOutOfSolids(frameStart);
+        EscapeSolids();
         NoteLanding();
         UpdateGrindAudio();
         DrownIfTouchingWater();
@@ -2603,6 +2604,7 @@ public class Hd2Locomotion : MonoBehaviour
         thrustLanded = true;
         PopOutOfWalls();
         thrustLanded = false;
+        EscapeSolids();
     }
 
     TrailRenderer blitzRibbon;
@@ -3745,13 +3747,91 @@ public class Hd2Locomotion : MonoBehaviour
 
             foreach (var pair in solidVotes)
             {
-                // 6 of 8 directions: the back face is nearest nearly all the way round.
-                if (pair.Value >= 6 && !inside.Contains(pair.Key) && BlocksBody(pair.Key))
+                // 6 of 8 directions: the back face is nearest nearly all the way round, and
+                // the face below is its underside too. (Standing in the arena, its outer walls
+                // can face away all round, but the floor below faces up.)
+                if (pair.Value >= 6 && !inside.Contains(pair.Key) && BlocksBody(pair.Key)
+                    && UndersideBelow(origin, pair.Key))
                     inside.Add(pair.Key);
             }
         }
 
         Physics.queriesHitBackfaces = previous;
+    }
+
+    bool UndersideBelow(Vector3 origin, Collider collider)
+    {
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, solidHits, 6f, ~0, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        bool underside = false;
+        for (int i = 0; i < count; i++)
+        {
+            if (solidHits[i].collider != collider || solidHits[i].distance >= best)
+                continue;
+            best = solidHits[i].distance;
+            underside = solidHits[i].normal.y < -0.05f;
+        }
+
+        return underside;
+    }
+
+    // Inside a solid wall every way out is a back face, and the walls block those too, so a
+    // body that got in (a blitz landing, a spawn, a push) was stuck there. Step straight out
+    // through the nearest side instead.
+    void EscapeSolids()
+    {
+        SolidsAround(transform.position, solidsNow);
+        if (solidsNow.Count == 0)
+            return;
+
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        Vector3 origin = transform.position + Vector3.up * solidHeights[0];
+        float radius = Mathf.Max(0.05f, bodyRadius);
+        float bestTravel = float.MaxValue;
+        Vector3 bestDir = Vector3.zero;
+        for (int d = 0; d < exitDirs.Length; d++)
+        {
+            Vector3 dir = exitDirs[d].normalized;
+            int count = Physics.RaycastNonAlloc(origin, dir, solidHits, 6f, ~0, QueryTriggerInteraction.Ignore);
+            float exit = -1f;
+            for (int c = 0; c < solidsNow.Count; c++)
+            {
+                // Leave every solid we are in along this direction: the farthest of their
+                // nearest back faces.
+                float nearest = float.MaxValue;
+                bool back = false;
+                for (int i = 0; i < count; i++)
+                {
+                    if (solidHits[i].collider != solidsNow[c] || solidHits[i].distance >= nearest)
+                        continue;
+                    nearest = solidHits[i].distance;
+                    back = Vector3.Dot(solidHits[i].normal, dir) > 0.05f;
+                }
+
+                if (!back)
+                {
+                    exit = -1f;
+                    break;
+                }
+
+                exit = Mathf.Max(exit, nearest);
+            }
+
+            if (exit < 0f)
+                continue;
+            float travel = exit + radius + skinWidth;
+            if (travel < bestTravel)
+            {
+                bestTravel = travel;
+                bestDir = dir;
+            }
+        }
+
+        Physics.queriesHitBackfaces = previous;
+        if (bestDir == Vector3.zero || bestTravel > 4f)
+            return;
+        transform.position += bestDir * bestTravel;
     }
 
     /// <summary>
