@@ -3697,6 +3697,19 @@ public class Hd2Locomotion : MonoBehaviour
         if (moved.sqrMagnitude < 0.000001f)
             return;
 
+        // A wall with no thickness (the arena's outer walls are single faces) has no inside
+        // to detect, so also refuse any move whose middle crosses a wall surface this frame.
+        if (CrossesWall(frameStart, transform.position))
+        {
+            // Unless the move is leaving a solid the body was already stuck in.
+            SolidsAround(frameStart, solidsBefore);
+            if (solidsBefore.Count == 0)
+            {
+                transform.position = new Vector3(frameStart.x, transform.position.y, frameStart.z);
+                return;
+            }
+        }
+
         SolidsAround(transform.position, solidsNow);
         if (solidsNow.Count == 0)
             return;
@@ -3708,6 +3721,36 @@ public class Hd2Locomotion : MonoBehaviour
             transform.position = new Vector3(frameStart.x, transform.position.y, frameStart.z);
             return;
         }
+    }
+
+    static readonly float[] crossHeights = { 0.7f, 1.4f };
+
+    bool CrossesWall(Vector3 fromFeet, Vector3 toFeet)
+    {
+        bool previous = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;
+        bool crossed = false;
+        for (int h = 0; h < crossHeights.Length && !crossed; h++)
+        {
+            Vector3 from = fromFeet + Vector3.up * crossHeights[h];
+            Vector3 to = new Vector3(toFeet.x, from.y + (toFeet.y - fromFeet.y), toFeet.z);
+            Vector3 delta = to - from;
+            float distance = delta.magnitude;
+            if (distance < 0.0005f)
+                continue;
+            int count = Physics.RaycastNonAlloc(from, delta / distance, solidHits, distance, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < count; i++)
+            {
+                if (BlocksBody(solidHits[i].collider))
+                {
+                    crossed = true;
+                    break;
+                }
+            }
+        }
+
+        Physics.queriesHitBackfaces = previous;
+        return crossed;
     }
 
     void SolidsAround(Vector3 feet, List<Collider> inside)
