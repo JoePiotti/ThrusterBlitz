@@ -477,7 +477,6 @@ public class Hd2EnemyBot : MonoBehaviour
             SeatHands();
             if (useBodyColor)
                 TintRenderers(robot.transform, bodyColor);
-            AddFillers(robot.transform);
             Hd2HeadPop.Prepare(robot.transform);
         }
 
@@ -4463,82 +4462,6 @@ public class Hd2EnemyBot : MonoBehaviour
         health.ApplyHit(health.Health, false);
     }
 
-    static Mesh fillerSphere;
-    static Mesh fillerCapsule;
-    static Material fillerBlack;
-
-    void AddFillers(Transform robot)
-    {
-        Transform chest = FindBone(robot, "Chest", "Chest");
-        Transform neck = FindBone(robot, "Neck", "Neck");
-        Material black = FillerBlack(robot);
-        AddFiller(chest, PrimitiveType.Sphere, ref fillerSphere, "Shoulder Left Filler",
-            new Vector3(-0.167f, 0.119f, -0.016f), Vector3.one * 0.11f, Quaternion.identity, black);
-        AddFiller(chest, PrimitiveType.Sphere, ref fillerSphere, "Shoulder Right Filler",
-            new Vector3(0.14f, 0.119f, -0.032f), Vector3.one * 0.11f, Quaternion.identity, black);
-        AddFiller(neck, PrimitiveType.Capsule, ref fillerCapsule, "neck filler",
-            new Vector3(0f, 0.019f, -0.031f), new Vector3(0.1f, 0.08f, 0.1f), Quaternion.Euler(7.94f, 0f, 0f), black);
-    }
-
-    static Material FillerBlack(Transform robot)
-    {
-        if (fillerBlack != null)
-            return fillerBlack;
-
-        Renderer source = robot.GetComponentInChildren<Renderer>();
-        if (source == null || source.sharedMaterial == null)
-            return null;
-
-        fillerBlack = new Material(source.sharedMaterial);
-        if (fillerBlack.HasProperty("_BaseColor"))
-            fillerBlack.SetColor("_BaseColor", Color.black);
-        if (fillerBlack.HasProperty("_Color"))
-            fillerBlack.SetColor("_Color", Color.black);
-        if (fillerBlack.HasProperty("_EmissionColor"))
-            fillerBlack.SetColor("_EmissionColor", Color.black);
-        return fillerBlack;
-    }
-
-    static void AddFiller(
-        Transform parent,
-        PrimitiveType kind,
-        ref Mesh cached,
-        string fillerName,
-        Vector3 localPosition,
-        Vector3 localScale,
-        Quaternion localRotation,
-        Material material)
-    {
-        if (parent == null || material == null)
-            return;
-
-        if (cached == null)
-        {
-            var temp = GameObject.CreatePrimitive(kind);
-            MeshFilter source = temp.GetComponent<MeshFilter>();
-            if (source != null)
-                cached = source.sharedMesh;
-            if (Application.isPlaying)
-                Destroy(temp);
-            else
-                DestroyImmediate(temp);
-        }
-
-        if (cached == null)
-            return;
-
-        var filler = new GameObject(fillerName);
-        filler.transform.SetParent(parent, false);
-        filler.transform.localPosition = localPosition;
-        filler.transform.localRotation = localRotation;
-        filler.transform.localScale = localScale;
-        filler.AddComponent<MeshFilter>().sharedMesh = cached;
-        var renderer = filler.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = material;
-        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        renderer.receiveShadows = false;
-    }
-
     void SilenceBodyAudio()
     {
         AudioSource[] sources = GetComponentsInChildren<AudioSource>(true);
@@ -4605,8 +4528,6 @@ public class Hd2EnemyBot : MonoBehaviour
         {
             Renderer renderer = renderers[i];
             if (Hd2Body.SkipArmorTint(renderer))
-                continue;
-            if (renderer.gameObject.name.IndexOf("filler", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 continue;
             Material[] materials = renderer.materials;
             for (int m = 0; m < materials.Length; m++)

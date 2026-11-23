@@ -1315,8 +1315,6 @@ public class Hd2Body : MonoBehaviour
                 continue;
             if (renderer.gameObject.name == "Head" || renderer.gameObject.name == "Neck")
                 continue;
-            if (renderer.gameObject.name.IndexOf("filler", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                continue;
 
             Material[] materials = renderer.materials;
             for (int m = 0; m < materials.Length; m++)
