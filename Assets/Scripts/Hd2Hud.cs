@@ -80,8 +80,11 @@ public class Hd2Hud : MonoBehaviour
     TextMesh roundNote;
     TextMesh deadNote;
 
-    /// <summary>"YOU DIED" in the middle of the view, kept up until ShowDead(false).</summary>
-    public void ShowDead(bool on)
+    /// <summary>
+    /// "YOU DIED" in the middle of the view, kept up until ShowDead(false), with
+    /// "Killed By" and the killer's name under it, the name in the killer's color.
+    /// </summary>
+    public void ShowDead(bool on, string killer = null, Color killerColor = default)
     {
         if (!on)
         {
@@ -96,8 +99,13 @@ public class Hd2Hud : MonoBehaviour
             deadNote.alignment = TextAlignment.Center;
             deadNote.fontStyle = FontStyle.Bold;
             deadNote.characterSize = 0.009f;
-            deadNote.text = "YOU DIED";
+            deadNote.richText = true;
         }
+
+        string line = string.IsNullOrEmpty(killer)
+            ? ""
+            : "\n<size=46>Killed By <color=#" + ColorUtility.ToHtmlStringRGB(killerColor) + ">" + killer + "</color></size>";
+        deadNote.text = "YOU DIED" + line;
 
         if (!deadNote.gameObject.activeSelf)
             deadNote.gameObject.SetActive(true);

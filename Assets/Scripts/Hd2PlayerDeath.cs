@@ -172,15 +172,28 @@ public class Hd2PlayerDeath : MonoBehaviour
         if (hud == null)
             return;
 
+        // Shown under YOU DIED for the whole time the player is down.
         Hd2EnemyBot bot = killer != null ? killer.GetComponentInParent<Hd2EnemyBot>() : null;
         Hd2NetPlayer other = bot == null && killer != null ? killer.GetComponentInParent<Hd2NetPlayer>() : null;
         if (bot != null)
-            hud.ShowDeath(bot.FullName);
+        {
+            killerName = bot.FullName;
+            killerColor = bot.useBodyColor ? bot.bodyColor : Hd2Locomotion.ArmorOf(bot.team);
+        }
         else if (other != null)
-            hud.ShowDeath(other.DisplayName);
+        {
+            killerName = other.DisplayName;
+            killerColor = Hd2Locomotion.ArmorOf(other.team);
+        }
         else
-            hud.ShowSuicide();
+        {
+            killerName = "Yourself";
+            killerColor = locomotion != null ? locomotion.teamColor : Color.white;
+        }
     }
+
+    string killerName;
+    Color killerColor = Color.white;
 
     public void DieImmediately()
     {
@@ -218,7 +231,7 @@ public class Hd2PlayerDeath : MonoBehaviour
     {
         var hud = GetComponent<Hd2Hud>();
         if (hud != null)
-            hud.ShowDead(on);
+            hud.ShowDead(on, killerName, killerColor);
     }
 
     void EndGhost()
@@ -267,6 +280,10 @@ public class Hd2PlayerDeath : MonoBehaviour
         }
 
         SpawnRagdoll();
+        // Every mode: the world goes black and white (players and bots stay in color) and
+        // YOU DIED / Killed By stays up until the respawn.
+        Hd2GrayscaleFeature.Active = true;
+        ShowDeadNote(true);
         if (Hd2Elimination.HoldsDead)
         {
             // Elimination: out until the round ends. The body stays down, and the view
@@ -275,9 +292,6 @@ public class Hd2PlayerDeath : MonoBehaviour
             holdCamera = false;
             if (locomotion != null)
                 locomotion.Spectating = true;
-            // Like a ghost: the world goes black and white and YOU DIED stays up.
-            Hd2GrayscaleFeature.Active = true;
-            ShowDeadNote(true);
             while (true)
                 yield return null;
         }
@@ -286,6 +300,7 @@ public class Hd2PlayerDeath : MonoBehaviour
 
         holdCamera = false;
         ClearRagdoll();
+        EndGhost();
         if (locomotion != null)
             locomotion.MovementLocked = false;
         if (health != null)
