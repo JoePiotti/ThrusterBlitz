@@ -82,7 +82,8 @@ public class Hd2DropShieldPickup : MonoBehaviour
             leftHand = null;
         }
 
-        if (player == null)
+        // A dead player flying around (Elimination) can't take pickups.
+        if (player == null || player.Spectating)
             return;
 
         if (rightHand == null)

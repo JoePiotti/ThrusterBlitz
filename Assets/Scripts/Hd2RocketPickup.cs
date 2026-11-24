@@ -71,7 +71,8 @@ public class Hd2RocketPickup : MonoBehaviour
             return;
 
         var player = FindFirstObjectByType<Hd2Locomotion>();
-        if (player == null)
+        // A dead player flying around (Elimination) can't take pickups.
+        if (player == null || player.Spectating)
             return;
 
         Transform hand = HandInside(player);

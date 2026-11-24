@@ -52,7 +52,8 @@ public class Hd2HealthPickup : MonoBehaviour
             return;
 
         var player = FindFirstObjectByType<Hd2Locomotion>();
-        if (player == null || sphere == null)
+        // A dead player flying around (Elimination) can't take pickups.
+        if (player == null || player.Spectating || sphere == null)
             return;
 
         Vector3 feet = player.transform.position;
