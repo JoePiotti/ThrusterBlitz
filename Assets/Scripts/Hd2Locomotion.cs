@@ -767,8 +767,12 @@ public class Hd2Locomotion : MonoBehaviour
     /// </summary>
     public void ReturnToBase()
     {
-        Transform spawn = NearestSpawn(team, transform.position);
+        // Back to this player's own seat from the match start, not the base point nearest
+        // to where the round ended (players who ended near each other all got the same one).
         var life = GetComponent<Hd2Health>();
+        Transform spawn = life != null && life.TryPinnedSpawn(out Vector3 seat, out _)
+            ? NearestSpawn(team, seat)
+            : NearestSpawn(team, transform.position);
         if (spawn != null && life != null)
             life.PinSpawn(spawn.position, spawn.rotation);
 

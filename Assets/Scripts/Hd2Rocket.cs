@@ -341,8 +341,10 @@ public class Hd2Rocket : MonoBehaviour
             Hd2Health health = colliders[i].GetComponentInParent<Hd2Health>();
             if (health == null || !seen.Add(health))
                 continue;
-            // Behind a drop shield, a base shield or a wall: no blast damage.
-            if (Hd2BlastCover.Sheltered(point, health.transform, transform))
+            // Behind a drop shield, a base shield or a wall: no blast damage. Behind a sign
+            // or other low cover: half.
+            float exposure = Hd2BlastCover.Exposure(point, health.transform, transform);
+            if (exposure <= 0f)
                 continue;
             if (!damageOwner && ownerHealth != null && health == ownerHealth)
                 continue;
@@ -355,6 +357,7 @@ public class Hd2Rocket : MonoBehaviour
                 amount = innerDamage;
             else if (distance <= outerRadiusMeters)
                 amount = outerDamage;
+            amount *= exposure;
             if (amount <= 0f)
                 continue;
 

@@ -136,6 +136,18 @@ public class Hd2SpawnDirector : MonoBehaviour
         if (mine.Count == 0)
             return null;
 
+        // Never on top of someone still standing there: skip points with anyone alive
+        // within a meter, unless every point is taken.
+        var free = new List<Hd2SpawnPoint>();
+        for (int i = 0; i < mine.Count; i++)
+        {
+            if (!Occupied(mine[i].transform.position, self))
+                free.Add(mine[i]);
+        }
+
+        if (free.Count > 0)
+            mine = free;
+
         var enemies = CollectLivingEnemies(team, self);
         if (enemies.Count == 0)
             return mine[Random.Range(0, mine.Count)].transform;
@@ -160,6 +172,24 @@ public class Hd2SpawnDirector : MonoBehaviour
         }
 
         return ties[Random.Range(0, ties.Count)];
+    }
+
+    const float OccupiedRadius = 1f;
+
+    static bool Occupied(Vector3 point, Transform self)
+    {
+        var healths = FindObjectsByType<Hd2Health>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < healths.Length; i++)
+        {
+            Hd2Health h = healths[i];
+            if (h == null || h.Health <= 0f || (self != null && h.transform == self))
+                continue;
+            Vector3 d = h.transform.position - point;
+            if (Mathf.Abs(d.y) < 2f && d.x * d.x + d.z * d.z < OccupiedRadius * OccupiedRadius)
+                return true;
+        }
+
+        return false;
     }
 
     static List<Vector3> CollectLivingEnemies(Hd2Team team, Transform self)

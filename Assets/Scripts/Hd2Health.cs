@@ -293,12 +293,14 @@ public class Hd2Health : MonoBehaviour
             float distance = Vector3.Distance(center.worldCenterOfMass, origin);
             if (distance > outerRadius)
                 continue;
-            if (Hd2BlastCover.Covered(origin, center.worldCenterOfMass, ragdoll.root))
+            float reach = Hd2BlastCover.Reach(origin, center.worldCenterOfMass, ragdoll.root);
+            if (reach <= 0f)
                 continue;
 
             float share = distance <= innerRadius
                 ? 1f
                 : Mathf.Lerp(1f, BlastEdgeShare, Mathf.InverseLerp(innerRadius, outerRadius, distance));
+            share *= reach;
             Throw(ragdoll.bodies, origin, center.worldCenterOfMass - Vector3.up, BlastThrowSpeed * share);
         }
     }
