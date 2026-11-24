@@ -435,9 +435,9 @@ public class Hd2Hud : MonoBehaviour
             }
             EnsureClocks();
             redScore = MakeReadout(parent, new Vector3(-0.35f, -0.46f, 0.9f), scoreRed, TextAnchor.MiddleLeft);
-            redScore.text = redLines[0];
+            redScore.text = "0";
             blueScore = MakeReadout(parent, new Vector3(-0.18f, -0.46f, 0.9f), scoreBlue, TextAnchor.MiddleLeft);
-            blueScore.text = blueLines[0];
+            blueScore.text = "0";
             clockReadout = MakePoint(parent, new Vector3(-0.33f, -0.09f, 0.9f), "MatchClock");
             clockReadout.color = Color.white;
             clockReadout.characterSize = 0.0032f;
@@ -479,13 +479,13 @@ public class Hd2Hud : MonoBehaviour
         if (red != shownRed)
         {
             shownRed = red;
-            redScore.text = shootout ? "Red " + red : control ? ControlLine(true, red) : redLines[red];
+            redScore.text = red.ToString();
         }
 
         if (blue != shownBlue)
         {
             shownBlue = blue;
-            blueScore.text = shootout ? "Blue " + blue : control ? ControlLine(false, blue) : blueLines[blue];
+            blueScore.text = blue.ToString();
         }
 
         if (second != shownClock)
@@ -516,7 +516,8 @@ public class Hd2Hud : MonoBehaviour
         }
 
         roundNote.anchor = clockReadout.anchor;
-        roundNote.transform.localPosition = clockReadout.transform.localPosition + new Vector3(0f, -0.045f, 0f);
+        // Above the clock: the team scores sit just below it.
+        roundNote.transform.localPosition = clockReadout.transform.localPosition + new Vector3(0f, 0.045f, 0f);
         roundNote.transform.localRotation = clockReadout.transform.localRotation;
         if (!roundNote.gameObject.activeSelf)
             roundNote.gameObject.SetActive(true);
@@ -713,8 +714,31 @@ public class Hd2Hud : MonoBehaviour
         float scoreX = right ? 0.35f : -0.35f;
         TextAnchor scoreAnchor = right ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
         float shift = right ? -0.16f : 0.16f;
-        PlaceReadout(redScore, new Vector3(right ? scoreX + shift : scoreX, -0.46f, 0.9f), scoreAnchor);
-        PlaceReadout(blueScore, new Vector3(right ? scoreX : scoreX + shift, -0.46f, 0.9f), scoreAnchor);
+        // Team scores: just the two numbers, red left of blue, between the clock and the
+        // health row. (Rome domination keeps them at the bottom; its A B C sit up there.)
+        bool pointsRow = pointA != null || pointB != null || pointC != null;
+        if (pointsRow)
+        {
+            PlaceReadout(redScore, new Vector3(right ? scoreX + shift : scoreX, -0.46f, 0.9f), scoreAnchor);
+            PlaceReadout(blueScore, new Vector3(right ? scoreX : scoreX + shift, -0.46f, 0.9f), scoreAnchor);
+        }
+        else
+        {
+            PlaceReadout(redScore, new Vector3(center - 0.014f, -0.148f, 0.9f), TextAnchor.MiddleRight);
+            PlaceReadout(blueScore, new Vector3(center + 0.014f, -0.148f, 0.9f), TextAnchor.MiddleLeft);
+        }
+
+        float scoreSize = pointsRow ? 0.0023f : 0.0034f;
+        if (redScore != null)
+        {
+            redScore.characterSize = scoreSize;
+            redScore.fontStyle = FontStyle.Bold;
+        }
+        if (blueScore != null)
+        {
+            blueScore.characterSize = scoreSize;
+            blueScore.fontStyle = FontStyle.Bold;
+        }
         PlaceReadout(clockReadout, new Vector3(center, -0.09f, 0.9f), TextAnchor.MiddleCenter);
         if (redScore != null)
             redScore.color = scoreRed;
