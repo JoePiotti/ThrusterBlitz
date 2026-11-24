@@ -254,7 +254,7 @@ public class Hd2Hud : MonoBehaviour
         if (!scoreDirty || scoreReadout == null)
             return;
         scoreDirty = false;
-        scoreReadout.text = "K/D " + kills + "/" + deaths + "  KS " + streak;
+        scoreReadout.text = "K/D " + kills + "/" + deaths + "\nKS " + streak;
     }
 
     // Kills now show in the kill feed at the bottom center (AddKill), in every mode.
@@ -656,7 +656,7 @@ public class Hd2Hud : MonoBehaviour
         banner = MakeReadout(view, new Vector3(0.36f, -0.2f, 0.9f), Color.white, TextAnchor.MiddleRight);
         banner.gameObject.SetActive(false);
         scoreReadout = MakeReadout(view, new Vector3(-0.35f, -0.4f, 0.9f), Color.white, TextAnchor.MiddleLeft);
-        scoreReadout.text = "K/D 0/0  KS 0";
+        scoreReadout.text = "K/D 0/0\nKS 0";
         BuildHitFrame();
         ApplyPlacement();
     }
@@ -694,7 +694,11 @@ public class Hd2Hud : MonoBehaviour
         PlaceReadout(healthReadout, new Vector3(valueX, -0.206f, 0.9f), valueAnchor);
         PlaceReadout(blitzReadout, new Vector3(valueX, -0.27f, 0.9f), valueAnchor);
         PlaceReadout(micReadout, new Vector3(valueX, -0.334f, 0.9f), valueAnchor);
-        PlaceReadout(scoreReadout, new Vector3(valueX, -0.4f, 0.9f), valueAnchor);
+        // K/D over KS, lined up with the outer edge of the icons above.
+        PlaceReadout(scoreReadout, new Vector3(right ? 0.42f : -0.42f, -0.378f, 0.9f),
+            right ? TextAnchor.UpperRight : TextAnchor.UpperLeft);
+        if (scoreReadout != null)
+            scoreReadout.alignment = right ? TextAlignment.Right : TextAlignment.Left;
         PlacePoint(pointA, 0);
         PlacePoint(pointB, 1);
         PlacePoint(pointC, 2);
