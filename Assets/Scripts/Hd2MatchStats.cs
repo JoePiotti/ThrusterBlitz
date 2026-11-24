@@ -110,6 +110,42 @@ public static class Hd2MatchStats
 
         Add(killerHealth, 1, 0);
         AddScore(killerHealth, KillPoints);
+
+        // The local player's kill feed.
+        Hd2Hud hud = killerHealth.GetComponent<Hd2Hud>();
+        if (hud != null)
+        {
+            NameAndColor(victim, out string victimName, out Color victimColor);
+            hud.AddKill(victimName, victimColor);
+        }
+    }
+
+    static void NameAndColor(Hd2Health who, out string name, out Color color)
+    {
+        name = who.name;
+        color = Color.white;
+        Hd2EnemyBot bot = who.GetComponent<Hd2EnemyBot>();
+        if (bot != null)
+        {
+            name = bot.FullName;
+            color = bot.useBodyColor ? bot.bodyColor : Hd2Locomotion.ArmorOf(bot.team);
+            return;
+        }
+
+        Hd2NetPlayer net = who.GetComponentInParent<Hd2NetPlayer>();
+        if (net != null)
+        {
+            name = net.DisplayName;
+            color = Hd2Locomotion.ArmorOf(net.team);
+            return;
+        }
+
+        Hd2Locomotion player = who.GetComponent<Hd2Locomotion>();
+        if (player != null)
+        {
+            name = Hd2Identity.Display;
+            color = player.teamColor;
+        }
     }
 
     /// <summary>Damage actually taken by an enemy of the attacker (after headshots, capped at the health left).</summary>

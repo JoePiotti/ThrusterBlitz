@@ -216,6 +216,7 @@ public class Hd2Hud : MonoBehaviour
         RefreshDomination();
         RefreshMatch();
         RefreshBanner();
+        RefreshKillFeed();
         RefreshHitFlash();
         RefreshScore();
     }
@@ -256,14 +257,70 @@ public class Hd2Hud : MonoBehaviour
         scoreReadout.text = "K/D " + kills + "/" + deaths + "  KS " + streak;
     }
 
+    // Kills now show in the kill feed at the bottom center (AddKill), in every mode.
     public void ShowKill(string enemyName)
     {
-        if (string.IsNullOrEmpty(enemyName))
-            return;
+    }
 
-        killText = "You killed " + enemyName;
-        killUntil = Time.unscaledTime + 3.5f;
-        RefreshBanner();
+    // ---- Kill feed ----
+    // "You Killed" and the victim's name near the bottom center for each kill, the name in
+    // the victim's color. Multi-kills stack, newest at the bottom; each line goes after
+    // KillLineSeconds.
+    const float KillLineSeconds = 3f;
+    const int KillLinesMax = 6;
+    TextMesh killFeed;
+    readonly System.Collections.Generic.List<string> killLines = new System.Collections.Generic.List<string>();
+    readonly System.Collections.Generic.List<float> killLineEnds = new System.Collections.Generic.List<float>();
+    bool killFeedDirty;
+
+    public void AddKill(string victim, Color color)
+    {
+        if (string.IsNullOrEmpty(victim))
+            return;
+        if (killLines.Count >= KillLinesMax)
+        {
+            killLines.RemoveAt(0);
+            killLineEnds.RemoveAt(0);
+        }
+
+        killLines.Add("You Killed <color=#" + ColorUtility.ToHtmlStringRGB(color) + ">" + victim + "</color>");
+        killLineEnds.Add(Time.unscaledTime + KillLineSeconds);
+        killFeedDirty = true;
+    }
+
+    void RefreshKillFeed()
+    {
+        while (killLineEnds.Count > 0 && Time.unscaledTime >= killLineEnds[0])
+        {
+            killLines.RemoveAt(0);
+            killLineEnds.RemoveAt(0);
+            killFeedDirty = true;
+        }
+
+        bool show = side != Side.None && killLines.Count > 0;
+        if (!show)
+        {
+            if (killFeed != null && killFeed.gameObject.activeSelf)
+                killFeed.gameObject.SetActive(false);
+            return;
+        }
+
+        if (killFeed == null)
+        {
+            killFeed = MakeReadout(view != null ? view : transform, new Vector3(0f, -0.2f, 0.9f), Color.white, TextAnchor.LowerCenter);
+            killFeed.alignment = TextAlignment.Center;
+            killFeed.richText = true;
+            killFeed.characterSize = 0.0045f;
+            killFeedDirty = true;
+        }
+
+        if (!killFeed.gameObject.activeSelf)
+            killFeed.gameObject.SetActive(true);
+        if (killFeedDirty)
+        {
+            killFeed.text = string.Join("\n", killLines);
+            killFeedDirty = false;
+        }
     }
 
     public void ShowDeath(string killerName)
