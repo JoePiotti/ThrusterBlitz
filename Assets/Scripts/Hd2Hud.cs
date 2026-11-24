@@ -297,7 +297,8 @@ public class Hd2Hud : MonoBehaviour
             killFeedDirty = true;
         }
 
-        bool show = side != Side.None && killLines.Count > 0;
+        // Shown even with the HUD set to None: the kill feed is separate from the HUD.
+        bool show = killLines.Count > 0;
         if (!show)
         {
             if (killFeed != null && killFeed.gameObject.activeSelf)
@@ -307,7 +308,8 @@ public class Hd2Hud : MonoBehaviour
 
         if (killFeed == null)
         {
-            killFeed = MakeReadout(view != null ? view : transform, new Vector3(0f, -0.2f, 0.9f), Color.white, TextAnchor.LowerCenter);
+            // Low in the view, bottom center; lines stack upward from here.
+            killFeed = MakeReadout(view != null ? view : transform, new Vector3(0f, -0.44f, 0.9f), Color.white, TextAnchor.LowerCenter);
             killFeed.alignment = TextAlignment.Center;
             killFeed.richText = true;
             killFeed.characterSize = 0.0045f;
