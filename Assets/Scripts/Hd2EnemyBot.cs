@@ -677,6 +677,7 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         ArmSpawnBurst();
         StopAllCoroutines();
+        Hd2Dissolve.Restore(dissolved);
         HideForRespawn(false);
         Hd2HeadPop.Restore(transform);
         if (ragdolling)
@@ -4803,7 +4804,7 @@ public class Hd2EnemyBot : MonoBehaviour
             Hd2HeadPop.Pop(transform, health);
         if (health != null && health.KilledByBlast)
             Hd2Health.ThrowFromBlast(ragdollBodies, health.BlastOrigin, transform.position);
-        yield return new WaitForSeconds(RagdollSeconds);
+        yield return new WaitForSeconds(Mathf.Max(0f, RagdollSeconds - Hd2Dissolve.Seconds));
         if (this == null)
             yield break;
 
@@ -4812,6 +4813,12 @@ public class Hd2EnemyBot : MonoBehaviour
         // starts, which brings everyone back through ReturnToBase.
         while (Hd2Elimination.HoldsDead)
             yield return null;
+
+        // The body dissolves away (edge glowing in its color) instead of vanishing.
+        Hd2Dissolve.Restore(dissolved);
+        yield return Hd2Dissolve.Run(transform, useBodyColor ? bodyColor : Hd2Locomotion.ArmorOf(team), dissolved);
+        if (this == null)
+            yield break;
 
         for (int i = ragdollJoints.Count - 1; i >= 0; i--)
         {
@@ -4842,6 +4849,7 @@ public class Hd2EnemyBot : MonoBehaviour
         RestoreGunColliders();
         if (Hd2Deathmatch.Over || health == null)
         {
+            Hd2Dissolve.Restore(dissolved);
             HideForRespawn(false);
             ragdolling = false;
             yield break;
@@ -4849,6 +4857,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         bool pickedPoint = health.Respawn(true);
         ArmSpawnBurst();
+        Hd2Dissolve.Restore(dissolved);
         HideForRespawn(false);
         Hd2HeadPop.Restore(transform);
         RestorePistols();
@@ -4868,6 +4877,7 @@ public class Hd2EnemyBot : MonoBehaviour
     }
 
     readonly List<Renderer> hiddenForRespawn = new List<Renderer>();
+    readonly Hd2Dissolve.Saved dissolved = new Hd2Dissolve.Saved();
 
     void HideForRespawn(bool hide)
     {

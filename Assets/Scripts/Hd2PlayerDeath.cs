@@ -296,7 +296,10 @@ public class Hd2PlayerDeath : MonoBehaviour
                 yield return null;
         }
 
-        yield return new WaitForSeconds(RespawnDelay);
+        yield return new WaitForSeconds(Mathf.Max(0f, RespawnDelay - Hd2Dissolve.Seconds));
+        // The body dissolves away (edge glowing in the team color) instead of vanishing.
+        if (ragdoll != null)
+            yield return Hd2Dissolve.Run(ragdoll.transform, locomotion != null ? locomotion.teamColor : Color.white);
 
         holdCamera = false;
         ClearRagdoll();
