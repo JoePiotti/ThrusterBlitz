@@ -1029,7 +1029,8 @@ public class Hd2ShockOrb : MonoBehaviour
             Hd2Health health = colliders[i].GetComponentInParent<Hd2Health>();
             if (health == null || !seen.Add(health))
                 continue;
-            if (Hd2DropShield.Blocks(point, health.transform.position + Vector3.up * 0.9f))
+            // Behind a drop shield, a base shield or a wall: no blast damage.
+            if (Hd2BlastCover.Sheltered(point, health.transform, transform))
                 continue;
             if (health.IsAlly(owner))
                 continue;

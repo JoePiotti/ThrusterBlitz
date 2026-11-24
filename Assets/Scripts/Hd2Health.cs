@@ -293,7 +293,7 @@ public class Hd2Health : MonoBehaviour
             float distance = Vector3.Distance(center.worldCenterOfMass, origin);
             if (distance > outerRadius)
                 continue;
-            if (Hd2DropShield.Blocks(origin, center.worldCenterOfMass))
+            if (Hd2BlastCover.Covered(origin, center.worldCenterOfMass, ragdoll.root))
                 continue;
 
             float share = distance <= innerRadius
