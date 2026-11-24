@@ -18,9 +18,17 @@ public class Hd2HealthPickup : MonoBehaviour
     bool ready = true;
     float cooldownLeft;
 
+    /// <summary>True while the pickup can be taken.</summary>
+    public bool Ready => ready;
+    /// <summary>0 just after it was taken, rising to 1 when it is ready again.</summary>
+    public float Progress => ready ? 1f : 1f - Mathf.Clamp01(cooldownLeft / Mathf.Max(0.01f, cooldown));
+
     void OnEnable()
     {
         BuildVisuals();
+        // The look in play (built at run time over the saved pad and sphere).
+        if (Application.isPlaying && GetComponent<Hd2FloatRings>() == null)
+            gameObject.AddComponent<Hd2FloatRings>();
         Transform glow = transform.Find("Glow");
         if (glow != null)
         {
