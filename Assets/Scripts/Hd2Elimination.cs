@@ -326,6 +326,8 @@ public class Hd2Elimination : MonoBehaviour
 
     void EndRound(Hd2Team winner)
     {
+        // Guns go quiet the moment the round is decided, until the next round's GO.
+        Hd2SpawnField.SetLocked(true);
         if (winner == Hd2Team.Red)
             RedPoints++;
         else if (winner == Hd2Team.Blue)

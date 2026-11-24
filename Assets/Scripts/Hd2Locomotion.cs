@@ -331,6 +331,11 @@ public class Hd2Locomotion : MonoBehaviour
     {
         if (Hd2SpawnField.Locked)
             return true;
+        // And from the moment a round or the match is decided.
+        if ((Hd2Shootout.Present && Hd2Shootout.Decided)
+            || (Hd2ControlPoint.Present && Hd2ControlPoint.Decided)
+            || (Hd2Domination.Present && Hd2Domination.Decided))
+            return true;
         if (Hd2PayloadShield.BlocksShot(gun, muzzle))
             return true;
         if (TouchesShield(gun, muzzle))
