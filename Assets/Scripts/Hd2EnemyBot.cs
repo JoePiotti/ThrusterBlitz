@@ -677,6 +677,7 @@ public class Hd2EnemyBot : MonoBehaviour
     {
         ArmSpawnBurst();
         StopAllCoroutines();
+        HideForRespawn(false);
         Hd2HeadPop.Restore(transform);
         if (ragdolling)
         {
@@ -4823,6 +4824,9 @@ public class Hd2EnemyBot : MonoBehaviour
         if (this == null)
             yield break;
 
+        // The pose snaps back to standing a frame before the respawn moves the bot, so the
+        // body stood up where it fell for one frame. Keep it hidden until it has moved.
+        HideForRespawn(true);
         RestorePose();
         for (int i = ragdollBodies.Count - 1; i >= 0; i--)
         {
@@ -4838,12 +4842,14 @@ public class Hd2EnemyBot : MonoBehaviour
         RestoreGunColliders();
         if (Hd2Deathmatch.Over || health == null)
         {
+            HideForRespawn(false);
             ragdolling = false;
             yield break;
         }
 
         bool pickedPoint = health.Respawn(true);
         ArmSpawnBurst();
+        HideForRespawn(false);
         Hd2HeadPop.Restore(transform);
         RestorePistols();
         ApplyBodyColor();
@@ -4859,6 +4865,35 @@ public class Hd2EnemyBot : MonoBehaviour
         }
 
         ragdolling = false;
+    }
+
+    readonly List<Renderer> hiddenForRespawn = new List<Renderer>();
+
+    void HideForRespawn(bool hide)
+    {
+        if (hide)
+        {
+            hiddenForRespawn.Clear();
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(false);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null && renderers[i].enabled)
+                {
+                    renderers[i].enabled = false;
+                    hiddenForRespawn.Add(renderers[i]);
+                }
+            }
+
+            return;
+        }
+
+        for (int i = 0; i < hiddenForRespawn.Count; i++)
+        {
+            if (hiddenForRespawn[i] != null)
+                hiddenForRespawn[i].enabled = true;
+        }
+
+        hiddenForRespawn.Clear();
     }
 
     void FreezeRagdoll()
