@@ -854,6 +854,7 @@ public class Hd2EnemyBot : MonoBehaviour
             StopMotion();
             if (body != null && !body.enabled && health != null && health.Health > 0f)
                 body.enabled = true;
+            SettleToGround();
             ReleaseGuns();
             TickDance();
             UpdateBodyAudio();
@@ -2637,6 +2638,22 @@ public class Hd2EnemyBot : MonoBehaviour
         float ease = 1f - Mathf.Exp(-14f * Time.deltaTime);
         Vector3 reach = Vector3.Lerp(from, goal, ease * Mathf.Max(0.2f, blend));
         PoseArm(upper, fore, hand, reach, side);
+    }
+
+    // After the match ends a bot stops moving, but gravity keeps working: anyone caught
+    // mid-hop, mid-blitz or on a rail drops and lands instead of hanging in the air.
+    void SettleToGround()
+    {
+        if (body == null || !body.enabled || (health != null && health.IsDead))
+            return;
+
+        float dt = Time.deltaTime;
+        if (body.isGrounded && verticalVelocity <= 0f)
+            verticalVelocity = -2f;
+        else
+            verticalVelocity = Mathf.Max(verticalVelocity - JumpGravity * dt, -25f);
+
+        body.Move(Vector3.up * (verticalVelocity * dt));
     }
 
     void ReleaseGuns()
