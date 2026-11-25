@@ -426,6 +426,20 @@ public class Hd2EnemyBot : MonoBehaviour
 
     bool booted;
 
+    // Victory dance (winning team's bots, after the match ends).
+    const float DanceBeatsPerSecond = 2f;
+    bool dancing;
+    float danceAt = -1f;
+    float danceStart;
+    float danceOffset;
+    float danceYaw;
+    Transform danceHips;
+    Transform danceChest;
+    Transform danceHead;
+    Quaternion danceHipsRest;
+    Quaternion danceChestRest;
+    Quaternion danceHeadRest;
+
     void Start()
     {
         Boot();
@@ -841,6 +855,7 @@ public class Hd2EnemyBot : MonoBehaviour
             if (body != null && !body.enabled && health != null && health.Health > 0f)
                 body.enabled = true;
             ReleaseGuns();
+            TickDance();
             UpdateBodyAudio();
             return;
         }
@@ -954,6 +969,12 @@ public class Hd2EnemyBot : MonoBehaviour
         FaceKillMark();
         if (health != null && health.IsDead)
             return;
+        if (dancing)
+        {
+            PoseDance();
+            return;
+        }
+
         TickReach();
         PoseBlitzAim();
         PoseLegs();
@@ -2440,6 +2461,182 @@ public class Hd2EnemyBot : MonoBehaviour
         if (body == null || !body.enabled || body.isGrounded || verticalVelocity > 0f)
             verticalVelocity = 0f;
         moveDir = Vector3.zero;
+    }
+
+    // ---------------------------------------------------------------- victory dance
+    // When a team match ends, the winning team's living bots turn to centre court and,
+    // a beat later, dance until the scene changes: raise the roof, alternating fist pumps,
+    // an overhead wave, then a spin. Each bot starts on its own move, a little off the
+    // others, so they don't move in lockstep. Guns stay in hand.
+    void TickDance()
+    {
+        if (health == null || health.IsDead || body == null || !body.enabled)
+        {
+            dancing = false;
+            return;
+        }
+
+        bool won = Hd2MatchStats.MatchOver && Hd2MatchStats.Winner != Hd2Team.None && team == Hd2MatchStats.Winner;
+        if (!won)
+            return;
+
+        if (!dancing)
+        {
+            if (!body.isGrounded)
+                return;
+            if (danceAt < 0f)
+            {
+                danceAt = Time.time + Random.Range(0.6f, 1.4f);
+                Vector3 toCenter = hasCenter ? mapCenter - transform.position : transform.forward;
+                toCenter.y = 0f;
+                danceYaw = toCenter.sqrMagnitude > 0.01f
+                    ? Quaternion.LookRotation(toCenter).eulerAngles.y
+                    : transform.eulerAngles.y;
+            }
+
+            TurnTo(danceYaw, 0f);
+            if (Time.time < danceAt)
+                return;
+            StartDance();
+        }
+
+        float beats = DanceBeats();
+        TurnTo(danceYaw, DanceSpin(beats) + 8f * Mathf.Sin(beats * Mathf.PI * 0.5f));
+    }
+
+    void TurnTo(float yaw, float extra)
+    {
+        Quaternion goal = Quaternion.Euler(0f, yaw + extra, 0f);
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, goal, 540f * Time.deltaTime);
+    }
+
+    void StartDance()
+    {
+        dancing = true;
+        danceStart = Time.time;
+        // Start on a random move (8 beats each) and a little off the beat.
+        danceOffset = Random.Range(0, 3) * 8f + Random.Range(0f, 0.25f);
+        danceHips = FindNamed(transform, "Hips");
+        danceChest = danceHips != null ? FindNamed(danceHips, "Chest") : null;
+        danceHead = danceHips != null ? FindNamed(danceHips, "Head") : null;
+        danceHipsRest = Local(danceHips);
+        danceChestRest = Local(danceChest);
+        danceHeadRest = Local(danceHead);
+    }
+
+    float DanceBeats()
+    {
+        return (Time.time - danceStart) * DanceBeatsPerSecond + danceOffset;
+    }
+
+    // Moves loop every 28 beats: roof 0-8, pumps 8-16, wave 16-24, spin 24-28.
+    static int DanceMove(float beats)
+    {
+        float at = Mathf.Repeat(beats, 28f);
+        return at < 8f ? 0 : at < 16f ? 1 : at < 24f ? 2 : 3;
+    }
+
+    static float DanceSpin(float beats)
+    {
+        float at = Mathf.Repeat(beats, 28f);
+        if (at < 24f)
+            return 0f;
+        return 360f * Mathf.SmoothStep(0f, 1f, (at - 24f) / 4f);
+    }
+
+    void PoseDance()
+    {
+        float beats = DanceBeats();
+        float blend = Mathf.Clamp01((Time.time - danceStart) / 0.5f);
+        int move = DanceMove(beats);
+        // 1 on each beat, 0 halfway between: the bounce.
+        float bounce = 0.5f + 0.5f * Mathf.Cos(beats * Mathf.PI * 2f);
+        float sway = Mathf.Sin(beats * Mathf.PI);
+
+        Vector3 up = Vector3.up;
+        Vector3 forward = transform.forward;
+        Vector3 right = transform.right;
+
+        if (danceHips != null)
+        {
+            SetLocal(danceHips, danceHipsRest);
+            danceHips.rotation = Quaternion.AngleAxis(5f * sway * blend, forward) * danceHips.rotation;
+        }
+
+        if (danceChest != null)
+        {
+            SetLocal(danceChest, danceChestRest);
+            float twist = move == 2 ? 14f * sway : 9f * sway;
+            danceChest.rotation = Quaternion.AngleAxis(twist * blend, up)
+                * Quaternion.AngleAxis(7f * bounce * blend, right)
+                * danceChest.rotation;
+        }
+
+        // Legs: knee-lift march on the beat, or sway together during the wave.
+        gaitWeight = 0.8f * blend;
+        if (move == 2)
+        {
+            float side = Mathf.Sin(beats * Mathf.PI * 0.5f);
+            PoseWalkLeg(thighL, shinL, footL, restThighL, restShinL, restFootL, side, 0.2f, right * 0.45f);
+            PoseWalkLeg(thighR, shinR, footR, restThighR, restShinR, restFootR, side, 0.2f, right * 0.45f);
+        }
+        else
+        {
+            float march = move == 3 ? 0.2f : 0.4f;
+            PoseWalkLeg(thighL, shinL, footL, restThighL, restShinL, restFootL, sway, Mathf.Max(0f, sway), forward * march);
+            PoseWalkLeg(thighR, shinR, footR, restThighR, restShinR, restFootR, -sway, Mathf.Max(0f, -sway), forward * march);
+        }
+
+        // Arms: reach targets around each shoulder, eased so moves flow into each other.
+        DanceArm(upperL, foreL, handL, -1f, move, beats, bounce, blend);
+        DanceArm(upperR, foreR, handR, 1f, move, beats, bounce, blend);
+
+        if (danceHead != null)
+        {
+            SetLocal(danceHead, danceHeadRest);
+            danceHead.rotation = Quaternion.AngleAxis(12f * bounce * blend, right) * danceHead.rotation;
+        }
+    }
+
+    void DanceArm(Transform upper, Transform fore, Transform hand, float side, int move, float beats, float bounce, float blend)
+    {
+        if (upper == null || fore == null)
+            return;
+
+        Vector3 up = Vector3.up;
+        Vector3 forward = transform.forward;
+        Vector3 outward = transform.right * side;
+        Vector3 shoulder = upper.position;
+        Vector3 goal;
+        switch (move)
+        {
+            case 0:
+                // Raise the roof: both palms push up on every beat.
+                goal = shoulder + up * (0.25f + 0.3f * bounce) + forward * 0.15f + outward * 0.2f;
+                break;
+            case 1:
+            {
+                // Fist pumps, one arm up while the other drops to the chest, swapping each beat.
+                float mine = 0.5f + 0.5f * Mathf.Sin(beats * Mathf.PI + (side < 0f ? 0f : Mathf.PI));
+                Vector3 high = shoulder + up * 0.6f + outward * 0.1f + forward * 0.1f;
+                Vector3 low = shoulder + forward * 0.35f - up * 0.05f - outward * 0.05f;
+                goal = Vector3.Lerp(low, high, mine);
+                break;
+            }
+            case 2:
+                // Overhead wave, both arms swaying side to side.
+                goal = shoulder + up * 0.55f + outward * 0.08f + transform.right * (0.3f * Mathf.Sin(beats * Mathf.PI * 0.5f));
+                break;
+            default:
+                // Spin with arms out.
+                goal = shoulder + outward * 0.6f + up * 0.15f;
+                break;
+        }
+
+        Vector3 from = hand != null ? hand.position : fore.position;
+        float ease = 1f - Mathf.Exp(-14f * Time.deltaTime);
+        Vector3 reach = Vector3.Lerp(from, goal, ease * Mathf.Max(0.2f, blend));
+        PoseArm(upper, fore, hand, reach, side);
     }
 
     void ReleaseGuns()

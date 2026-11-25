@@ -57,6 +57,12 @@ public static class Hd2MatchStats
 
     static bool matchEndPaid;
 
+    /// <summary>True once the match has ended (the end-of-match bonus has been paid).</summary>
+    public static bool MatchOver => matchEndPaid;
+
+    /// <summary>The team that won the finished match. None before the end, on a draw, and in free-for-all.</summary>
+    public static Hd2Team Winner { get; private set; }
+
     struct Tally
     {
         public int Kills;
@@ -86,6 +92,7 @@ public static class Hd2MatchStats
         {
             tallies.Clear();
             matchEndPaid = false;
+            Winner = Hd2Team.None;
         }
     }
 
@@ -199,6 +206,7 @@ public static class Hd2MatchStats
         if (matchEndPaid)
             return;
         matchEndPaid = true;
+        Winner = teams ? winner : Hd2Team.None;
 
         var fighters = UnityEngine.Object.FindObjectsByType<Hd2Health>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < fighters.Length; i++)
