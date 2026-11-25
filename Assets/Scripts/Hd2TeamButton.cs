@@ -144,6 +144,44 @@ public class Hd2TeamButton : MonoBehaviour
         if (source != null)
             glowMaterial = new Material(source);
         BuildBeam();
+        Resurface();
+    }
+
+    // The button and its base in the arena look: dark machined metal with glowing rings.
+    // The cap's rings glow in the point's color (white until claimed).
+    Material capMaterial;
+
+    void Resurface()
+    {
+        Material look = Resources.Load<Material>("ShootoutButton");
+        if (look == null)
+            return;
+
+        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer renderer = renderers[i];
+            if (renderer == null || renderer is LineRenderer || renderer == beamRenderer)
+                continue;
+            if (top != null && (renderer.transform == top || renderer.transform.IsChildOf(top)))
+            {
+                capMaterial = new Material(look);
+                renderer.sharedMaterial = capMaterial;
+                continue;
+            }
+
+            renderer.sharedMaterial = look;
+        }
+
+        TintCap();
+    }
+
+    void TintCap()
+    {
+        if (capMaterial == null)
+            return;
+        capMaterial.EnableKeyword("_EMISSION");
+        capMaterial.SetColor("_EmissionColor", glow * 2f);
     }
 
     void OnDestroy()
@@ -227,6 +265,7 @@ public class Hd2TeamButton : MonoBehaviour
             beamRenderer.enabled = true;
         if (ring != null)
             ring.enabled = true;
+        TintCap();
     }
 
     Component NextHolder()
