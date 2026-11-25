@@ -2613,20 +2613,21 @@ public class Hd2EnemyBot : MonoBehaviour
         {
             case 0:
                 // Raise the roof: both palms push up on every beat.
-                goal = shoulder + up * (0.25f + 0.3f * bounce) + forward * 0.15f + outward * 0.2f;
+                goal = shoulder + up * (0.25f + 0.3f * bounce) + forward * 0.15f + outward * 0.3f;
                 break;
             case 1:
             {
                 // Fist pumps, one arm up while the other drops to the chest, swapping each beat.
                 float mine = 0.5f + 0.5f * Mathf.Sin(beats * Mathf.PI + (side < 0f ? 0f : Mathf.PI));
-                Vector3 high = shoulder + up * 0.6f + outward * 0.1f + forward * 0.1f;
-                Vector3 low = shoulder + forward * 0.35f - up * 0.05f - outward * 0.05f;
+                Vector3 high = shoulder + up * 0.6f + outward * 0.22f + forward * 0.1f;
+                Vector3 low = shoulder + forward * 0.35f - up * 0.05f + outward * 0.1f;
                 goal = Vector3.Lerp(low, high, mine);
                 break;
             }
             case 2:
                 // Overhead wave, both arms swaying side to side.
-                goal = shoulder + up * 0.55f + outward * 0.08f + transform.right * (0.3f * Mathf.Sin(beats * Mathf.PI * 0.5f));
+                // Both lean the same way, but the inner hand never passes its own shoulder.
+                goal = shoulder + up * 0.55f + outward * 0.28f + transform.right * (0.18f * Mathf.Sin(beats * Mathf.PI * 0.5f));
                 break;
             default:
                 // Spin with arms out.
@@ -2634,10 +2635,19 @@ public class Hd2EnemyBot : MonoBehaviour
                 break;
         }
 
+        // Keep every hand on its own side of the body: at least 0.1 m outside its shoulder.
+        Vector3 across = transform.right * side;
+        float shoulderOut = Vector3.Dot(shoulder - transform.position, across);
+        float goalOut = Vector3.Dot(goal - transform.position, across);
+        float minOut = Mathf.Max(0.1f, shoulderOut) + 0.1f;
+        if (goalOut < minOut)
+            goal += across * (minOut - goalOut);
+
         Vector3 from = hand != null ? hand.position : fore.position;
         float ease = 1f - Mathf.Exp(-14f * Time.deltaTime);
         Vector3 reach = Vector3.Lerp(from, goal, ease * Mathf.Max(0.2f, blend));
-        PoseArm(upper, fore, hand, reach, side);
+        // No pull toward the chest while dancing; that is what folded the arms across it.
+        PoseArm(upper, fore, hand, reach, side, 0f);
     }
 
     // After the match ends a bot stops moving, but gravity keeps working: anyone caught
@@ -4831,7 +4841,7 @@ public class Hd2EnemyBot : MonoBehaviour
         AimBone(fore, along, Vector3.down + transform.forward * 0.08f);
     }
 
-    void PoseArm(Transform upper, Transform fore, Transform hand, Vector3 reach, float side)
+    void PoseArm(Transform upper, Transform fore, Transform hand, Vector3 reach, float side, float inwardBias = 0.18f)
     {
         if (upper == null || fore == null)
             return;
@@ -4853,7 +4863,7 @@ public class Hd2EnemyBot : MonoBehaviour
         Vector3 inward = transform.position - shoulder;
         inward.y = 0f;
         if (inward.sqrMagnitude > 0.0001f)
-            direction = (direction + inward.normalized * 0.18f).normalized;
+            direction = (direction + inward.normalized * inwardBias).normalized;
         Vector3 wrist = shoulder + direction * (full * 0.88f);
 
         float sideSign = side < 0f ? -1f : 1f;
