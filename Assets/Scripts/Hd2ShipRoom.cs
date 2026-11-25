@@ -21,9 +21,11 @@ public static class Hd2ShipRoom
     const float WindowFront = 2.1f;
 
     /// <summary>Centre of the menu screen, its size, and its tilt (degrees, top leaning away; 0 = upright).</summary>
-    public static readonly Vector3 ScreenCenter = new Vector3(0f, 1.42f, 1.5f);
-    public const float ScreenWidth = 1.6f;
-    public const float ScreenHeight = 0.95f;
+    /// 30% larger than the first 1.6 x 0.95 m screen so the text reads from the player's spot;
+    /// the bottom edge stays on the stand and the screen grows upward.
+    public static readonly Vector3 ScreenCenter = new Vector3(0f, 1.5625f, 1.5f);
+    public const float ScreenWidth = 2.08f;
+    public const float ScreenHeight = 1.235f;
     public const float ScreenTilt = 0f;
 
     static readonly Dictionary<string, Material> materials = new Dictionary<string, Material>();

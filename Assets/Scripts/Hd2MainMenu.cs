@@ -455,17 +455,29 @@ public class Hd2MainMenu : MonoBehaviour
 
     static Click First(List<Click> list, Vector3 point, bool modal)
     {
+        // A modal panel ends its list with a click area that has no action and covers the whole
+        // panel, so clicks behind it are swallowed. It is the last entry, so it would win every
+        // pick and block the panel's own keys. Use it only when nothing usable is under the point.
+        Click blocker = null;
         for (int i = list.Count - 1; i >= 0; i--)
         {
             RectTransform rect = list[i].rect;
             if (rect == null || !rect.gameObject.activeInHierarchy)
                 continue;
             Vector3 local = rect.InverseTransformPoint(point);
-            if (rect.rect.Contains(new Vector2(local.x, local.y)))
-                return list[i];
+            if (!rect.rect.Contains(new Vector2(local.x, local.y)))
+                continue;
+            if (list[i].action == null && list[i].slide == null)
+            {
+                if (blocker == null)
+                    blocker = list[i];
+                continue;
+            }
+
+            return list[i];
         }
 
-        return null;
+        return blocker;
     }
 
     void SetHover(Click click)
@@ -780,17 +792,17 @@ public class Hd2MainMenu : MonoBehaviour
     {
         Heading(page, "Profile", 0f);
         var nameCaption = MakeText(page, "Name", 24, TextAnchor.MiddleLeft, HintColor);
-        Place(nameCaption.rectTransform, 0f, -80f, 400f, 34f);
+        Place(nameCaption.rectTransform, 0f, -210f, 400f, 34f);
         var name = MakeImage(page, KeyColor);
-        Place(name.rectTransform, 0f, -118f, 560f, 70f);
+        Place(name.rectTransform, 0f, -248f, 560f, 70f);
         nameValue = MakeText(name.rectTransform, "", 28, TextAnchor.MiddleLeft, Color.white);
         Stretch(nameValue.rectTransform, 18f);
         clicks.Add(new Click { rect = name.rectTransform, action = () => OpenKeyboard(false) });
 
         var clanCaption = MakeText(page, "Clan tag", 24, TextAnchor.MiddleLeft, HintColor);
-        Place(clanCaption.rectTransform, 0f, -210f, 400f, 34f);
+        Place(clanCaption.rectTransform, 0f, -80f, 400f, 34f);
         var clan = MakeImage(page, KeyColor);
-        Place(clan.rectTransform, 0f, -248f, 560f, 70f);
+        Place(clan.rectTransform, 0f, -118f, 560f, 70f);
         clanValue = MakeText(clan.rectTransform, "", 28, TextAnchor.MiddleLeft, Color.white);
         Stretch(clanValue.rectTransform, 18f);
         clicks.Add(new Click { rect = clan.rectTransform, action = () => OpenKeyboard(true) });
