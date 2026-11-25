@@ -180,6 +180,10 @@ public class Hd2SplineRail : MonoBehaviour
     {
         if (rail == null)
             return;
+        // Clearing a rail that is already empty and off changes nothing. Recording it anyway
+        // marked the scene as unsaved after every sync (Play mode exit, compile, hierarchy edit).
+        if (sampled.Length == 0 && !rail.enabled && (rail.points == null || rail.points.Length == 0))
+            return;
 #if UNITY_EDITOR
         if (undoEdits && !Application.isPlaying)
             UnityEditor.Undo.RecordObject(rail, "Rebuild Grind Rail");
