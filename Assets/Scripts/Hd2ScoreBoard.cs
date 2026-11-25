@@ -16,6 +16,9 @@ public class Hd2ScoreBoard : MonoBehaviour
     TextMesh red;
     int shownBlue = -1;
     int shownRed = -1;
+    Vector3 blueScale = Vector3.one;
+    Vector3 redScale = Vector3.one;
+    float maxWide = 4.6f;
 
     void Awake()
     {
@@ -34,10 +37,8 @@ public class Hd2ScoreBoard : MonoBehaviour
 
         shownBlue = blueScore;
         shownRed = redScore;
-        if (blue != null)
-            blue.text = Number(blueScore);
-        if (red != null)
-            red.text = Number(redScore);
+        Show(blue, blueScale, blueScore);
+        Show(red, redScale, redScore);
     }
 
     public void Build()
@@ -67,12 +68,15 @@ public class Hd2ScoreBoard : MonoBehaviour
         float gap = width * 0.25f;
         blue = Place("BlueScore", Hd2Locomotion.BlueArmor, face, boardUp, boardRight * gap);
         red = Place("RedScore", Hd2Locomotion.RedArmor, face, boardUp, -boardRight * gap);
-        Fit(blue, height * Fill, width * 0.46f);
-        Fit(red, height * Fill, width * 0.46f);
+        maxWide = width * 0.46f;
+        Fit(blue, height * Fill, maxWide);
+        Fit(red, height * Fill, maxWide);
         if (blue != null)
-            blue.text = Number(0);
+            blueScale = blue.transform.localScale;
         if (red != null)
-            red.text = Number(0);
+            redScale = red.transform.localScale;
+        Show(blue, blueScale, 0);
+        Show(red, redScale, 0);
         shownBlue = 0;
         shownRed = 0;
     }
@@ -112,11 +116,31 @@ public class Hd2ScoreBoard : MonoBehaviour
         {
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
+            // Depth-tested text material: the built-in font material draws on top of
+            // everything, so the scores showed through walls and the base roofs.
             if (text.font != null)
-                renderer.sharedMaterial = text.font.material;
+                renderer.sharedMaterial = Hd2AmmoReadout.WorldTextMaterial(text.font);
         }
 
         return text;
+    }
+
+    // Sets the number at its normal size, then shrinks it if it would run past its half
+    // of the board (three-digit scores), so it never hangs off the edge or into the other.
+    void Show(TextMesh text, Vector3 baseScale, int value)
+    {
+        if (text == null)
+            return;
+
+        text.transform.localScale = baseScale;
+        text.text = Number(value);
+        MeshRenderer renderer = text.GetComponent<MeshRenderer>();
+        if (renderer == null)
+            return;
+
+        float wide = Mathf.Max(renderer.bounds.size.x, renderer.bounds.size.z);
+        if (wide > maxWide && wide > 0.001f)
+            text.transform.localScale = baseScale * (maxWide / wide);
     }
 
     static int BlueScore()
