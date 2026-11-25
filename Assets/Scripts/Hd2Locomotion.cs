@@ -2906,15 +2906,24 @@ public class Hd2Locomotion : MonoBehaviour
             if (Keyboard.current == null)
                 return 0f;
             if (Keyboard.current.qKey.wasPressedThisFrame)
-                return -Mathf.Abs(snapAngle);
+                return -SnapDegrees;
             if (Keyboard.current.eKey.wasPressedThisFrame)
-                return Mathf.Abs(snapAngle);
+                return SnapDegrees;
             return 0f;
         }
 
         float x = 0f;
         if (turnAction != null)
             x = turnAction.ReadValue<Vector2>().x;
+
+        // Smooth turning (Options): the stick turns continuously, faster the further it's pushed.
+        if (Hd2Settings.SmoothTurn)
+        {
+            snapArmed = true;
+            snapCenterHeld = 0f;
+            float push = Mathf.InverseLerp(SmoothTurnDeadzone, 1f, Mathf.Abs(x));
+            return Mathf.Sign(x) * push * Hd2Settings.SmoothTurnSpeed * Time.deltaTime;
+        }
 
         // A one-frame dropout below SnapRearm while the stick is held must not rearm.
         // The stick has to stay near center for SnapRearmDelay before the next snap.
@@ -2947,8 +2956,13 @@ public class Hd2Locomotion : MonoBehaviour
 
         snapArmed = false;
         snapCenterHeld = 0f;
-        return direction * Mathf.Abs(snapAngle);
+        return direction * SnapDegrees;
     }
+
+    const float SmoothTurnDeadzone = 0.15f;
+
+    // Snap turn size from Options (Hd2Settings), 45 degrees unless changed.
+    float SnapDegrees => Hd2Settings.SnapAngle;
 
     /// <summary>
     /// Respawn: turn the rig so the headset looks the way the spawn faces, however the

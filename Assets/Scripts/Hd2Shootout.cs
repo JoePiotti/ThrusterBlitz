@@ -52,6 +52,7 @@ public class Hd2Shootout : MonoBehaviour
         if (EliminationMode)
             gameObject.AddComponent<Hd2Elimination>();
         voice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(voice, Hd2Audio.Channel.Announcer);
         voice.playOnAwake = false;
         voice.loop = false;
         voice.spatialBlend = 0f;

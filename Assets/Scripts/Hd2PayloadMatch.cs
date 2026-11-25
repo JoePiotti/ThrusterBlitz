@@ -14,6 +14,7 @@ public class Hd2PayloadMatch : MonoBehaviour
     void Awake()
     {
         matchVoice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(matchVoice, Hd2Audio.Channel.Announcer);
         matchVoice.playOnAwake = false;
         matchVoice.loop = false;
         matchVoice.spatialBlend = 0f;

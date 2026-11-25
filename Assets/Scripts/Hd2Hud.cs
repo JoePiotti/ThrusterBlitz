@@ -149,6 +149,21 @@ public class Hd2Hud : MonoBehaviour
 
     const string SideKey = "Hd2HudSide";
 
+    /// <summary>The HUD side saved on the headset, for menus outside a match (the start menu).</summary>
+    public static Side SavedSide
+    {
+        get
+        {
+            int saved = PlayerPrefs.GetInt(SideKey, (int)Side.Left);
+            return System.Enum.IsDefined(typeof(Side), saved) ? (Side)saved : Side.Left;
+        }
+        set
+        {
+            PlayerPrefs.SetInt(SideKey, (int)value);
+            PlayerPrefs.Save();
+        }
+    }
+
     void Awake()
     {
         // The HUD side chosen in the menu is saved on the headset.

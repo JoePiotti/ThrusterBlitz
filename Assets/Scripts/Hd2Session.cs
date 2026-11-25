@@ -334,7 +334,7 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
         if (onTitle)
         {
             pendingTitleNote = null;
-            Hd2TitleScreen title = FindFirstObjectByType<Hd2TitleScreen>();
+            Hd2MainMenu title = FindFirstObjectByType<Hd2MainMenu>();
             if (title != null)
                 title.CancelJoin();
         }
@@ -686,7 +686,7 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
         if (SceneManager.GetActiveScene().name != "Title")
             return;
 
-        Hd2TitleScreen title = FindFirstObjectByType<Hd2TitleScreen>();
+        Hd2MainMenu title = FindFirstObjectByType<Hd2MainMenu>();
         if (title != null)
             title.CancelJoin();
     }

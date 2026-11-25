@@ -603,6 +603,7 @@ public class Hd2KillStreak : MonoBehaviour
     void Awake()
     {
         voice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(voice, Hd2Audio.Channel.Announcer);
         voice.playOnAwake = false;
         voice.spatialBlend = 0f;
         voice.dopplerLevel = 0f;

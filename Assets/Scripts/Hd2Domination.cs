@@ -44,6 +44,7 @@ public class Hd2Domination : MonoBehaviour
     {
         Present = true;
         voice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(voice, Hd2Audio.Channel.Announcer);
         voice.playOnAwake = false;
         voice.loop = false;
         voice.spatialBlend = 0f;
@@ -54,6 +55,7 @@ public class Hd2Domination : MonoBehaviour
         buzzer = Resources.Load<AudioClip>("Audio/Buzzer");
 
         matchVoice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(matchVoice, Hd2Audio.Channel.Announcer);
         matchVoice.playOnAwake = false;
         matchVoice.loop = false;
         matchVoice.spatialBlend = 0f;

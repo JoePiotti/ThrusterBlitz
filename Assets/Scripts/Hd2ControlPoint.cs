@@ -57,6 +57,7 @@ public class Hd2ControlPoint : MonoBehaviour
     void Awake()
     {
         voice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(voice, Hd2Audio.Channel.Announcer);
         voice.playOnAwake = false;
         voice.loop = false;
         voice.spatialBlend = 0f;
@@ -68,6 +69,7 @@ public class Hd2ControlPoint : MonoBehaviour
         blueLead = Resources.Load<AudioClip>("Audio/BlueHasTakenTheLead");
 
         matchVoice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(matchVoice, Hd2Audio.Channel.Announcer);
         matchVoice.playOnAwake = false;
         matchVoice.loop = false;
         matchVoice.spatialBlend = 0f;

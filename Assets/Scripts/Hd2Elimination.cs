@@ -46,6 +46,7 @@ public class Hd2Elimination : MonoBehaviour
         RedPoints = 0;
         BluePoints = 0;
         voice = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(voice, Hd2Audio.Channel.Announcer);
         voice.playOnAwake = false;
         voice.spatialBlend = 0f;
         buzzer = Resources.Load<AudioClip>("Audio/Buzzer");
