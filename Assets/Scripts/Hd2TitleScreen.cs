@@ -83,7 +83,8 @@ public class Hd2TitleScreen : MonoBehaviour
 
     void Update()
     {
-        if (loading)
+        // The startup logo is up: no picking a mode through it.
+        if (loading || Hd2CompanyLogo.Showing)
             return;
 
         aimed = null;
