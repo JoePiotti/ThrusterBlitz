@@ -6,7 +6,7 @@ using UnityEngine.InputSystem;
 /// swaps that hand's gun for the shotgun while that hand's grip is held.
 /// </summary>
 [ExecuteAlways]
-public class Hd2ShotgunPickup : MonoBehaviour
+public class Hd2ShotgunPickup : MonoBehaviour, IHd2Pickup
 {
     public Texture2D icon;
     public GameObject shotgunModel;
@@ -22,12 +22,21 @@ public class Hd2ShotgunPickup : MonoBehaviour
     LineRenderer ring;
     bool ready = true;
     float cooldownLeft;
+
+    /// <summary>True while the pickup can be taken.</summary>
+    public bool Ready => ready;
+    /// <summary>0 just after it was taken, rising to 1 when it is ready again.</summary>
+    public float Progress => ready ? 1f : 1f - Mathf.Clamp01(cooldownLeft / Mathf.Max(0.01f, cooldown));
+    public Color LookColor => pickupColor;
     InputAction rightGrip;
     InputAction leftGrip;
 
     void OnEnable()
     {
         BuildVisuals();
+        // The look in play (built at run time over the saved pad and sphere).
+        if (Application.isPlaying && GetComponent<Hd2FloatRings>() == null)
+            gameObject.AddComponent<Hd2FloatRings>();
         RepairSavedMaterials();
         Hd2PickupGlow.Ensure(transform, pickupColor);
         SetReady(true);

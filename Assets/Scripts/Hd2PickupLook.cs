@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Shared pieces for the pickup looks (Hd2HoloCradle, Hd2FloatRings): glowing lines and
+/// Shared pieces for the pickup looks (Hd2FloatRings): glowing lines and
 /// soft see-through shapes, built at run time over the saved pad and sphere.
 /// </summary>
 public static class Hd2PickupLook

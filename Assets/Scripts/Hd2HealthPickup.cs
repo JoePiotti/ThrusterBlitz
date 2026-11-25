@@ -5,7 +5,7 @@ using UnityEngine;
 /// After a heal, the sphere hides for 5 seconds while a ring fills, then it returns.
 /// </summary>
 [ExecuteAlways]
-public class Hd2HealthPickup : MonoBehaviour
+public class Hd2HealthPickup : MonoBehaviour, IHd2Pickup
 {
     public Texture2D icon;
     public float cooldown = 5f;
@@ -22,6 +22,7 @@ public class Hd2HealthPickup : MonoBehaviour
     public bool Ready => ready;
     /// <summary>0 just after it was taken, rising to 1 when it is ready again.</summary>
     public float Progress => ready ? 1f : 1f - Mathf.Clamp01(cooldownLeft / Mathf.Max(0.01f, cooldown));
+    public Color LookColor => pickupColor;
 
     void OnEnable()
     {

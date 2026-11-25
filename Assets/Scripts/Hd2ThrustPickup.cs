@@ -7,7 +7,7 @@ using UnityEngine;
 /// hides for 5 seconds while a ring fills, then the sphere returns.
 /// </summary>
 [ExecuteAlways]
-public class Hd2ThrustPickup : MonoBehaviour
+public class Hd2ThrustPickup : MonoBehaviour, IHd2Pickup
 {
     public Texture2D icon;
     public float cooldown = 5f;
@@ -25,6 +25,7 @@ public class Hd2ThrustPickup : MonoBehaviour
     public bool Ready => ready;
     /// <summary>0 just after it was taken, rising to 1 when it is ready again.</summary>
     public float Progress => ready ? 1f : 1f - Mathf.Clamp01(cooldownLeft / Mathf.Max(0.01f, cooldown));
+    public Color LookColor => pickupColor;
     Material sphereMaterial;
     Material iconMaterial;
 
@@ -32,8 +33,8 @@ public class Hd2ThrustPickup : MonoBehaviour
     {
         BuildVisuals();
         // The look in play (built at run time over the saved pad and sphere).
-        if (Application.isPlaying && GetComponent<Hd2HoloCradle>() == null)
-            gameObject.AddComponent<Hd2HoloCradle>();
+        if (Application.isPlaying && GetComponent<Hd2FloatRings>() == null)
+            gameObject.AddComponent<Hd2FloatRings>();
         Hd2PickupGlow.Ensure(transform, pickupColor);
         SetReady(true);
     }
