@@ -172,22 +172,55 @@ public static class Hd2MatchStats
         tallies[key] = tally;
     }
 
+    public const int WinBonusPoints = 1000;
+    public const int DrawBonusPoints = 500;
+
     /// <summary>
-    /// End of a match: each fighter gets StreakBonusPoints times their best kill streak.
-    /// Paid once per match; the game modes call it when they finish.
+    /// End of a match with no teams: only the kill streak bonus.
     /// </summary>
     public static void AwardMatchEnd()
+    {
+        AwardMatchEnd(Hd2Team.None, false);
+    }
+
+    /// <summary>
+    /// End of a team match. Every fighter gets StreakBonusPoints times their best kill
+    /// streak, plus the game bonus: WinBonusPoints on the winning team, DrawBonusPoints each
+    /// for a draw (winner None), nothing for a loss. Paid once per match; the game modes call
+    /// it when they finish. The local player sees the breakdown in a toast.
+    /// </summary>
+    public static void AwardMatchEnd(Hd2Team winner)
+    {
+        AwardMatchEnd(winner, true);
+    }
+
+    static void AwardMatchEnd(Hd2Team winner, bool teams)
     {
         if (matchEndPaid)
             return;
         matchEndPaid = true;
 
-        var keys = new List<int>(tallies.Keys);
-        for (int i = 0; i < keys.Count; i++)
+        var fighters = UnityEngine.Object.FindObjectsByType<Hd2Health>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < fighters.Length; i++)
         {
-            Tally tally = tallies[keys[i]];
-            tally.Score += StreakBonusPoints * tally.BestStreak;
-            tallies[keys[i]] = tally;
+            Hd2Health fighter = fighters[i];
+            if (fighter == null)
+                continue;
+            Hd2Team side = Hd2SpawnField.TeamOf(fighter);
+            if (teams && side == Hd2Team.None)
+                continue;
+
+            int key = fighter.GetInstanceID();
+            tallies.TryGetValue(key, out Tally tally);
+            int before = tally.Score;
+            int streakBonus = StreakBonusPoints * tally.BestStreak;
+            int gameBonus = !teams ? 0 : winner == Hd2Team.None ? DrawBonusPoints : side == winner ? WinBonusPoints : 0;
+            tally.Score += streakBonus + gameBonus;
+            tallies[key] = tally;
+
+            Hd2Hud hud = fighter.GetComponent<Hd2Hud>();
+            if (hud != null)
+                hud.ShowMatchSummary(before, streakBonus, gameBonus, tally.Score, !teams ? "" : winner == Hd2Team.None ? "Draw" : side == winner ? "Win" : "Loss");
         }
     }
 

@@ -211,7 +211,7 @@ public class Hd2Domination : MonoBehaviour
             return;
 
         Decided = true;
-        Hd2MatchStats.AwardMatchEnd();
+        Hd2MatchStats.AwardMatchEnd(winner);
         StopVoice();
         if (matchVoice != null)
             matchVoice.Stop();

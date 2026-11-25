@@ -302,7 +302,7 @@ public class Hd2ControlPoint : MonoBehaviour
             return;
 
         Decided = true;
-        Hd2MatchStats.AwardMatchEnd();
+        Hd2MatchStats.AwardMatchEnd(winner);
         queuedLead = null;
         if (matchVoice != null)
             matchVoice.Stop();

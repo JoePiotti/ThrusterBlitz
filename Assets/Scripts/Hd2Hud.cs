@@ -217,6 +217,7 @@ public class Hd2Hud : MonoBehaviour
         RefreshMatch();
         RefreshBanner();
         RefreshKillFeed();
+        RefreshSummary();
         RefreshHitFlash();
         RefreshScore();
     }
@@ -260,6 +261,36 @@ public class Hd2Hud : MonoBehaviour
     // Kills now show in the kill feed at the bottom center (AddKill), in every mode.
     public void ShowKill(string enemyName)
     {
+    }
+
+    // ---- Match summary ----
+    // At the end of a match: your score, the kill streak and game bonuses, and the total.
+    const float SummarySeconds = 10f;
+    TextMesh summary;
+    float summaryUntil;
+
+    public void ShowMatchSummary(int score, int streakBonus, int gameBonus, int total, string result)
+    {
+        if (summary == null)
+        {
+            summary = MakeReadout(view != null ? view : transform, new Vector3(0f, -0.04f, 0.9f), Color.white, TextAnchor.MiddleCenter);
+            summary.alignment = TextAlignment.Center;
+            summary.richText = true;
+            summary.characterSize = 0.005f;
+        }
+
+        string game = string.IsNullOrEmpty(result) ? "" : "   " + result + " Bonus +" + gameBonus.ToString("N0");
+        summary.text = "Score " + score.ToString("N0")
+            + "\n<size=50><color=#B8D8FF>Kill Streak Bonus +" + streakBonus.ToString("N0") + game + "</color></size>"
+            + "\n<b><color=#FFD75A>Total " + total.ToString("N0") + "</color></b>";
+        summary.gameObject.SetActive(true);
+        summaryUntil = Time.unscaledTime + SummarySeconds;
+    }
+
+    void RefreshSummary()
+    {
+        if (summary != null && summary.gameObject.activeSelf && Time.unscaledTime >= summaryUntil)
+            summary.gameObject.SetActive(false);
     }
 
     // ---- Kill feed ----

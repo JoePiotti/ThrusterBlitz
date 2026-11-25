@@ -496,7 +496,7 @@ public class Hd2Shootout : MonoBehaviour
             return;
 
         Decided = true;
-        Hd2MatchStats.AwardMatchEnd();
+        Hd2MatchStats.AwardMatchEnd(winner);
         TimeLeft = Mathf.Max(0f, TimeLeft);
         queuedLead = null;
         if (voice != null)
