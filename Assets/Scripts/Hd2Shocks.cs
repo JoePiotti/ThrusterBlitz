@@ -273,6 +273,40 @@ public class Hd2Shocks : MonoBehaviour
         TryFire(false);
     }
 
+    // Bots charge the shocks the same way a player does: the glow and charge sound run
+    // while the "trigger" is held, and a full hold fires the orb on release.
+    public bool BotCharging => triggerPressedAt >= 0f;
+    public bool BotChargeReady => triggerPressedAt >= 0f && Time.time - triggerPressedAt >= chargeHoldTime;
+    public float BotChargeHeld => triggerPressedAt >= 0f ? Time.time - triggerPressedAt : 0f;
+
+    public void BotStartCharge()
+    {
+        if (triggerPressedAt >= 0f || reloading || rounds <= 0)
+            return;
+        waitForTriggerRelease = false;
+        triggerPressedAt = Time.time;
+        chargeReadyPulsed = false;
+        PlayCharge();
+    }
+
+    public void BotReleaseCharge()
+    {
+        if (triggerPressedAt < 0f)
+            return;
+        bool full = BotChargeReady;
+        triggerPressedAt = -1f;
+        StopCharge();
+        TryFire(full);
+    }
+
+    public void BotCancelCharge()
+    {
+        if (triggerPressedAt < 0f)
+            return;
+        triggerPressedAt = -1f;
+        StopCharge();
+    }
+
     /// <summary>
     /// The trigger was already down when this gun was picked up. Charge from now.
     /// A short release is a normal bolt. A full hold fires the charged shot on release.

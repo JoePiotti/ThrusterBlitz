@@ -254,6 +254,22 @@ public class Hd2EnemyBot : MonoBehaviour
     Mode mode = Mode.Wander;
     WanderKind wander = WanderKind.Walk;
     CombatKind combat = CombatKind.Sprint;
+
+    // How a bot fights depends on what it holds: shotguns rush in close, rockets take the
+    // high ground and aim at the feet, shocks charge orbs at the feet or tap bolts at the body.
+    enum GunStyle
+    {
+        Standard,
+        Shotgun,
+        Rockets,
+        Shocks
+    }
+
+    const float ShotgunReach = 15f;
+    GunStyle gunStyle = GunStyle.Standard;
+    float gunStyleAt;
+    float nextRushAt;
+    float nextShockChargeAt;
     Transform target;
     Hd2DropShield shelter;
     float lostTargetAt = -1f;
@@ -1190,7 +1206,7 @@ public class Hd2EnemyBot : MonoBehaviour
             Vector3 to = Flat(foe.position - transform.position);
             if (to.sqrMagnitude > 0.0001f)
                 Face(to);
-            AimAt(foe.position + Vector3.up * 1.1f, true);
+            AimAt(CombatAimPoint(foe), true);
             Shoot(true);
             BackUpFrom(foe.position + Vector3.up * 1.1f);
         }
@@ -1916,7 +1932,7 @@ public class Hd2EnemyBot : MonoBehaviour
             Face(flat);
 
         bool clear = eye != null && distance > 0.4f && distance < 32f && !Blocked(eye.position, to.normalized, to.magnitude, huntTarget);
-        AimAt(huntTarget.position + Vector3.up * 1.1f, true);
+        AimAt(CombatAimPoint(huntTarget), true);
         Shoot(clear);
         if (!traveling && !grinding)
         {
@@ -1933,6 +1949,7 @@ public class Hd2EnemyBot : MonoBehaviour
 
         if (!traveling && !grinding)
             JitterCombatMove(flat);
+        StyleMove(huntTarget, flat, distance);
         BackUpFrom(huntTarget.position + Vector3.up * 1.1f);
         TryMountPlatform();
     }
@@ -2122,7 +2139,7 @@ public class Hd2EnemyBot : MonoBehaviour
         Vector3 to = Flat(target.position - transform.position);
         if (!traveling && to.sqrMagnitude > 0.0001f)
             Face(to);
-        AimAt(target.position + Vector3.up * 1.1f, true);
+        AimAt(CombatAimPoint(target), true);
         Shoot(true);
 
         if (combat == CombatKind.Blitz)
@@ -2149,6 +2166,8 @@ public class Hd2EnemyBot : MonoBehaviour
             JitterCombatMove(to);
         if (!traveling && !grinding)
             HoldPointWhileFighting();
+        Vector3 toFlat = Flat(target.position - transform.position);
+        StyleMove(target, toFlat, toFlat.magnitude);
         BackUpFrom(target.position + Vector3.up * 1.1f);
     }
 
@@ -2412,6 +2431,8 @@ public class Hd2EnemyBot : MonoBehaviour
         if (combatFire && TeammateInLine())
             combatFire = false;
 
+        bool shocksCharging = TickShocksCharge(combatFire);
+
         GetComponentsInChildren(heldSmgs);
         for (int i = 0; i < heldSmgs.Count; i++)
             heldSmgs[i].botHeld = combatFire;
@@ -2435,15 +2456,147 @@ public class Hd2EnemyBot : MonoBehaviour
         if (Time.time < nextPump)
             return;
         nextPump = Time.time + GapAt(0.85f);
+        // Shotguns hold fire until the target is inside their reach.
+        bool inShotgunReach = target == null || Horizontal(target.position) <= ShotgunReach;
         GetComponentsInChildren(heldShotguns);
-        for (int i = 0; i < heldShotguns.Count; i++)
+        for (int i = 0; i < heldShotguns.Count && inShotgunReach; i++)
             heldShotguns[i].BotTap();
-        GetComponentsInChildren(heldShocks);
-        for (int i = 0; i < heldShocks.Count; i++)
-            heldShocks[i].BotTap();
+        if (!shocksCharging)
+        {
+            GetComponentsInChildren(heldShocks);
+            for (int i = 0; i < heldShocks.Count; i++)
+                heldShocks[i].BotTap();
+        }
         GetComponentsInChildren(heldRockets);
         for (int i = 0; i < heldRockets.Count; i++)
             heldRockets[i].BotTap();
+    }
+
+    GunStyle Style()
+    {
+        if (Time.time < gunStyleAt)
+            return gunStyle;
+        gunStyleAt = Time.time + 0.5f;
+        if (GetComponentInChildren<Hd2RocketLauncher>() != null)
+            gunStyle = GunStyle.Rockets;
+        else if (GetComponentInChildren<Hd2Shotgun>() != null)
+            gunStyle = GunStyle.Shotgun;
+        else if (GetComponentInChildren<Hd2Shocks>() != null)
+            gunStyle = GunStyle.Shocks;
+        else
+            gunStyle = GunStyle.Standard;
+        return gunStyle;
+    }
+
+    // Rockets, and charged shock orbs, go at the feet: the blast does the work and a near miss
+    // still hurts. Everything else aims at the chest.
+    Vector3 CombatAimPoint(Transform foe)
+    {
+        GunStyle style = Style();
+        if (style == GunStyle.Rockets || (style == GunStyle.Shocks && ShocksCharging()))
+            return foe.position + Vector3.up * 0.15f;
+        return foe.position + Vector3.up * 1.1f;
+    }
+
+    bool ShocksCharging()
+    {
+        GetComponentsInChildren(heldShocks);
+        for (int i = 0; i < heldShocks.Count; i++)
+        {
+            if (heldShocks[i] != null && heldShocks[i].BotCharging)
+                return true;
+        }
+
+        return false;
+    }
+
+    // Now and then a shocks bot holds the trigger for a charged orb (5 to 30 m away), aims it
+    // at the feet while it builds, and lets go once it is full and the shot is clear. Returns
+    // true while charging, so the plain bolts hold off.
+    bool TickShocksCharge(bool combatFire)
+    {
+        GetComponentsInChildren(heldShocks);
+        if (heldShocks.Count == 0)
+            return false;
+
+        bool charging = false;
+        for (int i = 0; i < heldShocks.Count; i++)
+        {
+            Hd2Shocks shocks = heldShocks[i];
+            if (shocks == null || !shocks.BotCharging)
+                continue;
+            charging = true;
+            if (shocks.BotChargeReady && combatFire)
+                shocks.BotReleaseCharge();
+            else if (shocks.BotChargeHeld > 4f)
+            {
+                // Held too long without a clean shot (lost the target, or it ducked away).
+                if (combatFire)
+                    shocks.BotReleaseCharge();
+                else
+                    shocks.BotCancelCharge();
+            }
+        }
+
+        if (charging || !combatFire || target == null || Time.time < nextShockChargeAt)
+            return charging;
+
+        float distance = Horizontal(target.position);
+        nextShockChargeAt = Time.time + Random.Range(3f, 6f);
+        if (distance < 5f || distance > 30f || Random.value > 0.45f)
+            return false;
+        for (int i = 0; i < heldShocks.Count; i++)
+        {
+            if (heldShocks[i] != null)
+            {
+                heldShocks[i].BotStartCharge();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Movement on top of the usual combat footwork, by weapon:
+    //  shotgun - thrust in close (a blitz that lands a couple of meters from the target),
+    //            then walk in and circle at point-blank range;
+    //  rockets - take the high ground (platforms, base decks), hold it, and back off from
+    //            anyone too close for a safe blast.
+    void StyleMove(Transform foe, Vector3 flat, float distance)
+    {
+        if (foe == null || traveling || grinding || blitzPending)
+            return;
+
+        GunStyle style = Style();
+        Vector3 forward = distance > 0.05f ? flat / distance : Flat(transform.forward).normalized;
+        Vector3 side = Vector3.Cross(Vector3.up, forward) * strafeSign;
+        if (style == GunStyle.Shotgun)
+        {
+            if (distance > 8f && Time.time >= nextRushAt && meter != null && meter.Charges >= 1f
+                && body != null && body.isGrounded && !Hd2SpawnField.Locked)
+            {
+                nextRushAt = Time.time + Random.Range(2f, 3.5f);
+                float reach = Mathf.Min(distance - 2.5f, BlitzRange - 0.5f);
+                Vector3 probe = transform.position + forward * reach + side * Random.Range(-1.2f, 1.2f);
+                if (FloorBelow(probe, out Vector3 floor) && TryBlitz(floor, null, 1f))
+                    return;
+            }
+
+            moveDir = distance > 3f ? (forward + side * 0.25f).normalized : side;
+            moveDir = ClearOfWater(moveDir);
+            return;
+        }
+
+        if (style == GunStyle.Rockets)
+        {
+            TryMountPlatform();
+            bool above = transform.position.y > foe.position.y + 1.5f;
+            if (distance < 7f)
+                moveDir = (-forward + side * 0.4f).normalized;
+            else if (above)
+                moveDir = Vector3.zero;
+            moveDir = ClearOfWater(moveDir);
+        }
     }
 
     void StopMotion()
@@ -2667,6 +2820,12 @@ public class Hd2EnemyBot : MonoBehaviour
     void ReleaseGuns()
     {
         Shoot(false);
+        GetComponentsInChildren(heldShocks);
+        for (int i = 0; i < heldShocks.Count; i++)
+        {
+            if (heldShocks[i] != null)
+                heldShocks[i].BotCancelCharge();
+        }
     }
 
     void AimAt(Vector3 point, bool shake)
