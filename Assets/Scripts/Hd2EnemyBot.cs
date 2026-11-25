@@ -1754,17 +1754,12 @@ public class Hd2EnemyBot : MonoBehaviour
         }
     }
 
+    // Same team as this bot: other bots, the local player, and networked players.
     bool Friendly(Transform other)
     {
         if (other == null || team == Hd2Team.None)
             return false;
-
-        Hd2EnemyBot bot = other.GetComponent<Hd2EnemyBot>();
-        if (bot != null)
-            return bot.team == team;
-
-        Hd2Locomotion player = other.GetComponent<Hd2Locomotion>();
-        return player != null && player.team == team;
+        return Hd2SpawnField.TeamOf(other) == team;
     }
 
     static Hd2Team EnemyOf(Hd2Team side)
@@ -1784,7 +1779,8 @@ public class Hd2EnemyBot : MonoBehaviour
         Transform body = FighterBody(enemy);
         if (body == null || body == transform)
             return;
-        if (domination && Friendly(body))
+        // Never turn on a teammate, in any mode (a stray blast from one used to start a fight).
+        if (Friendly(body))
             return;
         bool same = mode == Mode.Combat && noticed == body;
         target = body;
@@ -2412,6 +2408,8 @@ public class Hd2EnemyBot : MonoBehaviour
     void Shoot(bool combatFire)
     {
         if (combatFire && (Time.time < attackAt || !aimOnTarget))
+            combatFire = false;
+        if (combatFire && TeammateInLine())
             combatFire = false;
 
         GetComponentsInChildren(heldSmgs);
@@ -3262,15 +3260,48 @@ public class Hd2EnemyBot : MonoBehaviour
 
     bool FriendlyBody(Transform hit)
     {
+        if (team == Hd2Team.None || hit == null)
+            return false;
+        return Hd2SpawnField.TeamOf(hit) == team;
+    }
+
+    // A teammate stands in the line of fire (a body-wide lane from the chest to the aim
+    // point, or to the first wall). Bots hold fire instead of shooting through them.
+    bool TeammateInLine()
+    {
         if (team == Hd2Team.None)
             return false;
 
-        Hd2EnemyBot bot = hit.GetComponentInParent<Hd2EnemyBot>();
-        if (bot != null)
-            return bot.team == team;
+        Vector3 origin = transform.position + Vector3.up * ChestHeight;
+        Vector3 aimPoint = target != null ? target.position + Vector3.up * 1.1f : origin + aimDir * 30f;
+        Vector3 toAim = aimPoint - origin;
+        float distance = toAim.magnitude;
+        if (distance < 0.3f)
+            return false;
+        Vector3 dir = toAim / distance;
+        int count = Physics.SphereCastNonAlloc(origin, 0.25f, dir, sightHits, distance, ~0, QueryTriggerInteraction.Ignore);
+        float nearest = float.MaxValue;
+        bool friendly = false;
+        for (int i = 0; i < count; i++)
+        {
+            Collider collider = sightHits[i].collider;
+            if (collider == null)
+                continue;
+            Transform hit = collider.transform;
+            if (hit == transform || hit.IsChildOf(transform))
+                continue;
+            if (target != null && (hit == target || hit.IsChildOf(target)))
+                continue;
+            if (collider.GetComponentInParent<Hd2TeamButton>() != null)
+                continue;
+            float d = sightHits[i].distance;
+            if (d <= 0f || d >= nearest)
+                continue;
+            nearest = d;
+            friendly = FriendlyBody(hit);
+        }
 
-        Hd2Locomotion player = hit.GetComponentInParent<Hd2Locomotion>();
-        return player != null && player.team == team;
+        return friendly;
     }
 
     Vector3 WanderDirection()
