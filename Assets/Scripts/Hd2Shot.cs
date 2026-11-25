@@ -206,13 +206,16 @@ public class Hd2Shot : MonoBehaviour
     public static Hd2Shot Rent()
     {
         Hd2Shot shot;
-        int last = shotPool.Count - 1;
-        if (last >= 0)
+        shot = null;
+        // Pooled shots die with their scene. Skip destroyed ones.
+        while (shot == null && shotPool.Count > 0)
         {
+            int last = shotPool.Count - 1;
             shot = shotPool[last];
             shotPool.RemoveAt(last);
         }
-        else
+
+        if (shot == null)
         {
             var go = new GameObject("Shot");
             go.AddComponent<MeshFilter>().sharedMesh = BoltMesh();
@@ -479,6 +482,9 @@ public class Hd2Shot : MonoBehaviour
         Material material = ScoreMarkMaterial();
         if (material == null)
             return;
+
+        // Marks die with their scene, but this list is static. Drop dead ones so a reused mark is never a destroyed one.
+        scoreMarks.RemoveAll(m => m == null);
 
         GameObject mark;
         if (scoreMarks.Count >= MaxScoreMarks)
