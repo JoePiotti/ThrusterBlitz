@@ -13,18 +13,18 @@ public static class Hd2ShipRoom
     public const float HalfWidth = 2.4f;
     public const float Back = -2.0f;
     public const float Front = 3.0f;
-    public const float Height = 2.6f;
+    public const float Height = 3.4f;
     const float Wall = 0.12f;
     const float WindowLow = 0.85f;
-    const float WindowHigh = 2.15f;
+    const float WindowHigh = 2.75f;
     const float WindowBack = -1.1f;
     const float WindowFront = 2.1f;
 
-    /// <summary>Centre of the menu screen, its size, and its tilt (degrees, top leaning away).</summary>
+    /// <summary>Centre of the menu screen, its size, and its tilt (degrees, top leaning away; 0 = upright).</summary>
     public static readonly Vector3 ScreenCenter = new Vector3(0f, 1.42f, 1.5f);
     public const float ScreenWidth = 1.6f;
     public const float ScreenHeight = 0.95f;
-    public const float ScreenTilt = 10f;
+    public const float ScreenTilt = 0f;
 
     static readonly Dictionary<string, Material> materials = new Dictionary<string, Material>();
 
@@ -61,7 +61,7 @@ public static class Hd2ShipRoom
         Console(root);
 
         // Lights: soft fill from above, a cool accent at the console
-        Light(root, "CabinLight", new Vector3(0f, Height - 0.3f, 0.4f), new Color(0.92f, 0.95f, 1f), 1.3f, 6.5f);
+        Light(root, "CabinLight", new Vector3(0f, Height - 0.3f, 0.4f), new Color(0.92f, 0.95f, 1f), 1.6f, 7.5f);
         Light(root, "ConsoleGlow", new Vector3(0f, 1.0f, 1.0f), new Color(0.35f, 0.8f, 1f), 0.6f, 2.5f);
         return root;
     }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.XR;
@@ -45,7 +46,7 @@ public class Hd2MainMenu : MonoBehaviour
         public RectTransform track;
         public Image fill;
         public RectTransform handle;
-        public Text value;
+        public TMP_Text value;
         public System.Func<float> get;      // 0..1
         public System.Func<string> label;
         public bool centered;
@@ -64,7 +65,7 @@ public class Hd2MainMenu : MonoBehaviour
     sealed class KeyCap
     {
         public char lower;
-        public Text label;
+        public TMP_Text label;
         public Image image;
     }
 
@@ -96,19 +97,19 @@ public class Hd2MainMenu : MonoBehaviour
     readonly List<GameObject> pages = new List<GameObject>();
     readonly List<Image> tabImages = new List<Image>();
     int currentTab;
-    Text status;
+    TMP_Text status;
     GameObject createPanel;
     Hd2GameMode.Mode createMode = Hd2GameMode.Mode.TeamDeathmatch;
     readonly Image[] createModeImages = new Image[3];
 
     // profile + keyboard
-    Text nameValue;
-    Text clanValue;
-    Text shownAs;
+    TMP_Text nameValue;
+    TMP_Text clanValue;
+    TMP_Text shownAs;
     GameObject keyboard;
-    Text keyboardTitle;
-    Text keyboardField;
-    Text keyboardMessage;
+    TMP_Text keyboardTitle;
+    TMP_Text keyboardField;
+    TMP_Text keyboardMessage;
     Image shiftKey;
     readonly List<KeyCap> keyCaps = new List<KeyCap>();
     static readonly string[] keyRows = { "1234567890", "qwertyuiop", "asdfghjkl'", "zxcvbnm.-_" };
@@ -136,9 +137,9 @@ public class Hd2MainMenu : MonoBehaviour
         Hd2ControlMap.Button.RightA, Hd2ControlMap.Button.RightB
     };
 
-    readonly Text[] actionLabels = new Text[Hd2ControlMap.ButtonCount];
+    readonly TMP_Text[] actionLabels = new TMP_Text[Hd2ControlMap.ButtonCount];
     GameObject actionList;
-    Text actionListTitle;
+    TMP_Text actionListTitle;
     Hd2ControlMap.Button picking;
     bool pickingValid;
     Image pickupBox;
@@ -531,7 +532,7 @@ public class Hd2MainMenu : MonoBehaviour
         var side = MakeImage(panel, TabColor);
         Place(side.rectTransform, 0f, 0f, TabWidth, PixelsHigh);
         var brand = MakeText(panel, "THRUSTER BLITZ", 30, TextAnchor.MiddleLeft, Color.white);
-        brand.fontStyle = FontStyle.BoldAndItalic;
+        brand.fontStyle = FontStyles.Bold | FontStyles.Italic;
         Place(brand.rectTransform, 24f, -22f, TabWidth - 30f, 50f);
 
         string[] tabs = { "Multiplayer", "Profile", "Options", "Controls", "Customize", "Quit" };
@@ -582,10 +583,10 @@ public class Hd2MainMenu : MonoBehaviour
         }
     }
 
-    static Text Heading(RectTransform page, string text, float y)
+    static TMP_Text Heading(RectTransform page, string text, float y)
     {
         var heading = MakeText(page, text, 34, TextAnchor.MiddleLeft, Color.white);
-        heading.fontStyle = FontStyle.Bold;
+        heading.fontStyle = FontStyles.Bold;
         Place(heading.rectTransform, 0f, y, PageWidth, 48f);
         return heading;
     }
@@ -695,7 +696,7 @@ public class Hd2MainMenu : MonoBehaviour
         }
 
         var note = MakeText(rect, "Online hosting is coming soon. For now this starts the match on this headset, with bots filling both teams.", 22, TextAnchor.UpperLeft, HintColor);
-        note.horizontalOverflow = HorizontalWrapMode.Wrap;
+        note.textWrappingMode = TextWrappingModes.Normal;
         Place(note.rectTransform, 0f, -260f, PageWidth - 40f, 80f);
 
         var cancel = MakeImage(rect, OffColor);
@@ -797,7 +798,7 @@ public class Hd2MainMenu : MonoBehaviour
         var shownCaption = MakeText(page, "Other players see you as", 24, TextAnchor.MiddleLeft, HintColor);
         Place(shownCaption.rectTransform, 0f, -350f, 600f, 34f);
         shownAs = MakeText(page, "", 40, TextAnchor.MiddleLeft, Color.white);
-        shownAs.fontStyle = FontStyle.Bold;
+        shownAs.fontStyle = FontStyles.Bold;
         Place(shownAs.rectTransform, 0f, -390f, PageWidth, 60f);
 
         var hint = MakeText(page, "Point at a field and pull the trigger to type.", 22, TextAnchor.MiddleLeft, HintColor);
@@ -1081,7 +1082,7 @@ public class Hd2MainMenu : MonoBehaviour
     static void Section(RectTransform page, string text, float y)
     {
         var label = MakeText(page, text.ToUpperInvariant(), 20, TextAnchor.MiddleLeft, HeaderColor);
-        label.fontStyle = FontStyle.Bold;
+        label.fontStyle = FontStyles.Bold;
         Place(label.rectTransform, 0f, y, PageWidth, 34f);
     }
 
@@ -1204,7 +1205,7 @@ public class Hd2MainMenu : MonoBehaviour
         BuildActionList(page);
     }
 
-    Text MakeChoice(RectTransform page, Hd2ControlMap.Button button, float x, float y)
+    TMP_Text MakeChoice(RectTransform page, Hd2ControlMap.Button button, float x, float y)
     {
         var image = MakeImage(page, OffColor);
         Place(image.rectTransform, x, y, 380f, 56f);
@@ -1300,7 +1301,7 @@ public class Hd2MainMenu : MonoBehaviour
             var card = MakeImage(page, new Color(0.09f, 0.11f, 0.16f, 1f));
             Place(card.rectTransform, i * (cardWidth + 20f), -80f, cardWidth, 560f);
             var title = MakeText(card.rectTransform, cards[i], 30, TextAnchor.UpperCenter, Color.white);
-            title.fontStyle = FontStyle.Bold;
+            title.fontStyle = FontStyles.Bold;
             Place(title.rectTransform, 0f, -24f, cardWidth, 44f);
             var art = MakeImage(card.rectTransform, new Color(0.13f, 0.16f, 0.23f, 1f));
             Place(art.rectTransform, 30f, -90f, cardWidth - 60f, 330f);
@@ -1380,21 +1381,49 @@ public class Hd2MainMenu : MonoBehaviour
         return image;
     }
 
-    static Text MakeText(RectTransform parent, string value, int size, TextAnchor anchor, Color color)
+    static TMP_Text MakeText(RectTransform parent, string value, int size, TextAnchor anchor, Color color)
     {
+        // TextMeshPro (signed-distance-field glyphs) stays sharp at any size and distance in
+        // VR; the old UI Text font texture has no mipmaps and shimmered on the screen.
         var go = new GameObject("Label");
         var rect = go.AddComponent<RectTransform>();
         rect.SetParent(parent, false);
-        var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        var text = go.AddComponent<TextMeshProUGUI>();
+        if (TMP_Settings.defaultFontAsset != null)
+            text.font = TMP_Settings.defaultFontAsset;
         text.text = value;
         text.fontSize = size;
-        text.alignment = anchor;
+        text.alignment = Align(anchor);
         text.color = color;
         text.raycastTarget = false;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        text.overflowMode = TextOverflowModes.Overflow;
         return text;
+    }
+
+    static TextAlignmentOptions Align(TextAnchor anchor)
+    {
+        switch (anchor)
+        {
+            case TextAnchor.UpperLeft:
+                return TextAlignmentOptions.TopLeft;
+            case TextAnchor.UpperCenter:
+                return TextAlignmentOptions.Top;
+            case TextAnchor.UpperRight:
+                return TextAlignmentOptions.TopRight;
+            case TextAnchor.MiddleCenter:
+                return TextAlignmentOptions.Center;
+            case TextAnchor.MiddleRight:
+                return TextAlignmentOptions.Right;
+            case TextAnchor.LowerLeft:
+                return TextAlignmentOptions.BottomLeft;
+            case TextAnchor.LowerCenter:
+                return TextAlignmentOptions.Bottom;
+            case TextAnchor.LowerRight:
+                return TextAlignmentOptions.BottomRight;
+            default:
+                return TextAlignmentOptions.Left;
+        }
     }
 
     static Sprite White()
