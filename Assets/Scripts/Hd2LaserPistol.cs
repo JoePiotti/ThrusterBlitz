@@ -277,15 +277,21 @@ public class Hd2LaserPistol : MonoBehaviour
             waitForTriggerRelease = false;
         else if (waitForTriggerRelease)
         {
-            if (pull >= 0.2f)
+            // Handed out at round start with the trigger already held: count the hold.
+            if (Hd2Elimination.HoldingForGo && full)
+                waitForTriggerRelease = false;
+            else if (pull >= 0.2f)
                 full = false;
             else
                 waitForTriggerRelease = false;
         }
 
+        // Elimination countdown: a held trigger starts the charge chargeSeconds before GO,
+        // so the beam is ready the moment shots are allowed.
+        bool chargeWaits = Hd2Elimination.ChargeWaits(chargeSeconds);
         if (phase == Phase.Pointing)
         {
-            if (!full)
+            if (!full || chargeWaits)
                 CancelPoint();
             // A full charge waits for GO, then fires if the trigger is still held.
             else if (Time.time - pointStartedAt >= chargeSeconds && !Hd2SpawnField.Locked)
@@ -302,7 +308,7 @@ public class Hd2LaserPistol : MonoBehaviour
             RefreshAmmo();
         }
 
-        if (phase == Phase.Ready && full)
+        if (phase == Phase.Ready && full && !chargeWaits)
             BeginPoint();
 
         if (kick > 0f)

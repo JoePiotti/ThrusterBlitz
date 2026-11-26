@@ -63,6 +63,7 @@ public class Hd2Pistol : MonoBehaviour
 
     int rounds;
     float triggerPressedAt = -1f;
+    bool chargeWaiting;
     bool waitForTriggerRelease = true;
     bool chargeReadyPulsed;
     bool chargeRumbling;
@@ -357,6 +358,21 @@ public class Hd2Pistol : MonoBehaviour
                 released = released || editorFireAction.WasReleasedThisFrame();
             }
 
+            if (Hd2Elimination.ChargeWaits(chargeHoldTime))
+            {
+                if (waitForTriggerRelease && TriggerIsDown())
+                {
+                    waitForTriggerRelease = false;
+                    chargeWaiting = true;
+                }
+                else if (triggerPressedAt >= 0f)
+                {
+                    triggerPressedAt = -1f;
+                    StopCharge();
+                    chargeWaiting = true;
+                }
+            }
+
             if (waitForTriggerRelease)
             {
                 pressed = false;
@@ -365,13 +381,35 @@ public class Hd2Pistol : MonoBehaviour
                     waitForTriggerRelease = false;
             }
 
+            // Elimination countdown: a held trigger starts charging chargeHoldTime before GO,
+            // so the charge (sound, orb, meter) fills exactly as shots are allowed.
             if (pressed)
             {
-                triggerPressedAt = Time.time;
-                chargeReadyPulsed = false;
-                nextChargeHapticAt = 0f;
-                PlayCharge();
+                if (Hd2Elimination.ChargeWaits(chargeHoldTime))
+                    chargeWaiting = true;
+                else
+                {
+                    chargeWaiting = false;
+                    triggerPressedAt = Time.time;
+                    chargeReadyPulsed = false;
+                    nextChargeHapticAt = 0f;
+                    PlayCharge();
+                }
             }
+            else if (chargeWaiting && !Hd2Elimination.ChargeWaits(chargeHoldTime))
+            {
+                chargeWaiting = false;
+                if (!released && triggerPressedAt < 0f && TriggerIsDown())
+                {
+                    triggerPressedAt = Time.time;
+                    chargeReadyPulsed = false;
+                    nextChargeHapticAt = 0f;
+                    PlayCharge();
+                }
+            }
+
+            if (released)
+                chargeWaiting = false;
 
             bool charging = triggerPressedAt >= 0f && !chargeReadyPulsed && !reloading && rounds > 0
                 && Time.time - triggerPressedAt < chargeHoldTime;
@@ -440,6 +478,12 @@ public class Hd2Pistol : MonoBehaviour
             return;
 
         waitForTriggerRelease = false;
+        if (Hd2Elimination.ChargeWaits(chargeHoldTime))
+        {
+            chargeWaiting = true;
+            return;
+        }
+
         triggerPressedAt = Time.time;
         chargeReadyPulsed = false;
         nextChargeHapticAt = 0f;

@@ -251,6 +251,18 @@ public class Hd2Locomotion : MonoBehaviour
         jumpSpent = false;
         UpdateGrindAudio();
     }
+    /// <summary>
+    /// Stops any thrust, grind or jump and drops the thrust pointer, so a stick still held
+    /// at a round reset can't launch the player back to where they were aiming.
+    /// </summary>
+    public void CancelTravelAndAim()
+    {
+        HaltTravel();
+        aimSource = AimSource.None;
+        aimValid = false;
+        HidePreview();
+    }
+
     float grindSign = 1f;
     float grindDistance;
     float grindBoostUntil = -1f;
@@ -1241,6 +1253,16 @@ public class Hd2Locomotion : MonoBehaviour
             YawAroundHead(snap);
         PlaceCrouchRig();
         AlignRoom();
+
+        // Elimination: everyone stays put until GO, when shots are allowed. Turning still works.
+        if (Hd2Elimination.HoldingForGo && !thrusting)
+        {
+            aimSource = AimSource.None;
+            aimValid = false;
+            HidePreview();
+            ApplyGravity(dt, 0f);
+            return;
+        }
 
         if (thrusting)
         {

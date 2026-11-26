@@ -235,6 +235,34 @@ public class Hd2Hud : MonoBehaviour
         RefreshSummary();
         RefreshHitFlash();
         RefreshScore();
+        RefreshCountdown();
+    }
+
+    TextMesh countdownNote;
+
+    // Elimination: 3, 2, 1, then GO! dead center while everyone waits for the gates.
+    void RefreshCountdown()
+    {
+        string text = Hd2Elimination.CountdownText;
+        if (string.IsNullOrEmpty(text))
+        {
+            if (countdownNote != null && countdownNote.gameObject.activeSelf)
+                countdownNote.gameObject.SetActive(false);
+            return;
+        }
+
+        if (countdownNote == null)
+        {
+            countdownNote = MakeReadout(view != null ? view : transform, new Vector3(0f, 0f, 0.9f), Color.white, TextAnchor.MiddleCenter);
+            countdownNote.alignment = TextAlignment.Center;
+            countdownNote.fontStyle = FontStyle.Bold;
+            countdownNote.characterSize = 0.012f;
+        }
+
+        if (countdownNote.text != text)
+            countdownNote.text = text;
+        if (!countdownNote.gameObject.activeSelf)
+            countdownNote.gameObject.SetActive(true);
     }
 
     public int BestKillStreak => bestStreak;

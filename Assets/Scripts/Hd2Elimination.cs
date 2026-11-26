@@ -34,15 +34,74 @@ public class Hd2Elimination : MonoBehaviour
 
     enum Phase { Starting, Arming, Seating, Countdown, Live, Between, Over }
 
+    /// <summary>How long GO! stays in the middle of the HUD after the gates open.</summary>
+    const float GoShownSeconds = 1f;
+
+    static Hd2Elimination current;
     Phase phase = Phase.Starting;
     float phaseEndsAt;
+    float goShownUntil = -1f;
     AudioSource voice;
     AudioClip buzzer;
+    AudioClip countdownClip;
+
+    /// <summary>
+    /// The round is being set up or counting down: fighters stay in place until GO.
+    /// </summary>
+    public static bool HoldingForGo
+    {
+        get
+        {
+            if (!Active || current == null)
+                return false;
+            Phase p = current.phase;
+            return p == Phase.Starting || p == Phase.Arming || p == Phase.Seating || p == Phase.Countdown;
+        }
+    }
+
+    /// <summary>Seconds until GO, while holding for it. 0 once the round is live.</summary>
+    public static float SecondsToGo
+    {
+        get
+        {
+            if (!HoldingForGo)
+                return 0f;
+            if (current.phase != Phase.Countdown)
+                return CountdownSeconds;
+            return Mathf.Max(0f, current.phaseEndsAt - Time.time);
+        }
+    }
+
+    /// <summary>
+    /// A gun with this charge time must not start charging yet: it would be full before GO.
+    /// A trigger held through the countdown starts charging chargeSeconds before GO, so the
+    /// charge is ready the moment shots are allowed.
+    /// </summary>
+    public static bool ChargeWaits(float chargeSeconds)
+    {
+        return HoldingForGo && SecondsToGo > Mathf.Max(0f, chargeSeconds);
+    }
+
+    /// <summary>"3", "2", "1" during the countdown, then "GO!" briefly. Null otherwise.</summary>
+    public static string CountdownText
+    {
+        get
+        {
+            if (!Active || current == null)
+                return null;
+            if (current.phase == Phase.Countdown)
+                return Mathf.Clamp(Mathf.CeilToInt(current.phaseEndsAt - Time.time), 1, Mathf.CeilToInt(CountdownSeconds)).ToString();
+            if (current.phase == Phase.Live && Time.time < current.goShownUntil)
+                return "GO!";
+            return null;
+        }
+    }
     readonly System.Func<Transform, bool>[] weapons = new System.Func<Transform, bool>[7];
 
     void Awake()
     {
         Active = true;
+        current = this;
         RedPoints = 0;
         BluePoints = 0;
         voice = gameObject.AddComponent<AudioSource>();
@@ -50,6 +109,7 @@ public class Hd2Elimination : MonoBehaviour
         voice.playOnAwake = false;
         voice.spatialBlend = 0f;
         buzzer = Resources.Load<AudioClip>("Audio/Buzzer");
+        countdownClip = Resources.Load<AudioClip>("Audio/CountdownGo");
         HudNote = null;
         HideWeaponPickups();
     }
@@ -57,6 +117,8 @@ public class Hd2Elimination : MonoBehaviour
     void OnDestroy()
     {
         Active = false;
+        if (current == this)
+            current = null;
         Hd2GrayscaleFeature.Active = false;
     }
 
@@ -139,6 +201,8 @@ public class Hd2Elimination : MonoBehaviour
                 SeatBots();
                 phase = Phase.Countdown;
                 phaseEndsAt = Time.time + CountdownSeconds;
+                if (countdownClip != null)
+                    voice.PlayOneShot(countdownClip);
                 break;
 
             case Phase.Countdown:
@@ -149,6 +213,7 @@ public class Hd2Elimination : MonoBehaviour
                     ShowBaseShields(false);
                     phase = Phase.Live;
                     phaseEndsAt = Time.time + RoundSeconds;
+                    goShownUntil = Time.time + GoShownSeconds;
                 }
                 break;
 
@@ -181,6 +246,7 @@ public class Hd2Elimination : MonoBehaviour
         Show(RoundSeconds);
         ClearShields();
         ResetPickups();
+        CancelPlayerTravel();
 
         var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < players.Length; i++)
@@ -325,10 +391,22 @@ public class Hd2Elimination : MonoBehaviour
             blue++;
     }
 
+    // Round over or reset: nobody keeps flying, grinding or aiming a thrust into the next round.
+    static void CancelPlayerTravel()
+    {
+        var players = FindObjectsByType<Hd2Locomotion>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < players.Length; i++)
+        {
+            if (players[i] != null)
+                players[i].CancelTravelAndAim();
+        }
+    }
+
     void EndRound(Hd2Team winner)
     {
         // Guns go quiet the moment the round is decided, until the next round's GO.
         Hd2SpawnField.SetLocked(true);
+        CancelPlayerTravel();
         if (winner == Hd2Team.Red)
             RedPoints++;
         else if (winner == Hd2Team.Blue)
