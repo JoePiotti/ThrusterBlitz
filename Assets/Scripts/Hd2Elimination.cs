@@ -44,6 +44,9 @@ public class Hd2Elimination : MonoBehaviour
     AudioSource voice;
     AudioClip buzzer;
     AudioClip countdownClip;
+    // Its own source: the announcer stops its source before each queued line, which would
+    // cut the countdown off when a score call runs into the next round.
+    AudioSource countdownSource;
 
     /// <summary>
     /// The round is being set up or counting down: fighters stay in place until GO.
@@ -110,6 +113,11 @@ public class Hd2Elimination : MonoBehaviour
         voice.spatialBlend = 0f;
         buzzer = Resources.Load<AudioClip>("Audio/Buzzer");
         countdownClip = Resources.Load<AudioClip>("Audio/CountdownGo");
+        countdownSource = gameObject.AddComponent<AudioSource>();
+        Hd2Audio.Route(countdownSource, Hd2Audio.Channel.Announcer);
+        countdownSource.playOnAwake = false;
+        countdownSource.spatialBlend = 0f;
+        countdownSource.clip = countdownClip;
         HudNote = null;
         HideWeaponPickups();
     }
@@ -202,7 +210,10 @@ public class Hd2Elimination : MonoBehaviour
                 phase = Phase.Countdown;
                 phaseEndsAt = Time.time + CountdownSeconds;
                 if (countdownClip != null)
-                    voice.PlayOneShot(countdownClip);
+                {
+                    countdownSource.Stop();
+                    countdownSource.Play();
+                }
                 break;
 
             case Phase.Countdown:
