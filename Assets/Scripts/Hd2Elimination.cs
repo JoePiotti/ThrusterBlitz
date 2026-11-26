@@ -7,7 +7,7 @@ using UnityEngine;
 /// life. After a 3 s countdown the gates open and the 30 s round clock runs. The round ends
 /// when a team has nobody left standing: the other team scores a point. If the clock runs
 /// out first, nobody scores and the round is replayed. Every 3 points a team moves up to the
-/// next weapon: pistols, shotguns, SMGs, burst, shocks, rockets, lasers. First to 21 wins.
+/// next weapon: pistols, shotguns, shocks, SMGs, burst, rockets, lasers. First to 21 wins.
 /// The weapon pickups are hidden; health, thrust and drop shield pickups stay.
 /// The dead stay down until the next round and get a free camera (Hd2PlayerDeath).
 ///
@@ -30,7 +30,7 @@ public class Hd2Elimination : MonoBehaviour
     public static int BluePoints { get; private set; }
     /// <summary>Shown under the HUD clock until the next round (DRAW when time runs out).</summary>
     public static string HudNote { get; private set; }
-    public static readonly string[] WeaponNames = { "Pistols", "Shotguns", "SMGs", "Burst", "Shocks", "Rockets", "Lasers" };
+    public static readonly string[] WeaponNames = { "Pistols", "Shotguns", "Shocks", "SMGs", "Burst", "Rockets", "Lasers" };
 
     enum Phase { Starting, Arming, Seating, Countdown, Live, Between, Over }
 
@@ -137,9 +137,9 @@ public class Hd2Elimination : MonoBehaviour
     void HideWeaponPickups()
     {
         weapons[1] = Source<Hd2ShotgunPickup>(p => p.GiveTo);
-        weapons[2] = Source<Hd2SmgPickup>(p => p.GiveTo);
-        weapons[3] = Source<Hd2BurstPickup>(p => p.GiveTo);
-        weapons[4] = Source<Hd2ShocksPickup>(p => p.GiveTo);
+        weapons[2] = Source<Hd2ShocksPickup>(p => p.GiveTo);
+        weapons[3] = Source<Hd2SmgPickup>(p => p.GiveTo);
+        weapons[4] = Source<Hd2BurstPickup>(p => p.GiveTo);
         weapons[5] = Source<Hd2RocketPickup>(p => p.GiveTo);
         weapons[6] = Source<Hd2LaserPickup>(p => p.GiveTo);
 
