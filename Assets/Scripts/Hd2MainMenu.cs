@@ -164,9 +164,15 @@ public class Hd2MainMenu : MonoBehaviour
 
         view = EnsureCamera();
         Space();
-        cabin = new GameObject("Cabin").transform;
-        cabin.SetParent(transform, false);
-        Hd2ShipRoom.Build(cabin);
+        // The cabin is saved in Title.unity (child "Cabin") so it can be edited in the scene.
+        // If it is missing, build the default room in code.
+        cabin = transform.Find("Cabin");
+        if (cabin == null)
+        {
+            cabin = new GameObject("Cabin").transform;
+            cabin.SetParent(transform, false);
+            Hd2ShipRoom.Build(cabin);
+        }
         leftHand = CreateHand("LeftHand", "<XRController>{LeftHand}/devicePosition", "<XRController>{LeftHand}/deviceRotation", new Vector3(-0.2f, 1.1f, 0.3f));
         rightHand = CreateHand("RightHand", "<XRController>{RightHand}/devicePosition", "<XRController>{RightHand}/deviceRotation", new Vector3(0.2f, 1.1f, 0.3f));
         BuildCanvas();
@@ -264,11 +270,6 @@ public class Hd2MainMenu : MonoBehaviour
         float yaw = look.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(look).eulerAngles.y : 0f;
         Quaternion turn = Quaternion.Euler(0f, yaw, 0f);
         cabin.SetPositionAndRotation(flat, turn);
-        if (canvas != null)
-        {
-            Vector3 place = cabin.TransformPoint(Hd2ShipRoom.ScreenCenter);
-            canvas.transform.SetPositionAndRotation(place, turn * Quaternion.Euler(-Hd2ShipRoom.ScreenTilt, 0f, 0f));
-        }
 
         placedHead = flat;
         placedAt = Time.unscaledTime;
@@ -525,18 +526,33 @@ public class Hd2MainMenu : MonoBehaviour
     // ================================================================ canvas and tabs
     void BuildCanvas()
     {
-        var root = new GameObject("MenuScreen");
-        root.transform.SetParent(transform, false);
-        canvas = root.AddComponent<Canvas>();
+        // The screen is saved in the cabin as "MenuScreen" (a world-space canvas): move, turn or
+        // scale it in the scene and the menu fills it. Its contents are built here at runtime.
+        Transform saved = cabin.Find("MenuScreen");
+        GameObject root = saved != null ? saved.gameObject : null;
+        if (root == null)
+        {
+            root = new GameObject("MenuScreen");
+            root.transform.SetParent(cabin, false);
+            root.transform.localPosition = Hd2ShipRoom.ScreenCenter;
+            root.transform.localRotation = Quaternion.Euler(-Hd2ShipRoom.ScreenTilt, 0f, 0f);
+            root.transform.localScale = Vector3.one * (Hd2ShipRoom.ScreenWidth / PixelsWide);
+        }
+
+        canvas = root.GetComponent<Canvas>();
+        if (canvas == null)
+            canvas = root.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvas.worldCamera = view;
-        var scaler = root.AddComponent<CanvasScaler>();
+        var scaler = root.GetComponent<CanvasScaler>();
+        if (scaler == null)
+            scaler = root.AddComponent<CanvasScaler>();
         scaler.dynamicPixelsPerUnit = 10f;
         panel = root.GetComponent<RectTransform>();
         panel.sizeDelta = new Vector2(PixelsWide, PixelsHigh);
-        root.transform.localScale = Vector3.one * (Hd2ShipRoom.ScreenWidth / PixelsWide);
-        root.transform.SetPositionAndRotation(Hd2ShipRoom.ScreenCenter, Quaternion.Euler(-Hd2ShipRoom.ScreenTilt, 0f, 0f));
-        var background = root.AddComponent<Image>();
+        var background = root.GetComponent<Image>();
+        if (background == null)
+            background = root.AddComponent<Image>();
         background.sprite = White();
         background.color = PanelColor;
         background.raycastTarget = false;

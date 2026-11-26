@@ -7,6 +7,8 @@ using UnityEngine;
 /// console stands in front with the menu screen above it. Textures and materials are in
 /// Resources/MainMenu (made by Tools/shootout_look/gen_ship.py and build_ship.py).
 /// Every surface gets UVs in metres, so the textures tile at their real size.
+/// The room is baked into Title.unity (Title/Cabin, meshes in Assets/Models/ShipRoom) so it can be
+/// edited in the scene; Build is only used when that saved cabin is missing.
 /// </summary>
 public static class Hd2ShipRoom
 {
