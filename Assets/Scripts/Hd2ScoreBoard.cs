@@ -12,8 +12,8 @@ public class Hd2ScoreBoard : MonoBehaviour
     static Vector3 arenaCenter;
     static bool hasCenter;
 
-    TextMesh blue;
-    TextMesh red;
+    Hd2Text blue;
+    Hd2Text red;
     int shownBlue = -1;
     int shownRed = -1;
     Vector3 blueScale = Vector3.one;
@@ -81,7 +81,7 @@ public class Hd2ScoreBoard : MonoBehaviour
         shownRed = 0;
     }
 
-    TextMesh Place(string label, Color color, Vector3 face, Vector3 boardUp, Vector3 offset)
+    Hd2Text Place(string label, Color color, Vector3 face, Vector3 boardUp, Vector3 offset)
     {
         Transform existing = transform.Find(label);
         GameObject go = existing != null ? existing.gameObject : new GameObject(label);
@@ -102,39 +102,27 @@ public class Hd2ScoreBoard : MonoBehaviour
             go.transform.localScale = scale;
         }
 
-        TextMesh text = go.GetComponent<TextMesh>();
-        if (text == null)
-            text = go.AddComponent<TextMesh>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // World text (Hd2Text, TextMeshPro): walls and the base roofs hide it. Takes over a
+        // Hd2Text saved on the board.
+        Hd2Text text = Hd2Text.On(go, false);
         text.fontSize = 128;
         text.characterSize = 0.1f;
         text.anchor = TextAnchor.MiddleCenter;
         text.alignment = TextAlignment.Center;
         text.color = color;
-        MeshRenderer renderer = text.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            // Depth-tested text material: the built-in font material draws on top of
-            // everything, so the scores showed through walls and the base roofs.
-            if (text.font != null)
-                renderer.sharedMaterial = Hd2AmmoReadout.WorldTextMaterial(text.font);
-        }
-
         return text;
     }
 
     // Sets the number at its normal size, then shrinks it if it would run past its half
     // of the board (three-digit scores), so it never hangs off the edge or into the other.
-    void Show(TextMesh text, Vector3 baseScale, int value)
+    void Show(Hd2Text text, Vector3 baseScale, int value)
     {
         if (text == null)
             return;
 
         text.transform.localScale = baseScale;
         text.text = Number(value);
-        MeshRenderer renderer = text.GetComponent<MeshRenderer>();
+        MeshRenderer renderer = text.Renderer;
         if (renderer == null)
             return;
 
@@ -173,15 +161,13 @@ public class Hd2ScoreBoard : MonoBehaviour
             width = 10f;
     }
 
-    static void Fit(TextMesh text, float targetHeight, float maxWidth)
+    static void Fit(Hd2Text text, float targetHeight, float maxWidth)
     {
         if (text == null)
             return;
 
         text.text = "8";
-        if (text.font != null)
-            text.font.RequestCharactersInTexture("0123456789", text.fontSize, FontStyle.Normal);
-        MeshRenderer renderer = text.GetComponent<MeshRenderer>();
+        MeshRenderer renderer = text.Renderer;
         if (renderer == null)
             return;
 

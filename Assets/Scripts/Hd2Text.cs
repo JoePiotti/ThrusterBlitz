@@ -194,6 +194,9 @@ public class Hd2Text : MonoBehaviour
         rect.localPosition = Vector3.zero;
         Vector2 size = string.IsNullOrEmpty(textValue) ? Vector2.zero : tmp.GetPreferredValues(textValue);
         rect.sizeDelta = size;
+        // Build the mesh now, so renderer bounds are right straight after a change (the
+        // scoreboards and the match summary measure the text as soon as they set it).
+        tmp.ForceMeshUpdate();
     }
 
     static FontStyles Style(FontStyle style)

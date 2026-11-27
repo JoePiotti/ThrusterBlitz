@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
+using TMPro;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR;
@@ -45,24 +46,24 @@ public class Hd2UserMenu : MonoBehaviour
     GameObject controlsPage;
     Image gameTabImage;
     Image controlsTabImage;
-    Text pageTitle;
+    TMP_Text pageTitle;
     GameObject actionList;
-    Text actionListTitle;
+    TMP_Text actionListTitle;
     readonly List<Click> clicks = new List<Click>();
     readonly List<Click> actionClicks = new List<Click>();
-    readonly Text[] actionLabels = new Text[Hd2ControlMap.ButtonCount];
+    readonly TMP_Text[] actionLabels = new TMP_Text[Hd2ControlMap.ButtonCount];
     readonly Image[] micImages = new Image[3];
     readonly Image[] hudImages = new Image[3];
     Image switchTeams;
     readonly List<ScoreRow> scoreRows = new List<ScoreRow>();
 
     // Name and clan tag, edited with an on-screen keyboard.
-    Text nameButtonLabel;
-    Text clanButtonLabel;
+    TMP_Text nameButtonLabel;
+    TMP_Text clanButtonLabel;
     GameObject keyboard;
-    Text keyboardTitle;
-    Text keyboardField;
-    Text keyboardMessage;
+    TMP_Text keyboardTitle;
+    TMP_Text keyboardField;
+    TMP_Text keyboardMessage;
     readonly List<Click> keyboardClicks = new List<Click>();
     readonly List<KeyCap> keyCaps = new List<KeyCap>();
     Image shiftKey;
@@ -73,7 +74,7 @@ public class Hd2UserMenu : MonoBehaviour
     class KeyCap
     {
         public char lower;
-        public Text label;
+        public TMP_Text label;
         public Image image;
     }
 
@@ -98,15 +99,15 @@ public class Hd2UserMenu : MonoBehaviour
     class TeamHeader
     {
         public Image background;
-        public Text name;
-        public Text score;
+        public TMP_Text name;
+        public TMP_Text score;
     }
 
     class ScoreRow
     {
         public Image background;
-        public Text[] cells;
-        public Text dead;
+        public TMP_Text[] cells;
+        public TMP_Text dead;
     }
     LineRenderer laser;
     bool open;
@@ -126,7 +127,7 @@ public class Hd2UserMenu : MonoBehaviour
     RectTransform gripTrack;
     Image gripFill;
     RectTransform gripHandle;
-    Text gripValue;
+    TMP_Text gripValue;
     Image pickupBox;
     Image pickupCheck;
     readonly Image[] presetImages = new Image[Hd2ControlMap.PresetCount];
@@ -460,12 +461,12 @@ public class Hd2UserMenu : MonoBehaviour
 
         var gameTab = MakeButton(panel, "Game", new Vector2(16f, -16f), new Vector2(140f, 48f), new Color(0.2f, 0.5f, 0.78f, 1f));
         gameTabImage = gameTab.GetComponent<Image>();
-        Stretch(gameTab.GetComponentInChildren<Text>().rectTransform, 8f);
+        Stretch(gameTab.GetComponentInChildren<TMP_Text>().rectTransform, 8f);
         clicks.Add(new Click { rect = gameTab, action = ShowGame });
 
         var tab = MakeButton(panel, "Controls", new Vector2(168f, -16f), new Vector2(180f, 48f), new Color(0.14f, 0.17f, 0.22f, 1f));
         controlsTabImage = tab.GetComponent<Image>();
-        Stretch(tab.GetComponentInChildren<Text>().rectTransform, 8f);
+        Stretch(tab.GetComponentInChildren<TMP_Text>().rectTransform, 8f);
         clicks.Add(new Click { rect = tab, action = ShowControls });
 
         var title = MakeText(panel, "Game", 34, TextAnchor.UpperLeft, Color.white);
@@ -791,7 +792,7 @@ public class Hd2UserMenu : MonoBehaviour
         float rowWidth = scoreColumns[scoreColumns.Length - 1] + scoreWidths[scoreWidths.Length - 1];
         for (int r = 0; r < ScoreRowCount; r++)
         {
-            var row = new ScoreRow { cells = new Text[scoreHeaders.Length] };
+            var row = new ScoreRow { cells = new TMP_Text[scoreHeaders.Length] };
             row.background = MakeImage(page, Color.clear);
             Place(row.background.rectTransform, ScoreLeft, 0f, rowWidth, ScoreRowHeight);
             for (int c = 0; c < scoreHeaders.Length; c++)
@@ -804,7 +805,7 @@ public class Hd2UserMenu : MonoBehaviour
             // Red X at the right end of the name while that fighter is dead. The outline keeps
             // it readable on the red team's rows.
             row.dead = MakeText(row.background.rectTransform, "X", 26, TextAnchor.MiddleCenter, new Color(1f, 0.15f, 0.12f, 1f));
-            row.dead.fontStyle = FontStyle.Bold;
+            row.dead.fontStyle = FontStyles.Bold;
             Place(row.dead.rectTransform, scoreColumns[1] + scoreWidths[1] - 30f, 0f, 28f, ScoreRowHeight);
             var edge = row.dead.gameObject.AddComponent<Outline>();
             edge.effectColor = Color.black;
@@ -822,10 +823,10 @@ public class Hd2UserMenu : MonoBehaviour
             header.background = MakeImage(page, Color.clear);
             Place(header.background.rectTransform, ScoreLeft, 0f, rowWidth, TeamHeaderHeight);
             header.name = MakeText(header.background.rectTransform, "", 24, TextAnchor.MiddleLeft, Color.white);
-            header.name.fontStyle = FontStyle.Bold;
+            header.name.fontStyle = FontStyles.Bold;
             Stretch(header.name.rectTransform, 10f);
             header.score = MakeText(header.background.rectTransform, "", 24, TextAnchor.MiddleRight, Color.white);
-            header.score.fontStyle = FontStyle.Bold;
+            header.score.fontStyle = FontStyles.Bold;
             Stretch(header.score.rectTransform, 12f);
             header.background.gameObject.SetActive(false);
             teamHeaders.Add(header);
@@ -877,7 +878,7 @@ public class Hd2UserMenu : MonoBehaviour
             row.background.color = data.Team == Hd2Team.None
                 ? new Color(0.22f, 0.24f, 0.28f, 1f)
                 : Hd2Locomotion.ArmorOf(data.Team);
-            FontStyle style = data.IsYou ? FontStyle.Bold : FontStyle.Normal;
+            FontStyles style = data.IsYou ? FontStyles.Bold : FontStyles.Normal;
             SetCell(row, 0, data.Rank.ToString(), style);
             SetCell(row, 1, data.Name, style);
             SetCell(row, 2, data.Kills.ToString(), style);
@@ -895,9 +896,9 @@ public class Hd2UserMenu : MonoBehaviour
         }
     }
 
-    static void SetCell(ScoreRow row, int column, string value, FontStyle style)
+    static void SetCell(ScoreRow row, int column, string value, FontStyles style)
     {
-        Text cell = row.cells[column];
+        TMP_Text cell = row.cells[column];
         if (cell.text != value)
             cell.text = value;
         if (cell.fontStyle != style)
@@ -977,7 +978,7 @@ public class Hd2UserMenu : MonoBehaviour
         }
     }
 
-    Text MakeChoice(RectTransform page, Hd2ControlMap.Button button, float x, float y)
+    TMP_Text MakeChoice(RectTransform page, Hd2ControlMap.Button button, float x, float y)
     {
         var image = MakeImage(page, new Color(0.14f, 0.17f, 0.22f, 1f));
         Place(image.rectTransform, x, y, 360f, 52f);
@@ -1045,10 +1046,10 @@ public class Hd2UserMenu : MonoBehaviour
         });
 
         var down = MakeButton(page, "-", new Vector2(800f, -476f), new Vector2(52f, 52f), OffColor);
-        Stretch(down.GetComponentInChildren<Text>().rectTransform, 0f);
+        Stretch(down.GetComponentInChildren<TMP_Text>().rectTransform, 0f);
         clicks.Add(new Click { rect = down, action = () => controls.GripAngle -= 1f });
         var up = MakeButton(page, "+", new Vector2(860f, -476f), new Vector2(52f, 52f), OffColor);
-        Stretch(up.GetComponentInChildren<Text>().rectTransform, 0f);
+        Stretch(up.GetComponentInChildren<TMP_Text>().rectTransform, 0f);
         clicks.Add(new Click { rect = up, action = () => controls.GripAngle += 1f });
 
         gripValue = MakeText(page, "", 24, TextAnchor.MiddleLeft, Color.white);
@@ -1105,7 +1106,7 @@ public class Hd2UserMenu : MonoBehaviour
             int preset = i + 1;
             var button = MakeButton(page, "Default " + preset, new Vector2(250f + i * 190f, -594f), new Vector2(180f, 52f), OffColor);
             presetImages[i] = button.GetComponent<Image>();
-            Stretch(button.GetComponentInChildren<Text>().rectTransform, 4f);
+            Stretch(button.GetComponentInChildren<TMP_Text>().rectTransform, 4f);
             clicks.Add(new Click { rect = button, action = () => ResetControls(preset) });
         }
 
@@ -1312,21 +1313,40 @@ public class Hd2UserMenu : MonoBehaviour
         return image;
     }
 
-    Text MakeText(RectTransform parent, string value, int size, TextAnchor anchor, Color color)
+    TMP_Text MakeText(RectTransform parent, string value, int size, TextAnchor anchor, Color color)
     {
+        // TextMeshPro (signed-distance-field glyphs) stays sharp at any size and distance in
+        // VR; the old UI TMP_Text font texture has no mipmaps and looked pixelated.
         var go = new GameObject("Label");
         var rect = go.AddComponent<RectTransform>();
         rect.SetParent(parent, false);
-        var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        var text = go.AddComponent<TextMeshProUGUI>();
+        if (TMP_Settings.defaultFontAsset != null)
+            text.font = TMP_Settings.defaultFontAsset;
         text.text = value;
         text.fontSize = size;
-        text.alignment = anchor;
+        text.alignment = Align(anchor);
         text.color = color;
         text.raycastTarget = false;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        text.overflowMode = TextOverflowModes.Overflow;
         return text;
+    }
+
+    static TextAlignmentOptions Align(TextAnchor anchor)
+    {
+        switch (anchor)
+        {
+            case TextAnchor.UpperLeft: return TextAlignmentOptions.TopLeft;
+            case TextAnchor.UpperCenter: return TextAlignmentOptions.Top;
+            case TextAnchor.UpperRight: return TextAlignmentOptions.TopRight;
+            case TextAnchor.MiddleLeft: return TextAlignmentOptions.Left;
+            case TextAnchor.MiddleCenter: return TextAlignmentOptions.Center;
+            case TextAnchor.MiddleRight: return TextAlignmentOptions.Right;
+            case TextAnchor.LowerLeft: return TextAlignmentOptions.BottomLeft;
+            case TextAnchor.LowerCenter: return TextAlignmentOptions.Bottom;
+            default: return TextAlignmentOptions.BottomRight;
+        }
     }
 
     static Sprite White()

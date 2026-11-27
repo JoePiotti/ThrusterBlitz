@@ -21,7 +21,7 @@ public class Hd2PracticeBot : MonoBehaviour
     };
 
     Hd2Health health;
-    TextMesh label;
+    Hd2Text label;
     Transform body;
     readonly List<Transform> bones = new List<Transform>();
     readonly List<Vector3> localPositions = new List<Vector3>();
@@ -75,13 +75,13 @@ public class Hd2PracticeBot : MonoBehaviour
         var labelObject = new GameObject("HealthLabel");
         labelObject.transform.SetParent(transform, false);
         labelObject.transform.localPosition = new Vector3(0f, 2.15f, 0f);
-        label = labelObject.AddComponent<TextMesh>();
+        // World text (Hd2Text, TextMeshPro): walls hide it.
+        label = Hd2Text.On(labelObject, false);
         label.fontSize = 64;
         label.characterSize = 0.045f;
         label.anchor = TextAnchor.MiddleCenter;
         label.alignment = TextAlignment.Center;
         label.color = Color.white;
-        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.text = "60";
 
         CachePose();

@@ -13,7 +13,7 @@ public class Hd2ShootTarget : MonoBehaviour
     public float markLift = 0.012f;
 
     int hits;
-    TextMesh score;
+    Hd2Text score;
     MaterialPropertyBlock block;
     Color baseColor = new Color(0.92f, 0.9f, 0.82f, 1f);
     Coroutine flash;
@@ -32,13 +32,13 @@ public class Hd2ShootTarget : MonoBehaviour
         scoreObject.transform.SetParent(transform, false);
         scoreObject.transform.localPosition = new Vector3(0f, 2.15f, -0.12f);
         scoreObject.transform.localRotation = Quaternion.identity;
-        score = scoreObject.AddComponent<TextMesh>();
+        // World text (Hd2Text, TextMeshPro): walls hide it.
+        score = Hd2Text.On(scoreObject, false);
         score.fontSize = 48;
         score.characterSize = 0.04f;
         score.anchor = TextAnchor.MiddleCenter;
         score.alignment = TextAlignment.Center;
         score.color = Color.white;
-        score.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         score.text = "Hits 0";
     }
 
