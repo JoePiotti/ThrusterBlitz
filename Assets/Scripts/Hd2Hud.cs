@@ -336,6 +336,30 @@ public class Hd2Hud : MonoBehaviour
         summary.gameObject.SetActive(true);
         summaryUntil = Time.unscaledTime + SummarySeconds;
         ShowSummaryBadge(xp.HasValue);
+        if (xp.HasValue && xp.Value.LeveledUp)
+            PlayLevelUp();
+    }
+
+    // The cinematic impact as the level-up and badge are presented. Waits a moment so it
+    // doesn't land on top of the match-end buzzer.
+    const float LevelUpSoundDelay = 1f;
+    AudioSource rewardSource;
+
+    void PlayLevelUp()
+    {
+        AudioClip clip = Resources.Load<AudioClip>("Audio/LevelUpImpact");
+        if (clip == null)
+            return;
+        if (rewardSource == null)
+        {
+            rewardSource = gameObject.AddComponent<AudioSource>();
+            Hd2Audio.Route(rewardSource, Hd2Audio.Channel.Game);
+            rewardSource.playOnAwake = false;
+            rewardSource.spatialBlend = 0f;
+        }
+
+        rewardSource.clip = clip;
+        rewardSource.PlayDelayed(LevelUpSoundDelay);
     }
 
     // Under the total: the XP earned, the level (LEVEL UP when it went up) and any unlocks.
