@@ -784,8 +784,31 @@ public class Hd2EnemyBot : MonoBehaviour
         gun.SetActive(true);
     }
 
+    // Fists moved onto the robot's hand bones when its guns dropped at death (Hd2GunDrop).
+    readonly List<Transform> droppedFists = new List<Transform>();
+
+    // On death the guns fall free and each gun's fist stays on the robot's hand bone, so the
+    // fist falls with the arm instead of stretching toward a gun left where the hand was.
+    void DropGuns()
+    {
+        droppedFists.AddRange(Hd2GunDrop.Drop(GunOn(rightHand), handR, transform));
+        droppedFists.AddRange(Hd2GunDrop.Drop(GunOn(leftHand), handL, transform));
+    }
+
+    void ClearDroppedFists()
+    {
+        for (int i = 0; i < droppedFists.Count; i++)
+        {
+            if (droppedFists[i] != null)
+                Destroy(droppedFists[i].gameObject);
+        }
+
+        droppedFists.Clear();
+    }
+
     void RestorePistols()
     {
+        ClearDroppedFists();
         if (pistolModel == null)
             return;
 
@@ -5228,6 +5251,7 @@ public class Hd2EnemyBot : MonoBehaviour
         if (body != null)
             body.enabled = false;
         EnableRagdoll();
+        DropGuns();
         Hd2Health.RegisterRagdoll(ragdollBodies, transform);
         Hd2DeathTwitch.Begin(ragdollBodies, transform);
         if (health != null && health.KilledByHeadshot)

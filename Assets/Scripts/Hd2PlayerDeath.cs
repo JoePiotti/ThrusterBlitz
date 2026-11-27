@@ -558,20 +558,20 @@ public class Hd2PlayerDeath : MonoBehaviour
         CarryGuns(ragdoll);
     }
 
+    // The guns drop free of the ragdoll; each gun's fist stays on the ragdoll's hand (it goes
+    // away with the ragdoll). A gun carried in the ragdoll's hand could snag and stretch the arm.
     void CarryGuns(GameObject corpse)
     {
-        CarryGun(Hand("RightHand"), FindNamed(corpse.transform, "Hand.R"));
-        CarryGun(Hand("LeftHand"), FindNamed(corpse.transform, "Hand.L"));
+        DropGun(Hand("RightHand"), FindNamed(corpse.transform, "Hand.R"), corpse.transform);
+        DropGun(Hand("LeftHand"), FindNamed(corpse.transform, "Hand.L"), corpse.transform);
     }
 
-    static void CarryGun(Transform controller, Transform ragdollHand)
+    static void DropGun(Transform controller, Transform ragdollHand, Transform corpse)
     {
         Transform gun = EquippedGun(controller);
-        if (gun == null || ragdollHand == null)
+        if (gun == null)
             return;
-
-        gun.SetParent(ragdollHand, true);
-        Silence(gun.gameObject);
+        Hd2GunDrop.Drop(gun, ragdollHand, corpse);
     }
 
     static Transform EquippedGun(Transform hand)
@@ -601,25 +601,6 @@ public class Hd2PlayerDeath : MonoBehaviour
         if (rocket != null)
             return rocket.transform;
         return null;
-    }
-
-    static void Silence(GameObject gun)
-    {
-        Behaviour[] behaviours = gun.GetComponentsInChildren<Behaviour>(true);
-        for (int i = 0; i < behaviours.Length; i++)
-            behaviours[i].enabled = false;
-
-        LineRenderer[] lines = gun.GetComponentsInChildren<LineRenderer>(true);
-        for (int i = 0; i < lines.Length; i++)
-            lines[i].enabled = false;
-
-        ParticleSystem[] particles = gun.GetComponentsInChildren<ParticleSystem>(true);
-        for (int i = 0; i < particles.Length; i++)
-            particles[i].Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-
-        Collider[] colliders = gun.GetComponentsInChildren<Collider>(true);
-        for (int i = 0; i < colliders.Length; i++)
-            colliders[i].enabled = false;
     }
 
     static Transform FindNamed(Transform root, string boneName)
