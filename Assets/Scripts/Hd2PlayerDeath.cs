@@ -148,6 +148,9 @@ public class Hd2PlayerDeath : MonoBehaviour
             killLine.startColor = Color.red;
             killLine.endColor = Color.red;
             killLine.forceRenderingOff = true;
+            // Drawn again in color over the black-and-white view while dead (Hd2GrayscaleFeature),
+            // like the players and bots, so the line to your killer stays red.
+            killLine.renderingLayerMask |= Hd2GrayscaleFeature.CharacterLayer;
         }
 
         if (curved)
