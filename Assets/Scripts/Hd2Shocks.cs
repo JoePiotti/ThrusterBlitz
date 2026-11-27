@@ -18,13 +18,13 @@ public class Hd2Shocks : MonoBehaviour
     public float shotsPerSecond = 1f / 0.3f;
     public float reloadDuration = 1f;
 
-    public float boltSpeed = 140f;
+    public float boltSpeed = 210f;
     public float boltDamage = 20f;
-    [Tooltip("Visible diameter of the bolt, in meters. 0.04 is a 2 cm radius.")]
-    public float boltThickness = 0.04f;
+    [Tooltip("Visible diameter of the bolt, in meters. 0.06 is a 3 cm radius.")]
+    public float boltThickness = 0.06f;
     [Tooltip("Visible length of the bolt, in meters.")]
-    public float boltLength = 0.5f;
-    public float boltMaxLength = 0.5f;
+    public float boltLength = 0.75f;
+    public float boltMaxLength = 0.75f;
     public Color boltColor = new Color(1f, 0.08f, 0.03f, 1f);
 
     public float chargeHoldTime = 1.25f;
