@@ -206,6 +206,10 @@ public class Hd2Hud : MonoBehaviour
             Destroy(micMaterial);
         if (summaryBadgeMaterial != null)
             Destroy(summaryBadgeMaterial);
+        if (summaryPanelMaterial != null)
+            Destroy(summaryPanelMaterial);
+        if (summaryTextMaterial != null)
+            Destroy(summaryTextMaterial);
         if (hitMaterial != null)
             Destroy(hitMaterial);
         if (hitFade != null)
@@ -311,10 +315,32 @@ public class Hd2Hud : MonoBehaviour
     // ---- Match summary ----
     // At the end of a match: your score, the kill streak and game bonuses, and the total.
     const float SummarySeconds = 10f;
+    /// <summary>Pause between the end of the match and the summary appearing.</summary>
+    public const float SummaryDelay = 2f;
     TextMesh summary;
     float summaryUntil;
+    string pendingSummary;
+    float pendingSummaryAt;
+    bool pendingBadge;
+    bool pendingLevelUp;
 
     public void ShowMatchSummary(int score, int streakBonus, int gameBonus, int total, string result, Hd2Progression.MatchXp? xp = null)
+    {
+        // Each bonus on its own line, between the score and the total.
+        string game = string.IsNullOrEmpty(result)
+            ? ""
+            : "\n<size=50><color=#B8D8FF>" + result + " Bonus +" + gameBonus.ToString("N0") + "</color></size>";
+        pendingSummary = "Score " + score.ToString("N0")
+            + "\n<size=50><color=#B8D8FF>Kill Streak Bonus +" + streakBonus.ToString("N0") + "</color></size>"
+            + game
+            + "\n<b><color=#FFD75A>Total " + total.ToString("N0") + "</color></b>"
+            + (xp.HasValue ? ExperienceLines(xp.Value) : "");
+        pendingBadge = xp.HasValue;
+        pendingLevelUp = xp.HasValue && xp.Value.LeveledUp;
+        pendingSummaryAt = Time.unscaledTime + SummaryDelay;
+    }
+
+    void PresentSummary()
     {
         if (summary == null)
         {
@@ -324,20 +350,113 @@ public class Hd2Hud : MonoBehaviour
             summary.characterSize = 0.005f;
         }
 
-        // Each bonus on its own line, between the score and the total.
-        string game = string.IsNullOrEmpty(result)
-            ? ""
-            : "\n<size=50><color=#B8D8FF>" + result + " Bonus +" + gameBonus.ToString("N0") + "</color></size>";
-        summary.text = "Score " + score.ToString("N0")
-            + "\n<size=50><color=#B8D8FF>Kill Streak Bonus +" + streakBonus.ToString("N0") + "</color></size>"
-            + game
-            + "\n<b><color=#FFD75A>Total " + total.ToString("N0") + "</color></b>"
-            + (xp.HasValue ? ExperienceLines(xp.Value) : "");
+        summary.text = pendingSummary;
+        pendingSummary = null;
         summary.gameObject.SetActive(true);
         summaryUntil = Time.unscaledTime + SummarySeconds;
-        ShowSummaryBadge(xp.HasValue);
-        if (xp.HasValue && xp.Value.LeveledUp)
+        ShowSummaryBadge(pendingBadge);
+        ShowSummaryPanel(true);
+        if (pendingLevelUp)
             PlayLevelUp();
+    }
+
+    // ---- Summary toast: a dark panel behind the summary text and badge ----
+    const float ToastOpacity = 0.85f;
+    const float ToastPadding = 0.03f;
+    Transform summaryPanel;
+    Material summaryPanelMaterial;
+    Material summaryTextMaterial;
+
+    void ShowSummaryPanel(bool on)
+    {
+        if (!on)
+        {
+            if (summaryPanel != null)
+                summaryPanel.gameObject.SetActive(false);
+            return;
+        }
+
+        if (summaryPanel == null)
+        {
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "SummaryToast";
+            Destroy(quad.GetComponent<Collider>());
+            quad.transform.SetParent(view != null ? view : transform, false);
+            summaryPanelMaterial = new Material(Shader.Find("Sprites/Default"));
+            summaryPanelMaterial.color = new Color(0.05f, 0.06f, 0.09f, ToastOpacity);
+            // Over the rest of the HUD (the win banner), under the summary text and badge.
+            summaryPanelMaterial.renderQueue = 3005;
+            var text = summary != null ? summary.GetComponent<MeshRenderer>() : null;
+            if (text != null)
+            {
+                summaryTextMaterial = text.material;
+                summaryTextMaterial.renderQueue = 3010;
+            }
+            if (summaryBadgeMaterial != null)
+                summaryBadgeMaterial.renderQueue = 3010;
+            var renderer = quad.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = summaryPanelMaterial;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            summaryPanel = quad.transform;
+        }
+
+        summaryPanel.gameObject.SetActive(true);
+        FitSummaryPanel();
+    }
+
+    // Sized every frame to the text and badge (the text's size settles a frame after it changes).
+    void FitSummaryPanel()
+    {
+        if (summaryPanel == null || summary == null)
+            return;
+        Transform space = summaryPanel.parent;
+        bool any = false;
+        Vector2 min = Vector2.zero, max = Vector2.zero;
+        float depth = 0.9f;
+        // From each mesh's own bounds: a TextMesh renderer's bounds miss lines in a smaller <size>.
+        void Add(Renderer r)
+        {
+            if (r == null || !r.gameObject.activeInHierarchy)
+                return;
+            var filter = r.GetComponent<MeshFilter>();
+            bool own = filter != null && filter.sharedMesh != null && filter.sharedMesh.vertexCount > 0;
+            Bounds b = own ? filter.sharedMesh.bounds : r.bounds;
+            for (int c = 0; c < 8; c++)
+            {
+                Vector3 corner = new Vector3((c & 1) == 0 ? b.min.x : b.max.x, (c & 2) == 0 ? b.min.y : b.max.y, (c & 4) == 0 ? b.min.z : b.max.z);
+                Vector3 local = space.InverseTransformPoint(own ? r.transform.TransformPoint(corner) : corner);
+                if (!any)
+                {
+                    min = max = local;
+                    depth = local.z;
+                    any = true;
+                }
+                else
+                {
+                    min = Vector2.Min(min, local);
+                    max = Vector2.Max(max, local);
+                    depth = Mathf.Max(depth, local.z);
+                }
+            }
+        }
+
+        Add(summary.GetComponent<Renderer>());
+        if (summaryBadge != null)
+            Add(summaryBadge.GetComponent<Renderer>());
+        if (!any)
+            return;
+
+        // Centred on the summary text, as wide on the right as the badge makes it on the left.
+        float middle = space.InverseTransformPoint(summary.transform.position).x;
+        float half = Mathf.Max(middle - min.x, max.x - middle);
+        min.x = middle - half;
+        max.x = middle + half;
+        Vector2 size = max - min + Vector2.one * (ToastPadding * 2f);
+        Vector2 center = (min + max) * 0.5f;
+        summaryPanel.localPosition = new Vector3(center.x, center.y, depth + 0.01f);
+        summaryPanel.localRotation = Quaternion.identity;
+        summaryPanel.localScale = new Vector3(size.x, size.y, 1f);
     }
 
     // The cinematic impact as the level-up and badge are presented. Waits a moment so it
@@ -420,11 +539,20 @@ public class Hd2Hud : MonoBehaviour
 
     void RefreshSummary()
     {
-        if (summary != null && summary.gameObject.activeSelf && Time.unscaledTime >= summaryUntil)
+        if (pendingSummary != null && Time.unscaledTime >= pendingSummaryAt)
+            PresentSummary();
+
+        if (summary != null && summary.gameObject.activeSelf)
         {
-            summary.gameObject.SetActive(false);
-            if (summaryBadge != null)
-                summaryBadge.gameObject.SetActive(false);
+            if (Time.unscaledTime >= summaryUntil)
+            {
+                summary.gameObject.SetActive(false);
+                if (summaryBadge != null)
+                    summaryBadge.gameObject.SetActive(false);
+                ShowSummaryPanel(false);
+            }
+            else
+                FitSummaryPanel();
         }
     }
 

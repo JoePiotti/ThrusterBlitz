@@ -7,8 +7,8 @@ using UnityEngine;
 /// </summary>
 public class Hd2ReturnToShip : MonoBehaviour
 {
-    /// <summary>Matches the HUD's end-of-match summary time.</summary>
-    public const float DelaySeconds = 10f;
+    /// <summary>The HUD's pause before the end-of-match summary, plus the 10 s it stays up.</summary>
+    public const float DelaySeconds = Hd2Hud.SummaryDelay + 10f;
 
     float leaveAt;
 
