@@ -207,6 +207,8 @@ public static class Hd2MatchStats
             return;
         matchEndPaid = true;
         Winner = teams ? winner : Hd2Team.None;
+        // Every mode ends here: after the summary, back to the spaceship to pick a new game.
+        Hd2ReturnToShip.Begin();
 
         var fighters = UnityEngine.Object.FindObjectsByType<Hd2Health>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < fighters.Length; i++)
