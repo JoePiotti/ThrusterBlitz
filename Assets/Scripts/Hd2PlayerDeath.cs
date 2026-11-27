@@ -550,12 +550,35 @@ public class Hd2PlayerDeath : MonoBehaviour
         }
 
         HideLiveBody(body);
+        ReattachHands(ragdoll.transform);
         bool blast = health != null && health.KilledByBlast;
         ActivateRagdoll(ragdoll, blast ? health.BlastOrigin : Vector3.zero, blast);
         IgnorePlayerColliders(ragdoll);
         if (health != null && health.KilledByHeadshot)
             Hd2HeadPop.Pop(ragdoll.transform, health);
         CarryGuns(ragdoll);
+    }
+
+    // Hd2Body detaches the live hands from the arms (they follow the controllers) and leaves a
+    // "<hand> ArmEnd" marker on each forearm where the hand belongs. The ragdoll copy kept the
+    // hands on the body root, so each hand got its joint to the hips, flopped on its own and
+    // stretched the wrist from the arm. Put each hand back on its forearm at the marker first.
+    static void ReattachHands(Transform corpse)
+    {
+        ReattachHand(corpse, "Hand.R");
+        ReattachHand(corpse, "Hand.L");
+    }
+
+    static void ReattachHand(Transform corpse, string handName)
+    {
+        Transform hand = FindNamed(corpse, handName);
+        Transform end = FindNamed(corpse, handName + " ArmEnd");
+        if (hand == null || end == null)
+            return;
+        hand.SetParent(end.parent, false);
+        hand.localPosition = end.localPosition;
+        hand.localRotation = end.localRotation;
+        hand.localScale = end.localScale;
     }
 
     // The guns drop free of the ragdoll; each gun's fist stays on the ragdoll's hand (it goes
