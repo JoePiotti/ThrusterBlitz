@@ -65,7 +65,7 @@ public class Hd2Shocks : MonoBehaviour
     InputAction editorReloadAction;
     AudioSource voice;
     AudioSource chargeSource;
-    TextMesh ammoLabel;
+    Hd2Text ammoLabel;
 
     public int Rounds => rounds;
     [SerializeField] bool gripMirrored;
@@ -483,7 +483,7 @@ public class Hd2Shocks : MonoBehaviour
             root.transform.SetParent(transform, false);
             root.transform.localPosition = new Vector3(0f, 0.04f, -0.06f);
             root.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            ammoLabel = root.AddComponent<TextMesh>();
+            ammoLabel = Hd2Text.On(root, false);
             ammoLabel.fontSize = 32;
             ammoLabel.characterSize = 0.005f;
             ammoLabel.anchor = TextAnchor.MiddleCenter;

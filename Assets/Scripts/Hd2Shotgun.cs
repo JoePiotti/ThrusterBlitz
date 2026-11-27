@@ -82,7 +82,7 @@ public class Hd2Shotgun : MonoBehaviour
     AudioSource voice;
     AudioClip shotClip;
     AudioClip reloadClip;
-    TextMesh ammoLabel;
+    Hd2Text ammoLabel;
     Hd2ControlMap controlMap;
 
     static readonly List<XRDisplaySubsystem> displays = new List<XRDisplaySubsystem>();

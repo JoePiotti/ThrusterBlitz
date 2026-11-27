@@ -70,7 +70,7 @@ public class Hd2RocketLauncher : MonoBehaviour
     AudioClip reloadClip;
     AudioSource launchSource;
     AudioClip launchClip;
-    TextMesh ammoLabel;
+    Hd2Text ammoLabel;
 
     static readonly System.Collections.Generic.List<XRDisplaySubsystem> displays =
         new System.Collections.Generic.List<XRDisplaySubsystem>();

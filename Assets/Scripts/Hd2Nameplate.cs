@@ -15,7 +15,7 @@ public class Hd2Nameplate : MonoBehaviour
     Hd2Health health;
     System.Func<string> nameOf;
     System.Func<Hd2Team> teamOf;
-    TextMesh label;
+    Hd2Text label;
     MeshRenderer labelRenderer;
     string shownName;
     Hd2Team shownTeam = (Hd2Team)(-1);
@@ -50,18 +50,14 @@ public class Hd2Nameplate : MonoBehaviour
         var go = new GameObject("Nameplate");
         go.hideFlags = HideFlags.DontSave;
         go.transform.SetParent(transform, false);
-        label = go.AddComponent<TextMesh>();
-        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // World text (Hd2Text): walls hide it.
+        label = Hd2Text.On(go, false);
         label.fontSize = 96;
         label.characterSize = 0.012f;
         label.anchor = TextAnchor.LowerCenter;
         label.alignment = TextAlignment.Center;
         label.fontStyle = FontStyle.Bold;
-        labelRenderer = go.GetComponent<MeshRenderer>();
-        labelRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        labelRenderer.receiveShadows = false;
-        if (label.font != null)
-            labelRenderer.sharedMaterial = Hd2AmmoReadout.WorldTextMaterial(label.font);
+        labelRenderer = label.Renderer;
         labelRenderer.enabled = false;
     }
 

@@ -62,7 +62,7 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
     int readySends;
     float giveUpAt;
     float nextReadyAt;
-    TextMesh roomLabel;
+    Hd2Text roomLabel;
     readonly List<PlayerRef> members = new List<PlayerRef>(8);
     readonly List<PlayerRef> waiting = new List<PlayerRef>(8);
     readonly List<PlayerRef> ready = new List<PlayerRef>(8);
@@ -531,21 +531,12 @@ public class Hd2Session : MonoBehaviour, INetworkRunnerCallbacks
             labelObject.transform.rotation = Quaternion.identity;
         }
 
-        var text = labelObject.AddComponent<TextMesh>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        var text = Hd2Text.On(labelObject, true);
         text.fontSize = 64;
         text.characterSize = 0.018f;
         text.anchor = TextAnchor.MiddleCenter;
         text.alignment = TextAlignment.Center;
         text.color = new Color(0.55f, 1f, 0.7f, 1f);
-        var renderer = text.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            if (text.font != null)
-                renderer.sharedMaterial = text.font.material;
-        }
 
         roomLabel = text;
         ApplyLabel();

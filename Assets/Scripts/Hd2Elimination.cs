@@ -38,6 +38,13 @@ public class Hd2Elimination : MonoBehaviour
     const float GoShownSeconds = 1f;
 
     static Hd2Elimination current;
+
+    // ---- Blitz Ace: one fighter kills the whole other team in a round ----
+    // Enemy kills per fighter this round, and each team's size at GO.
+    readonly Dictionary<Hd2Health, int> roundKills = new Dictionary<Hd2Health, int>();
+    int redAtGo;
+    int blueAtGo;
+    static readonly Color AceGold = new Color(1f, 0.84f, 0.35f, 1f);
     Phase phase = Phase.Starting;
     float phaseEndsAt;
     float goShownUntil = -1f;
@@ -105,6 +112,7 @@ public class Hd2Elimination : MonoBehaviour
     {
         Active = true;
         current = this;
+        Hd2MatchStats.EnemyKilled += OnEnemyKilled;
         RedPoints = 0;
         BluePoints = 0;
         voice = gameObject.AddComponent<AudioSource>();
@@ -127,6 +135,7 @@ public class Hd2Elimination : MonoBehaviour
         Active = false;
         if (current == this)
             current = null;
+        Hd2MatchStats.EnemyKilled -= OnEnemyKilled;
         Hd2GrayscaleFeature.Active = false;
     }
 
@@ -225,6 +234,8 @@ public class Hd2Elimination : MonoBehaviour
                     phase = Phase.Live;
                     phaseEndsAt = Time.time + RoundSeconds;
                     goShownUntil = Time.time + GoShownSeconds;
+                    roundKills.Clear();
+                    CountAlive(out redAtGo, out blueAtGo);
                 }
                 break;
 
@@ -413,6 +424,31 @@ public class Hd2Elimination : MonoBehaviour
         }
     }
 
+    void OnEnemyKilled(Hd2Health victim, Hd2Health killer)
+    {
+        if (phase != Phase.Live || killer == null)
+            return;
+        roundKills.TryGetValue(killer, out int kills);
+        roundKills[killer] = kills + 1;
+    }
+
+    // The winner who, alone, killed every member the other team had at GO (two or more).
+    Hd2Health FindAce(Hd2Team winner)
+    {
+        if (winner == Hd2Team.None)
+            return null;
+        int loserCount = winner == Hd2Team.Red ? blueAtGo : redAtGo;
+        if (loserCount < 2)
+            return null;
+        foreach (var entry in roundKills)
+        {
+            if (entry.Key != null && entry.Value >= loserCount && Hd2SpawnField.TeamOf(entry.Key) == winner)
+                return entry.Key;
+        }
+
+        return null;
+    }
+
     void EndRound(Hd2Team winner)
     {
         // Guns go quiet the moment the round is decided, until the next round's GO.
@@ -424,12 +460,23 @@ public class Hd2Elimination : MonoBehaviour
             BluePoints++;
         Show(0f);
 
+        // A Blitz Ace is called first, then the usual score call.
+        Hd2Health ace = FindAce(winner);
+        if (ace != null)
+        {
+            Hd2MatchStats.NameAndColor(ace, out string aceName, out Color aceColor);
+            Hd2Hud.Announce("BLITZ ACE!", aceName, AceGold, aceColor);
+        }
+
         if (RedPoints >= PointsToWin || BluePoints >= PointsToWin)
         {
             phase = Phase.Over;
             // The winning point is announced only as "Red/Blue Team Wins".
             string champ = winner == Hd2Team.Red ? "Red" : "Blue";
-            Announce(champ + "Wins");
+            if (ace != null)
+                Announce("BlitzAce", champ + "Wins");
+            else
+                Announce(champ + "Wins");
             Hd2Shootout.DeclareWinner(winner);
             return;
         }
@@ -447,7 +494,10 @@ public class Hd2Elimination : MonoBehaviour
             int mine = winner == Hd2Team.Red ? RedPoints : BluePoints;
             int theirs = winner == Hd2Team.Red ? BluePoints : RedPoints;
             // "Red Team Scores ... five ... three": the round winner's score first.
-            Announce(team + "Scored", "Number" + mine, "Number" + theirs);
+            if (ace != null)
+                Announce("BlitzAce", team + "Scored", "Number" + mine, "Number" + theirs);
+            else
+                Announce(team + "Scored", "Number" + mine, "Number" + theirs);
             if (mine == PointsToWin - 1)
                 Queue("MatchPoint" + team);
         }

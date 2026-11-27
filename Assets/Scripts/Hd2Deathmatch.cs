@@ -46,7 +46,7 @@ public class Hd2Deathmatch : MonoBehaviour
     readonly List<Fighter> fighters = new List<Fighter>();
     float matchEndsAt;
     bool hooked;
-    TextMesh banner;
+    Hd2Text banner;
     Transform bannerAnchor;
 
     void Awake()
@@ -448,8 +448,8 @@ public class Hd2Deathmatch : MonoBehaviour
 
         bannerAnchor = view.transform;
         var bannerObject = new GameObject("Winner");
-        banner = bannerObject.AddComponent<TextMesh>();
-        banner.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // TextMeshPro (Hd2Text), drawn over the world like the old font material.
+        banner = Hd2Text.On(bannerObject, true);
         banner.fontSize = 64;
         banner.characterSize = 0.045f;
         banner.anchor = TextAnchor.MiddleCenter;

@@ -6,7 +6,7 @@ using UnityEngine;
 /// </summary>
 public static class Hd2AmmoReadout
 {
-    public static TextMesh Bind(Transform gun)
+    public static Hd2Text Bind(Transform gun)
     {
         if (gun == null)
             return null;
@@ -26,25 +26,21 @@ public static class Hd2AmmoReadout
         if (existing == null)
             return null;
 
-        TextMesh label = existing.GetComponent<TextMesh>();
-        if (label == null)
-            label = existing.GetComponentInChildren<TextMesh>(true);
+        Hd2Text label = Hd2Text.InChildren(existing, false);
         if (label != null)
             Style(label);
         return label;
     }
 
-    public static TextMesh Style(Transform host)
+    public static Hd2Text Style(Transform host)
     {
         if (host == null)
             return null;
 
-        TextMesh label = host.GetComponent<TextMesh>();
-        if (label == null)
-            label = host.GetComponentInChildren<TextMesh>(true);
+        Hd2Text label = Hd2Text.InChildren(host, false);
         if (label == null)
         {
-            label = host.gameObject.AddComponent<TextMesh>();
+            label = Hd2Text.On(host.gameObject, false);
             label.fontSize = 32;
             label.characterSize = 0.005f;
             label.anchor = TextAnchor.MiddleCenter;
@@ -55,25 +51,15 @@ public static class Hd2AmmoReadout
         return label;
     }
 
-    public static void Style(TextMesh label)
+    public static void Style(Hd2Text label)
     {
         if (label == null)
             return;
 
-        if (label.GetComponent<MeshFilter>() == null)
-            label.gameObject.AddComponent<MeshFilter>();
-
-        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // World text: walls hide it (a gun display must not show enemies through walls).
+        label.overlay = false;
         label.color = new Color(0.3f, 0.75f, 1f, 1f);
-        MeshRenderer renderer = label.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.enabled = true;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            if (label.font != null)
-                renderer.sharedMaterial = WorldTextMaterial(label.font);
-        }
+        label.visible = true;
     }
 
     static void HideDisplays(Transform gun)
@@ -85,6 +71,10 @@ public static class Hd2AmmoReadout
             if (renderer != null)
                 renderer.enabled = false;
         }
+
+        Hd2Text[] labels = gun.GetComponentsInChildren<Hd2Text>(true);
+        for (int i = 0; i < labels.Length; i++)
+            labels[i].visible = false;
     }
 
     static Material worldText;
@@ -120,7 +110,7 @@ public static class Hd2AmmoReadout
     }
 
     /// <summary>Progress ring around the display, 0..1 (0 hides it). Call every frame.</summary>
-    public static void Ring(TextMesh label, float fill)
+    public static void Ring(Hd2Text label, float fill)
     {
         Hd2AmmoRing.Set(label, fill);
     }
@@ -133,7 +123,7 @@ public static class Hd2AmmoReadout
         return Mathf.Clamp01(1f - (endsAt - Time.time) / duration);
     }
 
-    public static void Show(TextMesh label, int rounds, bool reloading)
+    public static void Show(Hd2Text label, int rounds, bool reloading)
     {
         if (label == null)
             return;

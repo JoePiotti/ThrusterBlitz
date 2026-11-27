@@ -49,7 +49,7 @@ public static class Hd2Dissolve
                 continue;
             if (!(renderer is SkinnedMeshRenderer) && !(renderer is MeshRenderer))
                 continue;
-            if (renderer.GetComponent<TextMesh>() != null)
+            if (renderer.GetComponent<TextMesh>() != null || renderer.GetComponent<TMPro.TMP_Text>() != null)
                 continue;
 
             Material[] original = renderer.sharedMaterials;

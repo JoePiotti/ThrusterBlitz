@@ -98,6 +98,9 @@ public static class Hd2MatchStats
     }
 
     /// <summary>Called once when a fighter dies. Self-kills and team kills count only the death.</summary>
+    /// <summary>An enemy kill (no suicides or team kills): victim, then killer.</summary>
+    public static event System.Action<Hd2Health, Hd2Health> EnemyKilled;
+
     public static void NoteDeath(Hd2Health victim, Transform killer)
     {
         if (victim == null)
@@ -118,6 +121,7 @@ public static class Hd2MatchStats
 
         Add(killerHealth, 1, 0);
         AddScore(killerHealth, KillPoints);
+        EnemyKilled?.Invoke(victim, killerHealth);
 
         // The local player's kill feed.
         Hd2Hud hud = killerHealth.GetComponent<Hd2Hud>();
@@ -128,7 +132,8 @@ public static class Hd2MatchStats
         }
     }
 
-    static void NameAndColor(Hd2Health who, out string name, out Color color)
+    /// <summary>A fighter's shown name and team color (bot, network player or local player).</summary>
+    public static void NameAndColor(Hd2Health who, out string name, out Color color)
     {
         name = who.name;
         color = Color.white;

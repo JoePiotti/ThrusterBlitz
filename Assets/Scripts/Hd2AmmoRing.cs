@@ -11,7 +11,7 @@ public class Hd2AmmoRing : MonoBehaviour
     static readonly Color RingColor = new Color(0.3f, 0.75f, 1f, 1f);
     static Material material;
 
-    TextMesh label;
+    Hd2Text label;
     MeshRenderer textRenderer;
     MeshRenderer ringRenderer;
     Mesh mesh;
@@ -20,7 +20,7 @@ public class Hd2AmmoRing : MonoBehaviour
     int shownSteps = -1;
     bool onBot;
 
-    public static void Set(TextMesh label, float fill)
+    public static void Set(Hd2Text label, float fill)
     {
         if (label == null)
             return;
@@ -36,10 +36,10 @@ public class Hd2AmmoRing : MonoBehaviour
         ring.Show(fill);
     }
 
-    void Init(TextMesh text)
+    void Init(Hd2Text text)
     {
         label = text;
-        textRenderer = text.GetComponent<MeshRenderer>();
+        textRenderer = text.Renderer;
         onBot = GetComponentInParent<Hd2EnemyBot>() != null;
         if (onBot)
             return;
@@ -87,7 +87,12 @@ public class Hd2AmmoRing : MonoBehaviour
         if (textRenderer == null || label == null || string.IsNullOrEmpty(label.text))
             return false;
 
-        Bounds box = textRenderer.localBounds;
+        // The text draws on a child (Hd2Text); bring its local bounds into this object's space.
+        Bounds inner = textRenderer.localBounds;
+        Transform child = textRenderer.transform;
+        Bounds box = child == transform
+            ? inner
+            : new Bounds(child.localPosition + Vector3.Scale(child.localScale, inner.center), Vector3.Scale(child.localScale, inner.size));
         if (box.size.sqrMagnitude < 1e-8f)
             return false;
 

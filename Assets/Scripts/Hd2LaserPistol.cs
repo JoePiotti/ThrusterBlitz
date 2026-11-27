@@ -73,7 +73,7 @@ public class Hd2LaserPistol : MonoBehaviour
     AudioSource voice;
     AudioClip fireClip;
     AudioClip cooldownClip;
-    TextMesh ammoLabel;
+    Hd2Text ammoLabel;
     Hd2ControlMap controlMap;
     readonly RaycastHit[] hits = new RaycastHit[32];
 
@@ -135,7 +135,7 @@ public class Hd2LaserPistol : MonoBehaviour
             Renderer renderer = renderers[i];
             if (renderer == null || renderer is ParticleSystemRenderer || renderer is LineRenderer)
                 continue;
-            if (renderer.GetComponent<TextMesh>() != null)
+            if (renderer.GetComponent<TextMesh>() != null || renderer.GetComponent<TMPro.TMP_Text>() != null)
                 continue;
 
             Material source = renderer.sharedMaterial;

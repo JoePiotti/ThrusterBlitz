@@ -59,7 +59,7 @@ public class Hd2Pistol : MonoBehaviour
     [Tooltip("Bore tip. Local euler (90, 0, 0) so forward is the pistol's -Y, out the barrel away from the player.")]
     public Transform muzzle;
     [Tooltip("Rounds text. Uses the display child on the grip when there is one.")]
-    public TextMesh ammoLabel;
+    public Hd2Text ammoLabel;
 
     int rounds;
     float triggerPressedAt = -1f;
@@ -604,7 +604,7 @@ public class Hd2Pistol : MonoBehaviour
         root.transform.SetParent(transform, false);
         root.transform.localPosition = pos;
         root.transform.localRotation = Quaternion.LookRotation(-back, Vector3.up);
-        ammoLabel = root.AddComponent<TextMesh>();
+        ammoLabel = Hd2Text.On(root, false);
         ammoLabel.fontSize = 32;
         ammoLabel.characterSize = 0.005f;
         ammoLabel.anchor = TextAnchor.MiddleCenter;

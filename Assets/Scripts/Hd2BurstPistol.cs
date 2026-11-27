@@ -69,7 +69,7 @@ public class Hd2BurstPistol : MonoBehaviour
     AudioSource shotSource;
     AudioClip shotClip;
     AudioClip reloadClip;
-    TextMesh ammoLabel;
+    Hd2Text ammoLabel;
 
     InputAction triggerAction;
     InputAction reloadAction;

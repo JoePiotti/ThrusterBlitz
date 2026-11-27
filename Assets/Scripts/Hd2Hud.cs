@@ -42,11 +42,11 @@ public class Hd2Hud : MonoBehaviour
     Camera ownerCamera;
     Canvas canvas;
     Transform view;
-    TextMesh healthReadout;
-    TextMesh blitzReadout;
-    TextMesh micReadout;
-    TextMesh banner;
-    TextMesh scoreReadout;
+    Hd2Text healthReadout;
+    Hd2Text blitzReadout;
+    Hd2Text micReadout;
+    Hd2Text banner;
+    Hd2Text scoreReadout;
     int kills;
     int deaths;
     int streak;
@@ -65,20 +65,20 @@ public class Hd2Hud : MonoBehaviour
     bool shownCritical;
     bool blinkOn = true;
     bool dominationReady;
-    TextMesh pointA;
-    TextMesh pointB;
-    TextMesh pointC;
+    Hd2Text pointA;
+    Hd2Text pointB;
+    Hd2Text pointC;
     Hd2TeamButton buttonA;
     Hd2TeamButton buttonB;
     Hd2TeamButton buttonC;
     int shownA = -1;
     int shownB = -1;
     int shownC = -1;
-    TextMesh redScore;
-    TextMesh blueScore;
-    TextMesh clockReadout;
-    TextMesh roundNote;
-    TextMesh deadNote;
+    Hd2Text redScore;
+    Hd2Text blueScore;
+    Hd2Text clockReadout;
+    Hd2Text roundNote;
+    Hd2Text deadNote;
 
     /// <summary>
     /// "YOU DIED" in the middle of the view, kept up until ShowDead(false), with
@@ -242,9 +242,49 @@ public class Hd2Hud : MonoBehaviour
         RefreshHitFlash();
         RefreshScore();
         RefreshCountdown();
+        RefreshAnnouncement();
     }
 
-    TextMesh countdownNote;
+    // ---- Announcements: a big call-out for everyone (Elimination's Blitz Ace) ----
+    const float AnnouncementSeconds = 3.5f;
+    Hd2Text announcement;
+    float announcementUntil;
+
+    /// <summary>Shows a title and a name, high in the view, on every player's HUD.</summary>
+    public static void Announce(string title, string name, Color titleColor, Color nameColor)
+    {
+        var huds = FindObjectsByType<Hd2Hud>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < huds.Length; i++)
+            huds[i].ShowAnnouncement(title, name, titleColor, nameColor);
+    }
+
+    void ShowAnnouncement(string title, string name, Color titleColor, Color nameColor)
+    {
+        if (announcement == null)
+        {
+            // Above "YOU DIED" (0.14), so a dead player sees both.
+            announcement = MakeReadout(view != null ? view : transform, new Vector3(0f, 0.27f, 0.9f), titleColor, TextAnchor.MiddleCenter);
+            announcement.alignment = TextAlignment.Center;
+            announcement.fontStyle = FontStyle.Bold;
+            announcement.characterSize = 0.009f;
+            announcement.richText = true;
+        }
+
+        announcement.color = titleColor;
+        announcement.text = title + (string.IsNullOrEmpty(name)
+            ? ""
+            : "\n<size=46><color=#" + ColorUtility.ToHtmlStringRGB(nameColor) + ">" + name + "</color></size>");
+        announcement.gameObject.SetActive(true);
+        announcementUntil = Time.unscaledTime + AnnouncementSeconds;
+    }
+
+    void RefreshAnnouncement()
+    {
+        if (announcement != null && announcement.gameObject.activeSelf && Time.unscaledTime >= announcementUntil)
+            announcement.gameObject.SetActive(false);
+    }
+
+    Hd2Text countdownNote;
 
     // Elimination: 3, 2, 1, then GO! dead center while everyone waits for the gates.
     void RefreshCountdown()
@@ -317,7 +357,7 @@ public class Hd2Hud : MonoBehaviour
     const float SummarySeconds = 10f;
     /// <summary>Pause between the end of the match and the summary appearing.</summary>
     public const float SummaryDelay = 2f;
-    TextMesh summary;
+    Hd2Text summary;
     float summaryUntil;
     string pendingSummary;
     float pendingSummaryAt;
@@ -384,16 +424,16 @@ public class Hd2Hud : MonoBehaviour
             quad.transform.SetParent(view != null ? view : transform, false);
             summaryPanelMaterial = new Material(Shader.Find("Sprites/Default"));
             summaryPanelMaterial.color = new Color(0.05f, 0.06f, 0.09f, ToastOpacity);
-            // Over the rest of the HUD (the win banner), under the summary text and badge.
-            summaryPanelMaterial.renderQueue = 3005;
-            var text = summary != null ? summary.GetComponent<MeshRenderer>() : null;
-            if (text != null)
+            // Over the rest of the HUD (the win banner, overlay text at 4000), under the summary
+            // text and badge.
+            summaryPanelMaterial.renderQueue = 4005;
+            if (summary != null)
             {
-                summaryTextMaterial = text.material;
-                summaryTextMaterial.renderQueue = 3010;
+                summaryTextMaterial = summary.Tmp.fontMaterial;
+                summaryTextMaterial.renderQueue = 4010;
             }
             if (summaryBadgeMaterial != null)
-                summaryBadgeMaterial.renderQueue = 3010;
+                summaryBadgeMaterial.renderQueue = 4010;
             var renderer = quad.GetComponent<MeshRenderer>();
             renderer.sharedMaterial = summaryPanelMaterial;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -414,7 +454,7 @@ public class Hd2Hud : MonoBehaviour
         bool any = false;
         Vector2 min = Vector2.zero, max = Vector2.zero;
         float depth = 0.9f;
-        // From each mesh's own bounds: a TextMesh renderer's bounds miss lines in a smaller <size>.
+        // From each mesh's own bounds: a text renderer's bounds miss lines in a smaller <size>.
         void Add(Renderer r)
         {
             if (r == null || !r.gameObject.activeInHierarchy)
@@ -441,7 +481,7 @@ public class Hd2Hud : MonoBehaviour
             }
         }
 
-        Add(summary.GetComponent<Renderer>());
+        Add(summary.Renderer);
         if (summaryBadge != null)
             Add(summaryBadge.GetComponent<Renderer>());
         if (!any)
@@ -562,7 +602,7 @@ public class Hd2Hud : MonoBehaviour
     // KillLineSeconds.
     const float KillLineSeconds = 3f;
     const int KillLinesMax = 6;
-    TextMesh killFeed;
+    Hd2Text killFeed;
     readonly System.Collections.Generic.List<string> killLines = new System.Collections.Generic.List<string>();
     readonly System.Collections.Generic.List<float> killLineEnds = new System.Collections.Generic.List<float>();
     bool killFeedDirty;
@@ -860,7 +900,7 @@ public class Hd2Hud : MonoBehaviour
         }
     }
 
-    static void PaintPoint(Hd2TeamButton point, TextMesh text, ref int shown)
+    static void PaintPoint(Hd2TeamButton point, Hd2Text text, ref int shown)
     {
         if (point == null || text == null)
             return;
@@ -873,9 +913,9 @@ public class Hd2Hud : MonoBehaviour
         text.color = point.MarkerColor;
     }
 
-    static TextMesh MakePoint(Transform parent, Vector3 local, string letter)
+    static Hd2Text MakePoint(Transform parent, Vector3 local, string letter)
     {
-        TextMesh text = MakeReadout(parent, local, Color.white, TextAnchor.MiddleCenter);
+        Hd2Text text = MakeReadout(parent, local, Color.white, TextAnchor.MiddleCenter);
         text.gameObject.name = letter;
         text.text = letter;
         text.fontSize = 120;
@@ -1042,7 +1082,7 @@ public class Hd2Hud : MonoBehaviour
             blueScore.color = scoreBlue;
     }
 
-    void PlacePoint(TextMesh text, int index)
+    void PlacePoint(Hd2Text text, int index)
     {
         if (text == null)
             return;
@@ -1060,13 +1100,13 @@ public class Hd2Hud : MonoBehaviour
             right ? TextAnchor.MiddleLeft : TextAnchor.MiddleRight);
     }
 
-    static void SetShown(TextMesh text, bool show)
+    static void SetShown(Hd2Text text, bool show)
     {
         if (text != null && text.gameObject.activeSelf != show)
             text.gameObject.SetActive(show);
     }
 
-    static void PlaceReadout(TextMesh text, Vector3 local, TextAnchor anchor)
+    static void PlaceReadout(Hd2Text text, Vector3 local, TextAnchor anchor)
     {
         if (text == null)
             return;
@@ -1080,7 +1120,7 @@ public class Hd2Hud : MonoBehaviour
             text.alignment = TextAlignment.Center;
     }
 
-    static TextMesh MakeReadout(Transform parent, Vector3 local, Color color, TextAnchor anchor)
+    static Hd2Text MakeReadout(Transform parent, Vector3 local, Color color, TextAnchor anchor)
     {
         bool bannerStyle = anchor != TextAnchor.MiddleLeft;
         var readout = new GameObject(bannerStyle ? "Banner" : "Value");
@@ -1088,24 +1128,13 @@ public class Hd2Hud : MonoBehaviour
         readout.transform.localPosition = local;
         readout.transform.localRotation = Quaternion.identity;
         readout.transform.localScale = Vector3.one;
-        var text = readout.AddComponent<TextMesh>();
-        if (readout.GetComponent<MeshFilter>() == null)
-            readout.AddComponent<MeshFilter>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // TextMeshPro (Hd2Text), drawn over the world like the old font material.
+        var text = Hd2Text.On(readout, true);
         text.fontSize = bannerStyle ? 72 : 96;
         text.characterSize = bannerStyle ? 0.006f : 0.0023f;
         text.anchor = anchor;
         text.alignment = anchor == TextAnchor.MiddleLeft ? TextAlignment.Left : TextAlignment.Right;
         text.color = color;
-        var renderer = text.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            if (text.font != null)
-                renderer.sharedMaterial = text.font.material;
-        }
-
         return text;
     }
 

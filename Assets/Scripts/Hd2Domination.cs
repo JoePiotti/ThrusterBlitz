@@ -27,7 +27,7 @@ public class Hd2Domination : MonoBehaviour
     Hd2TeamButton pointC;
     Hd2Team pending = Hd2Team.None;
     float heldFor;
-    TextMesh banner;
+    Hd2Text banner;
     Transform bannerAnchor;
     AudioSource voice;
     AudioSource matchVoice;
@@ -294,8 +294,8 @@ public class Hd2Domination : MonoBehaviour
         bannerObject.transform.SetParent(bannerAnchor, false);
         bannerObject.transform.localPosition = new Vector3(0f, -0.08f, 2f);
         bannerObject.transform.localRotation = Quaternion.identity;
-        banner = bannerObject.AddComponent<TextMesh>();
-        banner.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // TextMeshPro (Hd2Text), drawn over the world like the old font material.
+        banner = Hd2Text.On(bannerObject, true);
         banner.fontSize = 64;
         banner.characterSize = 0.045f;
         banner.anchor = TextAnchor.MiddleCenter;
@@ -314,14 +314,6 @@ public class Hd2Domination : MonoBehaviour
         {
             banner.color = Color.white;
             banner.text = "Draw";
-        }
-        var renderer = banner.GetComponent<MeshRenderer>();
-        if (renderer != null)
-        {
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-            if (banner.font != null)
-                renderer.sharedMaterial = banner.font.material;
         }
     }
 

@@ -71,7 +71,7 @@ public class Hd2Smg : MonoBehaviour
     AudioSource shotSource;
     AudioClip shotClip;
     AudioClip reloadClip;
-    TextMesh ammoLabel;
+    Hd2Text ammoLabel;
 
     InputAction triggerAction;
     InputAction reloadAction;
@@ -380,7 +380,7 @@ public class Hd2Smg : MonoBehaviour
         root.transform.SetParent(transform, false);
         root.transform.localPosition = pos;
         root.transform.localRotation = Quaternion.LookRotation(-back, Vector3.up);
-        ammoLabel = root.AddComponent<TextMesh>();
+        ammoLabel = Hd2Text.On(root, false);
         ammoLabel.fontSize = 32;
         ammoLabel.characterSize = 0.005f;
         ammoLabel.anchor = TextAnchor.MiddleCenter;
