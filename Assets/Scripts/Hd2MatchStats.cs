@@ -90,6 +90,7 @@ public static class Hd2MatchStats
     {
         if (mode == LoadSceneMode.Single)
         {
+            PayLeaverXp();
             tallies.Clear();
             matchEndPaid = false;
             Winner = Hd2Team.None;
@@ -228,9 +229,26 @@ public static class Hd2MatchStats
             tally.Score += streakBonus + gameBonus;
             tallies[key] = tally;
 
+            // The local player earns experience toward their level (Hd2Progression).
+            bool local = fighter.GetComponent<Hd2Locomotion>() != null;
+            Hd2Progression.MatchXp xp = default;
+            if (local)
+            {
+                if (!factorKnown)
+                {
+                    factorKnown = true;
+                    matchFactor = OpponentFactor(out matchNoXp);
+                }
+
+                var outcome = teams && winner == Hd2Team.None ? Hd2Progression.Outcome.Draw
+                    : teams && side == winner ? Hd2Progression.Outcome.Win
+                    : Hd2Progression.Outcome.Loss;
+                xp = Hd2Progression.AwardMatch(tally.Score, outcome, matchFactor, matchNoXp);
+            }
+
             Hd2Hud hud = fighter.GetComponent<Hd2Hud>();
             if (hud != null)
-                hud.ShowMatchSummary(before, streakBonus, gameBonus, tally.Score, !teams ? "" : winner == Hd2Team.None ? "Draw" : side == winner ? "Win" : "Loss");
+                hud.ShowMatchSummary(before, streakBonus, gameBonus, tally.Score, !teams ? "" : winner == Hd2Team.None ? "Draw" : side == winner ? "Win" : "Loss", local ? (Hd2Progression.MatchXp?)xp : null);
         }
     }
 
@@ -251,10 +269,63 @@ public static class Hd2MatchStats
         tallies.TryGetValue(key, out Tally tally);
         tally.Score += points;
         tallies[key] = tally;
+        NoteLocal(health);
+    }
+
+    // ---- Player level (Hd2Progression) ----
+    // The local player's tally key and this match's opponent factor, kept so leaving before
+    // the end can still pay XP once the match scene is gone.
+    static int localKey;
+    static bool factorKnown;
+    static float matchFactor = 1f;
+    static bool matchNoXp;
+
+    static void NoteLocal(Hd2Health health)
+    {
+        if (health == null || health.GetComponent<Hd2Locomotion>() == null)
+            return;
+        localKey = health.GetInstanceID();
+        if (!factorKnown)
+        {
+            factorKnown = true;
+            matchFactor = OpponentFactor(out matchNoXp);
+        }
+    }
+
+    static float OpponentFactor(out bool noXp)
+    {
+        bool anotherHuman = false;
+        var others = UnityEngine.Object.FindObjectsByType<Hd2NetPlayer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < others.Length; i++)
+        {
+            Hd2NetPlayer other = others[i];
+            if (other != null && other.Object != null && other.Object.IsValid && !other.Object.HasInputAuthority)
+                anotherHuman = true;
+        }
+
+        var bots = UnityEngine.Object.FindObjectsByType<Hd2EnemyBot>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        Hd2BotDifficulty hardest = Hd2BotDifficulty.Easy;
+        for (int i = 0; i < bots.Length; i++)
+        {
+            if (bots[i] != null && RankOf(bots[i].difficulty) > RankOf(hardest))
+                hardest = bots[i].difficulty;
+        }
+
+        return Hd2Progression.OpponentFactor(anotherHuman, bots.Length > 0, hardest, out noXp);
+    }
+
+    // Leaving a match before it ends (any scene change): half the score so far as XP.
+    static void PayLeaverXp()
+    {
+        if (!matchEndPaid && localKey != 0 && tallies.TryGetValue(localKey, out Tally tally) && tally.Score > 0)
+            Hd2Progression.AwardLeftEarly(tally.Score, matchFactor, matchNoXp);
+        localKey = 0;
+        factorKnown = false;
     }
 
     static void Add(Hd2Health who, int kills, int deaths)
     {
+        NoteLocal(who);
         int key = who.GetInstanceID();
         tallies.TryGetValue(key, out Tally tally);
         tally.Kills += kills;
@@ -326,7 +397,7 @@ public static class Hd2MatchStats
             Tally tally = TallyOf(players[i]);
             rows.Add(new Row
             {
-                Rank = 1,
+                Rank = Hd2Progression.Level,
                 Name = Hd2Identity.Display,
                 Kills = tally.Kills,
                 Deaths = tally.Deaths,

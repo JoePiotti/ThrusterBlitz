@@ -204,6 +204,8 @@ public class Hd2Hud : MonoBehaviour
             health.Changed -= OnDamaged;
         if (micMaterial != null)
             Destroy(micMaterial);
+        if (summaryBadgeMaterial != null)
+            Destroy(summaryBadgeMaterial);
         if (hitMaterial != null)
             Destroy(hitMaterial);
         if (hitFade != null)
@@ -312,7 +314,7 @@ public class Hd2Hud : MonoBehaviour
     TextMesh summary;
     float summaryUntil;
 
-    public void ShowMatchSummary(int score, int streakBonus, int gameBonus, int total, string result)
+    public void ShowMatchSummary(int score, int streakBonus, int gameBonus, int total, string result, Hd2Progression.MatchXp? xp = null)
     {
         if (summary == null)
         {
@@ -329,15 +331,77 @@ public class Hd2Hud : MonoBehaviour
         summary.text = "Score " + score.ToString("N0")
             + "\n<size=50><color=#B8D8FF>Kill Streak Bonus +" + streakBonus.ToString("N0") + "</color></size>"
             + game
-            + "\n<b><color=#FFD75A>Total " + total.ToString("N0") + "</color></b>";
+            + "\n<b><color=#FFD75A>Total " + total.ToString("N0") + "</color></b>"
+            + (xp.HasValue ? ExperienceLines(xp.Value) : "");
         summary.gameObject.SetActive(true);
         summaryUntil = Time.unscaledTime + SummarySeconds;
+        ShowSummaryBadge(xp.HasValue);
+    }
+
+    // Under the total: the XP earned, the level (LEVEL UP when it went up) and any unlocks.
+    static string ExperienceLines(Hd2Progression.MatchXp xp)
+    {
+        string lines = "\n<size=50><color=#8CF5A0>+" + xp.Total.ToString("N0") + " XP</color></size>";
+        if (xp.BotOnlyNoXp)
+            lines += "\n<size=40><color=#B8B8B8>Bot-only matches give no XP from level " + Hd2Progression.BotOnlyLevelLimit + "</color></size>";
+        else if (xp.FirstWin > 0)
+            lines += "\n<size=40><color=#8CF5A0>First win of the day +" + xp.FirstWin.ToString("N0") + "</color></size>";
+
+        int level = xp.LevelAfter;
+        string tier = Hd2Progression.TierNames[Hd2Progression.TierOf(level)];
+        if (xp.LeveledUp)
+            lines += "\n<b><color=#FFD75A>LEVEL UP!  Level " + level + "  " + tier + "</color></b>";
+        else
+            lines += "\n<size=50>Level " + level + "  " + tier + "</size>";
+
+        var unlocks = Hd2LevelRewards.Between(xp.LevelBefore, xp.LevelAfter);
+        for (int i = 0; i < unlocks.Count; i++)
+            lines += "\n<size=40><color=#FFD75A>Unlocked: " + unlocks[i].Name + "</color></size>";
+        return lines;
+    }
+
+    Transform summaryBadge;
+    Material summaryBadgeMaterial;
+
+    // The player's tier badge to the left of the summary while it shows.
+    void ShowSummaryBadge(bool on)
+    {
+        Texture2D badge = on ? Hd2Progression.Badge(Hd2Progression.Tier) : null;
+        if (badge == null)
+        {
+            if (summaryBadge != null)
+                summaryBadge.gameObject.SetActive(false);
+            return;
+        }
+
+        if (summaryBadge == null)
+        {
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "SummaryBadge";
+            Destroy(quad.GetComponent<Collider>());
+            quad.transform.SetParent(view != null ? view : transform, false);
+            quad.transform.localPosition = new Vector3(-0.3f, -0.02f, 0.9f);
+            quad.transform.localScale = Vector3.one * 0.16f;
+            summaryBadgeMaterial = new Material(Shader.Find("Sprites/Default"));
+            var renderer = quad.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = summaryBadgeMaterial;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            summaryBadge = quad.transform;
+        }
+
+        summaryBadgeMaterial.mainTexture = badge;
+        summaryBadge.gameObject.SetActive(true);
     }
 
     void RefreshSummary()
     {
         if (summary != null && summary.gameObject.activeSelf && Time.unscaledTime >= summaryUntil)
+        {
             summary.gameObject.SetActive(false);
+            if (summaryBadge != null)
+                summaryBadge.gameObject.SetActive(false);
+        }
     }
 
     // ---- Kill feed ----

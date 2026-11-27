@@ -160,6 +160,7 @@ public class Hd2MainMenu : MonoBehaviour
             controls = gameObject.AddComponent<Hd2ControlMap>();
         controls.Changed += RefreshAll;
         Hd2Identity.Changed += RefreshProfile;
+        Hd2Progression.Changed += RefreshProfile;
         Hd2Settings.Changed += RefreshAll;
 
         view = EnsureCamera();
@@ -200,6 +201,7 @@ public class Hd2MainMenu : MonoBehaviour
         if (controls != null)
             controls.Changed -= RefreshAll;
         Hd2Identity.Changed -= RefreshProfile;
+        Hd2Progression.Changed -= RefreshProfile;
         Hd2Settings.Changed -= RefreshAll;
         StopEditorTyping();
         Dispose(ref leftTrigger);
@@ -831,7 +833,50 @@ public class Hd2MainMenu : MonoBehaviour
 
         var hint = MakeText(page, "Point at a field and pull the trigger to type.", 22, TextAnchor.MiddleLeft, HintColor);
         Place(hint.rectTransform, 0f, -480f, PageWidth, 34f);
+        BuildLevel(page);
         RefreshProfile();
+    }
+
+    // Right column of the Profile page: tier badge, level, XP bar, record and next unlock.
+    const float LevelColumn = 640f;
+    const float XpBarWidth = 560f;
+    Image badgeImage;
+    int badgeTier = -1;
+    TMP_Text levelText;
+    TMP_Text tierText;
+    RectTransform xpFill;
+    TMP_Text xpText;
+    TMP_Text recordText;
+    TMP_Text unlockText;
+
+    void BuildLevel(RectTransform page)
+    {
+        var badge = new GameObject("Badge");
+        var badgeRect = badge.AddComponent<RectTransform>();
+        badgeRect.SetParent(page, false);
+        badgeImage = badge.AddComponent<Image>();
+        badgeImage.preserveAspect = true;
+        badgeImage.raycastTarget = false;
+        Place(badgeRect, LevelColumn, -70f, 190f, 190f);
+
+        levelText = MakeText(page, "", 48, TextAnchor.MiddleLeft, Color.white);
+        levelText.fontStyle = FontStyles.Bold;
+        Place(levelText.rectTransform, LevelColumn + 215f, -95f, 360f, 64f);
+        tierText = MakeText(page, "", 32, TextAnchor.MiddleLeft, new Color(1f, 0.84f, 0.35f, 1f));
+        Place(tierText.rectTransform, LevelColumn + 215f, -165f, 360f, 44f);
+
+        var track = MakeImage(page, KeyColor);
+        Place(track.rectTransform, LevelColumn, -290f, XpBarWidth, 26f);
+        var fill = MakeImage(track.rectTransform, new Color(0.55f, 0.96f, 0.63f, 1f));
+        xpFill = fill.rectTransform;
+        Place(xpFill, 0f, 0f, 0f, 26f);
+        xpText = MakeText(page, "", 24, TextAnchor.MiddleLeft, HintColor);
+        Place(xpText.rectTransform, LevelColumn, -324f, XpBarWidth, 34f);
+
+        recordText = MakeText(page, "", 24, TextAnchor.MiddleLeft, HintColor);
+        Place(recordText.rectTransform, LevelColumn, -380f, XpBarWidth, 34f);
+        unlockText = MakeText(page, "", 24, TextAnchor.MiddleLeft, Color.white);
+        Place(unlockText.rectTransform, LevelColumn, -420f, XpBarWidth, 34f);
     }
 
     void RefreshProfile()
@@ -842,6 +887,38 @@ public class Hd2MainMenu : MonoBehaviour
             clanValue.text = string.IsNullOrEmpty(Hd2Identity.Clan) ? "None" : Hd2Identity.Clan;
         if (shownAs != null)
             shownAs.text = Hd2Identity.Display;
+        RefreshLevel();
+    }
+
+    void RefreshLevel()
+    {
+        if (levelText == null)
+            return;
+
+        int level = Hd2Progression.Level;
+        int tier = Hd2Progression.TierOf(level);
+        if (tier != badgeTier)
+        {
+            badgeTier = tier;
+            Texture2D texture = Hd2Progression.Badge(tier);
+            badgeImage.sprite = texture != null
+                ? Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f))
+                : null;
+            badgeImage.enabled = texture != null;
+        }
+
+        levelText.text = "Level " + level;
+        tierText.text = Hd2Progression.TierName;
+        Hd2Progression.Progress(out long into, out long span);
+        float fraction = span > 0 ? Mathf.Clamp01(into / (float)span) : 1f;
+        xpFill.sizeDelta = new Vector2(XpBarWidth * fraction, xpFill.sizeDelta.y);
+        xpText.text = span > 0
+            ? into.ToString("N0") + " / " + span.ToString("N0") + " XP to level " + (level + 1)
+            : "Max level";
+        recordText.text = Hd2Progression.Wins.ToString("N0") + " wins in " + Hd2Progression.Matches.ToString("N0") + " matches";
+        unlockText.text = Hd2LevelRewards.Next(level, out Hd2LevelRewards.Reward next)
+            ? "Next unlock: " + next.Name + " at level " + next.Level
+            : "Every level reward unlocked";
     }
 
     bool KeyboardOpen => keyboard != null && keyboard.activeSelf;
