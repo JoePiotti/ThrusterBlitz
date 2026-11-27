@@ -253,13 +253,16 @@ public class Hd2PlayerDeath : MonoBehaviour
             locomotion.HaltTravel();
         }
 
+        // A round reset (Elimination) also comes through here: a player who survived the
+        // round keeps their kill streak. Only a death starts it over.
+        bool died = downed || (health != null && health.IsDead);
         downed = false;
         quietDeath = true;
         if (killLine != null)
             killLine.enabled = false;
         if (health != null)
             health.Respawn();
-        BeginLife();
+        BeginLife(died);
         RestoreStartingPistols();
         quietDeath = false;
     }
@@ -468,13 +471,13 @@ public class Hd2PlayerDeath : MonoBehaviour
         return saved;
     }
 
-    void BeginLife()
+    void BeginLife(bool afterDeath = true)
     {
         if (locomotion != null && bodyDriver != null)
             bodyDriver.SetArmorColor(locomotion.teamColor);
 
         var hud = GetComponent<Hd2Hud>();
-        if (hud != null)
+        if (hud != null && afterDeath)
             hud.BeginLife();
     }
 

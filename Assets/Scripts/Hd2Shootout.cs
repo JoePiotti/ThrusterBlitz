@@ -69,6 +69,9 @@ public class Hd2Shootout : MonoBehaviour
             live = null;
         if (Present)
             Present = false;
+        // A finished match must not carry into the next map: bots stand still and guns
+        // stay quiet while Decided is set, even in modes without a Shootout.
+        Decided = false;
     }
 
     void Start()

@@ -815,14 +815,16 @@ public class Hd2MuzzleFlash : MonoBehaviour
         if (parent == null)
             return;
 
-        Hd2MuzzleFlash flash;
-        int last = pool.Count - 1;
-        if (last >= 0)
+        Hd2MuzzleFlash flash = null;
+        // Pooled flashes die with their scene (the pool is static). Skip destroyed ones.
+        while (flash == null && pool.Count > 0)
         {
+            int last = pool.Count - 1;
             flash = pool[last];
             pool.RemoveAt(last);
         }
-        else
+
+        if (flash == null)
         {
             var go = new GameObject("MuzzleFlash");
             go.AddComponent<MeshFilter>().sharedMesh = Hd2Shot.BoltMesh();
