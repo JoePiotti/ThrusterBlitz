@@ -15,6 +15,7 @@ EditorBuildSettings:
     path: Assets/Scenes/Archive/Greybox.unity
     guid: ddb093f1248449249adc4ebbaeb613e8
   m_configObjects:
+    com.unity.xr.arfoundation.simulation_settings: {fileID: 11400000, guid: 60fd05ca9127c0c428d533ca3921ef3c, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 50d1223e37914814081f8d83568e3342, type: 2}
     com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 6e4495ee5af97544c9accd8bfb3ad1fd, type: 2}
   m_UseUCBPForAssetBundles: 0

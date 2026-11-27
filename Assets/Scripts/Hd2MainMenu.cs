@@ -174,6 +174,9 @@ public class Hd2MainMenu : MonoBehaviour
             cabin.SetParent(transform, false);
             Hd2ShipRoom.Build(cabin);
         }
+        // On the headset the menu is mixed reality: the player's room shows through and only
+        // the console and screen remain. The Editor keeps the full cabin and space sky.
+        Hd2Passthrough.Begin(view, cabin);
         leftHand = CreateHand("LeftHand", "<XRController>{LeftHand}/devicePosition", "<XRController>{LeftHand}/deviceRotation", new Vector3(-0.2f, 1.1f, 0.3f));
         rightHand = CreateHand("RightHand", "<XRController>{RightHand}/devicePosition", "<XRController>{RightHand}/deviceRotation", new Vector3(0.2f, 1.1f, 0.3f));
         BuildCanvas();
