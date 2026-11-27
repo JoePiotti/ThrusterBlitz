@@ -322,9 +322,13 @@ public class Hd2Hud : MonoBehaviour
             summary.characterSize = 0.005f;
         }
 
-        string game = string.IsNullOrEmpty(result) ? "" : "   " + result + " Bonus +" + gameBonus.ToString("N0");
+        // Each bonus on its own line, between the score and the total.
+        string game = string.IsNullOrEmpty(result)
+            ? ""
+            : "\n<size=50><color=#B8D8FF>" + result + " Bonus +" + gameBonus.ToString("N0") + "</color></size>";
         summary.text = "Score " + score.ToString("N0")
-            + "\n<size=50><color=#B8D8FF>Kill Streak Bonus +" + streakBonus.ToString("N0") + game + "</color></size>"
+            + "\n<size=50><color=#B8D8FF>Kill Streak Bonus +" + streakBonus.ToString("N0") + "</color></size>"
+            + game
             + "\n<b><color=#FFD75A>Total " + total.ToString("N0") + "</color></b>";
         summary.gameObject.SetActive(true);
         summaryUntil = Time.unscaledTime + SummarySeconds;
