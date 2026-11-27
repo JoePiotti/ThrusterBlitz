@@ -32,6 +32,9 @@ public static class Hd2BlastCover
     {
         if (Hd2DropShield.Blocks(point, target))
             return 0f;
+        // Base shields, including a blast that went off on a shield's face.
+        if (Hd2SpawnField.BlocksBlast(point, target))
+            return 0f;
 
         Vector3 delta = target - point;
         float distance = delta.magnitude;

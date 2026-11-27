@@ -897,7 +897,10 @@ public class Hd2EnemyBot : MonoBehaviour
             return;
         }
 
-        if (body != null && !body.enabled && health != null && health.Health > 0f)
+        // Back in control after a respawn or ragdoll. A blitz and a grind switch the body off on
+        // purpose while they carry the bot; treating that as a respawn cancelled every blitz a
+        // frame after launch (the thrust charge already spent).
+        if (body != null && !body.enabled && !traveling && !grinding && health != null && health.Health > 0f)
         {
             body.enabled = true;
             EnterWander();
@@ -2184,9 +2187,17 @@ public class Hd2EnemyBot : MonoBehaviour
     Vector3 guardPost;
     float guardPostAt = -1f;
 
+    // Up to two blitzes to clear the base; the second only while still near the spawn.
+    const int SpawnBursts = 2;
+    const float SpawnBurstNear = 20f;
+    int spawnBurstsLeft;
+    Vector3 spawnBurstFrom;
+
     void ArmSpawnBurst()
     {
         spawnBurstArmed = true;
+        spawnBurstsLeft = SpawnBursts;
+        spawnBurstFrom = transform.position;
         spawnBurstUntil = Time.time + 4f;
         spawnBurstAt = Time.time + Random.Range(0.05f, 0.6f);
     }
@@ -2233,7 +2244,12 @@ public class Hd2EnemyBot : MonoBehaviour
                 continue;
             if (TryBlitz(floor, null, 1f))
             {
-                spawnBurstArmed = false;
+                // Chain a second blitz once this one lands, if the bot is still close to base.
+                spawnBurstsLeft--;
+                bool nearBase = Flat(floor - spawnBurstFrom).magnitude < SpawnBurstNear;
+                spawnBurstArmed = spawnBurstsLeft > 0 && nearBase;
+                spawnBurstUntil = Time.time + 4f;
+                spawnBurstAt = Time.time + 0.1f;
                 return;
             }
         }

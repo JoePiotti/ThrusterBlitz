@@ -43,7 +43,76 @@ public class Hd2SpawnField : MonoBehaviour
     static readonly RaycastHit[] blockHits = new RaycastHit[16];
     static Material markMaterial;
 
-    public Vector3 Outward => transform.forward;
+    Vector3 outward;
+    bool outwardKnown;
+
+    /// <summary>
+    /// Out of the base, across the shield. The shields are flat panels placed at any
+    /// rotation (Shootout's are turned 90 degrees on X, so transform.forward points up on
+    /// one and down on the other), so this is the collider's thinnest axis, turned to point
+    /// away from this team's spawn points.
+    /// </summary>
+    public Vector3 Outward
+    {
+        get
+        {
+            if (!outwardKnown || !Application.isPlaying)
+                outward = FindOutward();
+            outwardKnown = true;
+            return outward;
+        }
+    }
+
+    Vector3 FindOutward()
+    {
+        Vector3 axis = transform.forward;
+        var box = GetComponent<BoxCollider>();
+        if (box != null)
+        {
+            Vector3 lossy = transform.lossyScale;
+            Vector3 size = new Vector3(Mathf.Abs(box.size.x * lossy.x), Mathf.Abs(box.size.y * lossy.y), Mathf.Abs(box.size.z * lossy.z));
+            axis = size.x <= size.y && size.x <= size.z ? transform.right
+                : size.y <= size.z ? transform.up
+                : transform.forward;
+        }
+        else
+        {
+            var mesh = GetComponent<MeshCollider>();
+            if (mesh != null)
+            {
+                Vector3 size = mesh.bounds.size;
+                axis = size.x <= size.y && size.x <= size.z ? Vector3.right
+                    : size.y <= size.z ? Vector3.up
+                    : Vector3.forward;
+            }
+        }
+
+        axis.Normalize();
+        // The room is where this team spawns.
+        var spawns = FindObjectsByType<Hd2SpawnPoint>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        float nearest = float.MaxValue;
+        Vector3 room = Vector3.zero;
+        bool found = false;
+        for (int i = 0; i < spawns.Length; i++)
+        {
+            Hd2SpawnPoint spawn = spawns[i];
+            if (spawn == null || spawn.team != team || spawn.gameObject.scene != gameObject.scene)
+                continue;
+            float d = (spawn.transform.position - transform.position).sqrMagnitude;
+            if (d < nearest)
+            {
+                nearest = d;
+                room = spawn.transform.position;
+                found = true;
+            }
+        }
+
+        if (found && Vector3.Dot(room - transform.position, axis) > 0f)
+            axis = -axis;
+        else if (!found && Vector3.Dot(axis, transform.forward) < 0f)
+            axis = -axis;
+        return axis;
+    }
 
     /// <summary>
     /// True on the room side of the barrier, including a few centimeters of slack
@@ -284,6 +353,47 @@ public class Hd2SpawnField : MonoBehaviour
             if (NearCollider(field.GetComponent<BoxCollider>(), point, reach))
                 return true;
             if (NearCollider(field.GetComponent<MeshCollider>(), point, reach))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when an active base shield stands between a blast and a target, either way.
+    /// A rocket or shock orb that hits a shield goes off on its face. Only shots from
+    /// outside stop on a shield, so a blast within BlastFaceSlack of it counts as outside:
+    /// it still reaches attackers next to the shield, never the room behind it. Raycasts
+    /// miss that case: the shield has almost no thickness and the blast starts on it.
+    /// </summary>
+    public static bool BlocksBlast(Vector3 point, Vector3 target)
+    {
+        const float BlastFaceSlack = 0.2f;
+        const float EdgeReach = 0.5f;
+        for (int i = 0; i < fieldCount; i++)
+        {
+            Hd2SpawnField field = fields[i];
+            if (field == null)
+                continue;
+            Collider shape = field.GetComponent<BoxCollider>();
+            if (shape == null)
+                shape = field.GetComponent<MeshCollider>();
+            if (shape == null || !shape.enabled || !shape.gameObject.activeInHierarchy)
+                continue;
+
+            Vector3 normal = field.Outward;
+            float a = Vector3.Dot(point - field.transform.position, normal);
+            float b = Vector3.Dot(target - field.transform.position, normal);
+            bool onFace = Mathf.Abs(a) < BlastFaceSlack;
+            float blastSide = onFace ? 1f : Mathf.Sign(a);
+            if (blastSide == Mathf.Sign(b))
+                continue;
+
+            // Where the line crosses the shield plane; on the face, the blast point itself.
+            Vector3 crossing = onFace || Mathf.Abs(a - b) < 0.0001f
+                ? point
+                : Vector3.Lerp(point, target, a / (a - b));
+            if (NearCollider(shape, crossing, EdgeReach * EdgeReach))
                 return true;
         }
 
