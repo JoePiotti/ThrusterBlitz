@@ -31,8 +31,8 @@ public class Hd2BurstPistol : MonoBehaviour
     public float recoilClimbPerRound = 0.35f;
     public float vibrationDegrees = 0.6f;
     public float kickReturnSpeed = 22f;
-    public float shotHapticAmplitude = 0.2f;
-    public float shotHapticDuration = 0.02f;
+    public float shotHapticAmplitude = 0.35f;
+    public float shotHapticDuration = 0.03f;
 
     public Transform muzzle;
     public bool botHeld;
